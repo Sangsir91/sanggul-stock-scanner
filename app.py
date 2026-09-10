@@ -1,326 +1,1150 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
-from datetime import date, timedelta
+import plotly.graph_objects as go
+from io import StringIO
 
-st.set_page_config(page_title="Stock Potential Scanner IDX", page_icon="📈", layout="wide")
+# ============================================================
+# SANGGUL STOCK SCANNER IDX V5
+# FULL IDX SCANNER
+# IHSG -> SECTOR -> ALL IDX -> TECHNICAL -> OPPORTUNITY
+# ============================================================
 
-# -----------------------------
-# Universe IDX (starter universe)
-# -----------------------------
-UNIVERSE = {
-    "Banking": ["BBCA","BBRI","BMRI","BBNI","BRIS","BBTN","BDMN","BNGA","BSIM","NISP"],
-    "Energy": ["ADRO","AADI","PTBA","ITMG","INDY","MEDC","PGAS","AKRA"],
-    "Basic Materials": ["ANTM","INCO","MDKA","SMGR","INTP","TKIM","INKP","BRPT","TPIA"],
-    "Consumer": ["ICBP","INDF","MYOR","UNVR","KLBF","SIDO","GGRM","HMSP","AMRT"],
-    "Telecommunication": ["TLKM","ISAT","EXCL","MTEL"],
-    "Infrastructure": ["JSMR","WIKA","WSKT","PTPP","ADHI","ACST"],
-    "Property": ["BSDE","CTRA","PWON","SMRA","DMAS","ASRI"],
-    "Automotive": ["ASII","AUTO","GJTL","IMAS"],
-    "Technology": ["GOTO","EMTK","BUKA","DCII","MTDL"],
-    "Healthcare": ["MIKA","SILO","HEAL","TSPC"],
-    "Plantation": ["AALI","LSIP","SIMP","DSNG","SSMS"],
-    "Industrial": ["UNTR","GGRP","SMDR","ASSA","MAPI"],
-}
-TICKER_TO_SECTOR = {t: s for s, xs in UNIVERSE.items() for t in xs}
-ALL_TICKERS = list(TICKER_TO_SECTOR.keys())
+st.set_page_config(
+    page_title="Sanggul Stock Scanner IDX V5",
+    page_icon="📈",
+    layout="wide"
+)
 
-# -----------------------------
-# Indicators
-# -----------------------------
-def rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    avg_gain = gain.ewm(alpha=1/period, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1/period, adjust=False).mean()
-    rs = avg_gain / avg_loss.replace(0, np.nan)
-    return 100 - (100 / (1 + rs))
+IDX_UNIVERSE_URL = (
+    "https://huggingface.co/datasets/"
+    "kjhq/Indonesia-Stock-Symbols-and-Metadata/"
+    "resolve/main/indonesia.csv"
+)
 
-def macd(series):
-    e12 = series.ewm(span=12, adjust=False).mean()
-    e26 = series.ewm(span=26, adjust=False).mean()
-    line = e12 - e26
-    signal = line.ewm(span=9, adjust=False).mean()
-    hist = line - signal
-    return line, signal, hist
+# ------------------------------------------------------------
+# FORMAT
+# ------------------------------------------------------------
 
-def atr(df, period=14):
-    high_low = df["High"] - df["Low"]
-    high_close = (df["High"] - df["Close"].shift()).abs()
-    low_close = (df["Low"] - df["Close"].shift()).abs()
-    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    return tr.ewm(alpha=1/period, adjust=False).mean()
+def rupiah(x):
+    if pd.isna(x):
+        return "-"
+    return f"Rp {x:,.0f}".replace(",", ".")
 
-def indicators(df):
-    d = df.copy()
+
+def yahoo_symbol(kode):
+    kode = str(kode).upper().strip()
+    return kode if kode.endswith(".JK") else kode + ".JK"
+
+
+# ------------------------------------------------------------
+# UNIVERSE FULL IDX
+# ------------------------------------------------------------
+
+@st.cache_data(ttl=86400)
+def load_idx_universe():
+    try:
+        df = pd.read_csv(IDX_UNIVERSE_URL)
+    except Exception:
+        return pd.DataFrame()
+
+    df.columns = [str(c).lower().strip() for c in df.columns]
+
+    required = {"ticker", "name", "sector"}
+    if not required.issubset(df.columns):
+        return pd.DataFrame()
+
+    df = df[df["market"].astype(str).str.upper().eq("IDX")].copy()
+    df["ticker"] = (
+        df["ticker"]
+        .astype(str)
+        .str.upper()
+        .str.strip()
+        .str.replace(".JK", "", regex=False)
+    )
+
+    df = df[
+        df["ticker"].str.fullmatch(r"[A-Z]{4}", na=False)
+    ].drop_duplicates("ticker")
+
+    df["Yahoo"] = df["ticker"] + ".JK"
+    return df.sort_values("ticker").reset_index(drop=True)
+
+
+# ------------------------------------------------------------
+# DATA BATCH
+# ------------------------------------------------------------
+
+@st.cache_data(ttl=600)
+def download_batch(tickers, period="6mo"):
+    if not tickers:
+        return pd.DataFrame()
+
+    try:
+        data = yf.download(
+            tickers=tickers,
+            period=period,
+            interval="1d",
+            auto_adjust=True,
+            progress=False,
+            threads=True,
+            group_by="ticker",
+            multi_level_index=True
+        )
+        return data
+    except Exception:
+        return pd.DataFrame()
+
+
+def extract_ticker_data(batch, ticker):
+    if batch.empty:
+        return pd.DataFrame()
+
+    try:
+        if isinstance(batch.columns, pd.MultiIndex):
+            # yfinance multi-ticker format: level 0=ticker, level 1=OHLCV
+            if ticker in batch.columns.get_level_values(0):
+                df = batch[ticker].copy()
+            elif ticker in batch.columns.get_level_values(1):
+                df = batch.xs(ticker, axis=1, level=1).copy()
+            else:
+                return pd.DataFrame()
+        else:
+            df = batch.copy()
+
+        df.columns = [str(c).title() for c in df.columns]
+
+        for c in ["Open", "High", "Low", "Close", "Volume"]:
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors="coerce")
+
+        return df.dropna(subset=["Open", "High", "Low", "Close"])
+
+    except Exception:
+        return pd.DataFrame()
+
+
+# ------------------------------------------------------------
+# FAST INDICATORS UNTUK FULL SCAN
+# ------------------------------------------------------------
+
+def fast_analysis(df):
+    if df.empty or len(df) < 210:
+        return None
+
+    close = df["Close"]
+    high = df["High"]
+    low = df["Low"]
+    volume = df["Volume"]
+
+    ma20 = close.rolling(20).mean()
+    ma50 = close.rolling(50).mean()
+    ma200 = close.rolling(200).mean()
+
+    delta = close.diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
+
+    rs = gain / loss.replace(0, np.nan)
+    rsi = 100 - (100 / (1 + rs))
+
+    ema12 = close.ewm(span=12, adjust=False).mean()
+    ema26 = close.ewm(span=26, adjust=False).mean()
+    macd = ema12 - ema26
+    macd_signal = macd.ewm(span=9, adjust=False).mean()
+
+    prev_close = close.shift(1)
+
+    tr = pd.concat([
+        high - low,
+        (high - prev_close).abs(),
+        (low - prev_close).abs()
+    ], axis=1).max(axis=1)
+
+    atr = tr.rolling(14).mean()
+
+    volume_ma = volume.rolling(20).mean()
+    volume_ratio = volume / volume_ma
+
+    support = low.rolling(20).min()
+    resistance = high.rolling(20).max()
+
+    w = pd.DataFrame({
+        "Close": close,
+        "MA20": ma20,
+        "MA50": ma50,
+        "MA200": ma200,
+        "RSI": rsi,
+        "MACD": macd,
+        "MACDSignal": macd_signal,
+        "ATR": atr,
+        "VolumeRatio": volume_ratio,
+        "Support": support,
+        "Resistance": resistance
+    }).dropna()
+
+    if w.empty:
+        return None
+
+    x = w.iloc[-1]
+    px = float(x["Close"])
+
+    score = 0
+    if px > x["MA20"]:
+        score += 10
+    if px > x["MA50"]:
+        score += 10
+    if px > x["MA200"]:
+        score += 15
+    if x["MA20"] > x["MA50"] > x["MA200"]:
+        score += 15
+    if 50 <= x["RSI"] <= 70:
+        score += 15
+    if x["MACD"] > x["MACDSignal"]:
+        score += 10
+    if x["VolumeRatio"] >= 1.2:
+        score += 10
+    if px > x["MA20"] and x["MA20"] > x["MA50"]:
+        score += 15
+
+    score = min(score, 100)
+
+    sup = float(x["Support"])
+    res = float(x["Resistance"])
+
+    # Cari resistance terdekat di atas harga dari 20/60 hari
+    res60 = float(w["Resistance"].iloc[-1])
+    sup60 = float(w["Support"].iloc[-1])
+
+    resistances = [v for v in [res, res60] if v > px]
+    supports = [v for v in [sup, sup60] if v < px]
+
+    resistance = min(resistances) if resistances else res
+    support = max(supports) if supports else sup
+
+    atr_value = float(x["ATR"])
+    risk = max(1.25 * atr_value, px * 0.02)
+
+    stop = px - risk
+    reward = max(resistance - px, atr_value)
+
+    rr = reward / risk if risk > 0 else 0
+
+    distance_res = (resistance - px) / px
+
+    # Breakout sederhana:
+    # close di atas resistance hari sebelumnya + volume >= 1.2x
+    prev_res = w["Resistance"].shift(1).iloc[-1]
+    breakout = (
+        pd.notna(prev_res)
+        and px > float(prev_res)
+        and float(x["VolumeRatio"]) >= 1.2
+    )
+
+    if breakout and score >= 75:
+        signal = "STRONG BUY — BREAKOUT"
+    elif score >= 80 and rr >= 2:
+        signal = "STRONG BUY"
+    elif score >= 75 and rr >= 1.5:
+        signal = "BUY"
+    elif distance_res <= 0.025 and score >= 60:
+        signal = "WAIT FOR BREAKOUT"
+    elif score < 50:
+        signal = "SELL / AVOID"
+    else:
+        signal = "WAIT"
+
+    if score >= 75:
+        trend = "BULLISH"
+    elif score >= 55:
+        trend = "NEUTRAL"
+    else:
+        trend = "BEARISH"
+
+    # Opportunity Score:
+    # Technical 60% + R:R 20% + Setup 20%
+    rr_component = min(max(rr / 2.0, 0), 1) * 20
+
+    if breakout:
+        setup_component = 20
+    elif score >= 70 and distance_res > 0.025:
+        setup_component = 15
+    elif distance_res <= 0.025:
+        setup_component = 5
+    else:
+        setup_component = 10
+
+    opportunity = round(
+        0.60 * score + rr_component + setup_component,
+        1
+    )
+
+    return {
+        "Price": px,
+        "Score": score,
+        "Opportunity": opportunity,
+        "Trend": trend,
+        "Signal": signal,
+        "RSI": float(x["RSI"]),
+        "Volume": float(x["VolumeRatio"]),
+        "R:R": float(rr),
+        "Support": support,
+        "Resistance": resistance,
+        "DistanceResistance": distance_res * 100,
+        "Breakout": "YA" if breakout else "TIDAK",
+        "Date": w.index[-1]
+    }
+
+
+# ------------------------------------------------------------
+# FULL IDX SCANNER
+# ------------------------------------------------------------
+
+def scan_full_idx(universe, batch_size=40, progress_callback=None):
+    results = []
+    tickers = universe["Yahoo"].tolist()
+
+    total_batches = int(np.ceil(len(tickers) / batch_size))
+
+    for batch_no in range(total_batches):
+        start = batch_no * batch_size
+        batch_tickers = tickers[start:start + batch_size]
+
+        batch = download_batch(tuple(batch_tickers), period="1y")
+
+        for ticker in batch_tickers:
+            df = extract_ticker_data(batch, ticker)
+            a = fast_analysis(df)
+
+            if a is None:
+                continue
+
+            kode = ticker.replace(".JK", "")
+            meta = universe[universe["Yahoo"] == ticker]
+
+            if meta.empty:
+                continue
+
+            m = meta.iloc[0]
+
+            results.append({
+                "Kode": kode,
+                "Nama": m["name"],
+                "Sektor": m["sector"],
+                **a
+            })
+
+        if progress_callback:
+            progress_callback(
+                (batch_no + 1) / total_batches
+            )
+
+    if not results:
+        return pd.DataFrame()
+
+    result = pd.DataFrame(results)
+
+    return result.sort_values(
+        ["Opportunity", "Score", "R:R"],
+        ascending=[False, False, False]
+    ).reset_index(drop=True)
+
+
+# ------------------------------------------------------------
+# IHSG
+# ------------------------------------------------------------
+
+@st.cache_data(ttl=600)
+def get_ihsg():
+    try:
+        d = yf.download(
+            "^JKSE",
+            period="2y",
+            interval="1d",
+            auto_adjust=True,
+            progress=False,
+            threads=False
+        )
+    except Exception:
+        return None
+
+    if d.empty:
+        return None
+
+    if isinstance(d.columns, pd.MultiIndex):
+        d.columns = d.columns.get_level_values(0)
+
+    d.columns = [str(c).title() for c in d.columns]
+    d["Close"] = pd.to_numeric(d["Close"], errors="coerce")
+    d = d.dropna(subset=["Close"])
+
     d["MA20"] = d["Close"].rolling(20).mean()
     d["MA50"] = d["Close"].rolling(50).mean()
     d["MA200"] = d["Close"].rolling(200).mean()
-    d["RSI"] = rsi(d["Close"])
-    d["MACD"], d["MACDSignal"], d["MACDHist"] = macd(d["Close"])
-    d["ATR"] = atr(d)
-    d["Vol20"] = d["Volume"].rolling(20).mean()
-    d["VolRatio"] = d["Volume"] / d["Vol20"]
-    d["High20"] = d["High"].rolling(20).max().shift(1)
-    d["Low20"] = d["Low"].rolling(20).min().shift(1)
-    return d
 
-# -----------------------------
-# Scoring
-# -----------------------------
-def score_stock(d):
-    x = d.iloc[-1]
-    prev = d.iloc[-2]
-    close = float(x["Close"])
+    w = d.dropna(subset=["MA20", "MA50", "MA200"])
+
+    if w.empty:
+        return None
+
+    x = w.iloc[-1]
+    px = float(x["Close"])
+
     score = 0
-    notes = []
 
-    # Trend 25
-    trend = 0
-    if close > x["MA20"]: trend += 7
-    if close > x["MA50"]: trend += 7
-    if pd.notna(x["MA200"]) and close > x["MA200"]: trend += 6
-    if x["MA20"] > x["MA50"]: trend += 5
-    score += trend
-    if trend >= 18: notes.append("Trend kuat")
+    if px > x["MA20"]:
+        score += 25
+    if px > x["MA50"]:
+        score += 25
+    if px > x["MA200"]:
+        score += 25
+    if x["MA20"] > x["MA50"]:
+        score += 15
+    if x["MA50"] > x["MA200"]:
+        score += 10
 
-    # Momentum 20
-    mom = 0
-    if 50 <= x["RSI"] <= 70: mom += 8
-    elif 45 <= x["RSI"] < 50: mom += 4
-    if x["MACD"] > x["MACDSignal"]: mom += 7
-    if x["MACDHist"] > prev["MACDHist"]: mom += 5
-    score += mom
-
-    # Volume 15
-    vol = 0
-    if x["VolRatio"] >= 1.5: vol = 15
-    elif x["VolRatio"] >= 1.2: vol = 11
-    elif x["VolRatio"] >= 1.0: vol = 7
-    elif x["VolRatio"] >= 0.8: vol = 4
-    score += vol
-
-    # Breakout / pullback setup 20
-    setup_score = 0
-    if pd.notna(x["High20"]) and close > x["High20"]:
-        setup_score = 20
-        notes.append("Breakout 20D")
-    elif pd.notna(x["MA20"]) and close >= x["MA20"] * 0.98 and close <= x["MA20"] * 1.03:
-        setup_score = 15
-        notes.append("Pullback MA20")
-    elif pd.notna(x["MA50"]) and close >= x["MA50"] * 0.98 and close <= x["MA50"] * 1.04:
-        setup_score = 12
-        notes.append("Pullback MA50")
-    elif pd.notna(x["Low20"]) and close <= x["Low20"] * 1.06:
-        setup_score = 5
-        notes.append("Dekat support")
-    score += setup_score
-
-    # Relative strength proxy 10: 20D return
-    ret20 = d["Close"].pct_change(20).iloc[-1]
-    rs = 0
-    if ret20 >= 0.15: rs = 10
-    elif ret20 >= 0.08: rs = 8
-    elif ret20 >= 0.03: rs = 6
-    elif ret20 >= 0: rs = 3
-    score += rs
-
-    # Quality/price behavior 10
-    q = 0
-    if close > x["MA50"]: q += 5
-    if d["Close"].iloc[-1] > d["Close"].iloc[-21]: q += 5
-    score += q
-
-    if score >= 85:
-        action = "🟢 STRONG BUY CANDIDATE"
-    elif score >= 75:
-        action = "🟢 BUY / ACCUMULATE"
-    elif score >= 65:
-        action = "🟡 BUY ON PULLBACK / WATCH"
-    elif score >= 50:
-        action = "🔵 WATCH"
-    else:
-        action = "🔴 AVOID"
-
-    atrv = float(x["ATR"]) if pd.notna(x["ATR"]) else close * 0.03
-    # Risk plan: 1.5 ATR stop; targets 2R and 3R
-    stop = close - 1.5 * atrv
-    risk = close - stop
-    tp1 = close + 2 * risk
-    tp2 = close + 3 * risk
-
-    if pd.notna(x["High20"]) and close > x["High20"]:
-        setup = "BREAKOUT"
-        entry_low = close * 0.99
-        entry_high = close * 1.01
-    elif pd.notna(x["MA20"]):
-        setup = "PULLBACK"
-        entry_low = x["MA20"] * 0.99
-        entry_high = x["MA20"] * 1.02
-    else:
-        setup = "WATCH"
-        entry_low = close * 0.98
-        entry_high = close * 1.02
+    trend = (
+        "BULLISH" if score >= 75
+        else "SIDEWAYS" if score >= 50
+        else "BEARISH"
+    )
 
     return {
-        "Score": int(min(100, max(0, round(score)))),
-        "Action": action,
-        "Setup": setup,
-        "Price": close,
-        "Entry Low": entry_low,
-        "Entry High": entry_high,
-        "Stop Loss": stop,
-        "TP1": tp1,
-        "TP2": tp2,
-        "RSI": x["RSI"],
-        "MACD Hist": x["MACDHist"],
-        "Vol Ratio": x["VolRatio"],
-        "Return 20D": ret20,
-        "MA20": x["MA20"],
-        "MA50": x["MA50"],
-        "MA200": x["MA200"],
-        "Notes": ", ".join(notes) if notes else "Belum ada setup kuat"
+        "Price": px,
+        "Score": score,
+        "Trend": trend,
+        "Date": w.index[-1]
     }
 
-@st.cache_data(ttl=900, show_spinner=False)
-def load_prices(tickers, period="1y"):
-    symbols = [t + ".JK" for t in tickers]
-    raw = yf.download(symbols, period=period, interval="1d", auto_adjust=False,
-                      group_by="ticker", threads=True, progress=False)
-    result = {}
-    if raw.empty:
-        return result
-    for t in tickers:
-        sym = t + ".JK"
-        try:
-            if len(tickers) == 1:
-                d = raw.copy()
-            else:
-                d = raw[sym].copy()
-            d = d.dropna(subset=["Close"])
-            if len(d) >= 220:
-                result[t] = indicators(d)
-        except Exception:
-            pass
-    return result
 
-def sector_score(rows):
-    if not rows:
+# ------------------------------------------------------------
+# DETAILED SINGLE STOCK
+# ------------------------------------------------------------
+
+@st.cache_data(ttl=600)
+def detailed_data(kode):
+    data = ambil_data(kode)
+    if data.empty:
         return pd.DataFrame()
-    df = pd.DataFrame(rows)
-    out = []
-    for sector, g in df.groupby("Sector"):
-        out.append({
-            "Sector": sector,
-            "Avg Score": g["Score"].mean(),
-            "Avg 20D Return": g["Return 20D"].mean(),
-            "Bullish %": (g["Score"] >= 65).mean() * 100,
-            "Stocks": len(g)
-        })
-    return pd.DataFrame(out).sort_values(["Avg Score","Avg 20D Return"], ascending=False)
+    return data
 
-# -----------------------------
-# UI
-# -----------------------------
-st.title("📈 Stock Potential Scanner IDX — v1.0")
-st.caption("Top-down: Market → Sector → Stock → Setup → Risk/Reward. Data harga diambil saat aplikasi dijalankan.")
 
-with st.sidebar:
-    st.header("⚙️ Pengaturan")
-    max_stocks = st.slider("Jumlah saham dianalisis", 10, len(ALL_TICKERS), min(50, len(ALL_TICKERS)))
-    min_score = st.slider("Minimum score", 0, 100, 65)
-    period = st.selectbox("Periode data", ["1y", "2y", "5y"], index=0)
-    selected_sector = st.multiselect("Filter sektor", list(UNIVERSE.keys()))
-    if not selected_sector:
-        tickers = ALL_TICKERS[:max_stocks]
-    else:
-        tickers = [t for t in ALL_TICKERS if TICKER_TO_SECTOR[t] in selected_sector][:max_stocks]
-    refresh = st.button("🔄 Refresh data")
-
-if refresh:
-    st.cache_data.clear()
-    st.rerun()
-
-st.info("Catatan: ini adalah alat bantu analisis, bukan rekomendasi investasi. Foreign flow dan fundamental belum ditarik otomatis pada versi 1.0; keduanya akan menjadi modul berikutnya.")
-
-with st.spinner("Mengambil data harga dan menghitung indikator..."):
-    prices = load_prices(tuple(tickers), period)
-
-rows = []
-for t, d in prices.items():
+def ambil_data(kode):
     try:
-        s = score_stock(d)
-        s["Ticker"] = t
-        s["Sector"] = TICKER_TO_SECTOR.get(t, "Other")
-        rows.append(s)
+        d = yf.download(
+            yahoo_symbol(kode),
+            period="2y",
+            interval="1d",
+            auto_adjust=True,
+            progress=False,
+            threads=False
+        )
     except Exception:
-        pass
+        return pd.DataFrame()
 
-stock_df = pd.DataFrame(rows)
-if stock_df.empty:
-    st.error("Data tidak berhasil diperoleh. Coba Refresh, periksa koneksi internet, atau kurangi jumlah saham.")
-    st.stop()
+    if d.empty:
+        return pd.DataFrame()
 
-stock_df = stock_df.sort_values("Score", ascending=False).reset_index(drop=True)
+    if isinstance(d.columns, pd.MultiIndex):
+        d.columns = d.columns.get_level_values(0)
 
-# Market proxy using average return of analyzed universe
-market_ret20 = stock_df["Return 20D"].mean()
-market_score = int(np.clip(50 + market_ret20 * 200, 20, 90))
-market_regime = "🟢 BULLISH" if market_score >= 65 else ("🟡 SIDEWAYS" if market_score >= 45 else "🔴 BEARISH")
+    d.columns = [str(c).title() for c in d.columns]
 
-c1,c2,c3,c4 = st.columns(4)
-c1.metric("Market Proxy Score", market_score)
-c2.metric("Market Regime", market_regime)
-c3.metric("Saham Dianalisis", len(stock_df))
-c4.metric("Kandidat ≥ Score", int((stock_df["Score"] >= min_score).sum()))
+    for c in ["Open","High","Low","Close","Volume"]:
+        if c in d.columns:
+            d[c] = pd.to_numeric(d[c], errors="coerce")
 
-st.subheader("🏆 Ranking Sector")
-sec = sector_score(stock_df.to_dict("records"))
-if not sec.empty:
-    sec_display = sec.copy()
-    sec_display["Avg Score"] = sec_display["Avg Score"].round(1)
-    sec_display["Avg 20D Return"] = (sec_display["Avg 20D Return"]*100).round(2).astype(str) + "%"
-    sec_display["Bullish %"] = sec_display["Bullish %"].round(0).astype(int).astype(str) + "%"
-    st.dataframe(sec_display, use_container_width=True, hide_index=True)
+    return d.dropna(subset=["Open","High","Low","Close"])
 
-st.subheader("🔥 Top Potential Stocks")
-cols = ["Ticker","Sector","Score","Action","Setup","Price","Entry Low","Entry High","Stop Loss","TP1","TP2","RSI","Vol Ratio","Return 20D","Notes"]
-view = stock_df[cols].copy()
-for c in ["Price","Entry Low","Entry High","Stop Loss","TP1","TP2"]:
-    view[c] = view[c].round(0)
-view["RSI"] = view["RSI"].round(1)
-view["Vol Ratio"] = view["Vol Ratio"].round(2)
-view["Return 20D"] = (view["Return 20D"]*100).round(2).astype(str) + "%"
-st.dataframe(view[view["Score"] >= min_score], use_container_width=True, hide_index=True)
 
-st.subheader("🔎 Detail Saham")
-chosen = st.selectbox("Pilih saham", stock_df["Ticker"].tolist())
-detail = stock_df[stock_df["Ticker"] == chosen].iloc[0]
+def detailed_indicators(df):
+    x = df.copy()
 
-a,b,c,d,e = st.columns(5)
-a.metric("Score", int(detail["Score"]))
-b.metric("Setup", detail["Setup"])
-c.metric("Harga", f"Rp {detail['Price']:,.0f}")
-d.metric("RSI", f"{detail['RSI']:.1f}")
-e.metric("20D Return", f"{detail['Return 20D']*100:.2f}%")
+    x["MA20"] = x["Close"].rolling(20).mean()
+    x["MA50"] = x["Close"].rolling(50).mean()
+    x["MA200"] = x["Close"].rolling(200).mean()
 
-st.markdown(f"### {chosen} — {detail['Action']}")
-st.write(f"**Sektor:** {detail['Sector']}  |  **Setup:** {detail['Setup']}  |  **Catatan:** {detail['Notes']}")
+    d = x["Close"].diff()
+    gain = d.clip(lower=0).rolling(14).mean()
+    loss = (-d.clip(upper=0)).rolling(14).mean()
+    rs = gain / loss.replace(0, np.nan)
+    x["RSI"] = 100 - 100 / (1 + rs)
 
-plan = pd.DataFrame({
-    "Parameter": ["Buy Zone Low","Buy Zone High","Stop Loss","TP1 (2R)","TP2 (3R)","Risk/Reward to TP1"],
-    "Value": [
-        f"Rp {detail['Entry Low']:,.0f}",
-        f"Rp {detail['Entry High']:,.0f}",
-        f"Rp {detail['Stop Loss']:,.0f}",
-        f"Rp {detail['TP1']:,.0f}",
-        f"Rp {detail['TP2']:,.0f}",
-        "1 : 2"
-    ]
-})
-st.table(plan)
+    ema12 = x["Close"].ewm(span=12, adjust=False).mean()
+    ema26 = x["Close"].ewm(span=26, adjust=False).mean()
+    x["MACD"] = ema12 - ema26
+    x["MACD_Signal"] = x["MACD"].ewm(span=9, adjust=False).mean()
 
-st.caption("Metodologi score: trend 25%, momentum 20%, volume 15%, setup 20%, relative strength 10%, quality/price behavior 10%. Formula dapat diubah pada kode aplikasi.")
+    mid = x["Close"].rolling(20).mean()
+    std = x["Close"].rolling(20).std()
+    x["BB_Upper"] = mid + 2 * std
+    x["BB_Lower"] = mid - 2 * std
+
+    pc = x["Close"].shift(1)
+    tr = pd.concat([
+        x["High"] - x["Low"],
+        (x["High"] - pc).abs(),
+        (x["Low"] - pc).abs()
+    ], axis=1).max(axis=1)
+
+    x["ATR"] = tr.rolling(14).mean()
+    x["Volume_MA20"] = x["Volume"].rolling(20).mean()
+    x["Volume_Ratio"] = x["Volume"] / x["Volume_MA20"]
+
+    x["Support20"] = x["Low"].rolling(20).min()
+    x["Resistance20"] = x["High"].rolling(20).max()
+
+    return x
+
+
+# ============================================================
+# UI
+# ============================================================
+
+st.title("📈 SANGGUL STOCK SCANNER IDX")
+st.caption("V5 — FULL IDX SCANNER • IHSG → SECTOR → ALL IDX → OPPORTUNITY")
+
+menu = st.radio(
+    "Menu",
+    ["🏠 Full IDX Scanner", "🔎 Analisis Saham"],
+    horizontal=True
+)
+
+# ============================================================
+# FULL IDX
+# ============================================================
+
+if menu == "🏠 Full IDX Scanner":
+
+    st.header("🌐 Market Overview")
+
+    ihsg = get_ihsg()
+
+    if ihsg:
+        c1, c2, c3 = st.columns(3)
+
+        with c1:
+            st.metric(
+                "IHSG",
+                f"{ihsg['Price']:,.0f}".replace(",", ".")
+            )
+
+        with c2:
+            st.metric(
+                "Market Score",
+                f"{ihsg['Score']}/100"
+            )
+
+        with c3:
+            st.metric(
+                "Market Trend",
+                ihsg["Trend"]
+            )
+
+        st.caption(
+            f"Data IHSG terakhir: {ihsg['Date'].strftime('%d-%m-%Y')}"
+        )
+
+    st.divider()
+
+    universe = load_idx_universe()
+
+    st.header("🚀 Full IDX Scanner")
+
+    if universe.empty:
+        st.error(
+            "Universe IDX gagal dimuat. Periksa koneksi internet."
+        )
+        st.stop()
+
+    u1, u2, u3 = st.columns(3)
+
+    with u1:
+        st.metric(
+            "Universe IDX",
+            f"{len(universe):,}".replace(",", ".")
+        )
+
+    with u2:
+        st.metric(
+            "Periode Scan",
+            "1 Tahun"
+        )
+
+    with u3:
+        st.metric(
+            "Batch",
+            "50 saham"
+        )
+
+    st.info(
+        "V5 menggunakan universe saham IDX yang diperbarui berkala. "
+        "Saham yang tidak memiliki data historis cukup atau tidak tersedia "
+        "di Yahoo Finance otomatis dilewati."
+    )
+
+    if st.button(
+        "🚀 SCAN SELURUH IDX SEKARANG",
+        width="stretch"
+    ):
+
+        progress = st.progress(0)
+        status = st.empty()
+
+        def update_progress(value):
+            progress.progress(value)
+            status.info(
+                f"Progress scanning: {value*100:.0f}%"
+            )
+
+        with st.spinner("Scanning Full IDX..."):
+            result = scan_full_idx(
+                universe,
+                batch_size=40,
+                progress_callback=update_progress
+            )
+
+        progress.progress(1.0)
+        status.success(
+            f"Scanning selesai: {len(result)} saham berhasil dianalisis."
+        )
+
+        st.session_state["full_scan"] = result
+
+    result = st.session_state.get(
+        "full_scan",
+        pd.DataFrame()
+    )
+
+    if not result.empty:
+
+        st.success(
+            f"{len(result)} saham memiliki data teknikal yang cukup "
+            f"untuk dianalisis."
+        )
+
+        st.subheader("🎛️ Filter Full IDX")
+
+        f1, f2, f3, f4 = st.columns(4)
+
+        with f1:
+            sectors = ["Semua"] + sorted(
+                result["Sektor"].dropna().unique().tolist()
+            )
+            selected_sector = st.selectbox(
+                "Sektor",
+                sectors
+            )
+
+        with f2:
+            min_score = st.slider(
+                "Minimum Technical Score",
+                0, 100, 60, 5
+            )
+
+        with f3:
+            signal = st.selectbox(
+                "Signal",
+                ["Semua", "BUY", "WAIT", "SELL"]
+            )
+
+        with f4:
+            breakout = st.selectbox(
+                "Breakout",
+                ["Semua", "YA", "TIDAK"]
+            )
+
+        filtered = result.copy()
+
+        if selected_sector != "Semua":
+            filtered = filtered[
+                filtered["Sektor"] == selected_sector
+            ]
+
+        filtered = filtered[
+            filtered["Score"] >= min_score
+        ]
+
+        if signal == "BUY":
+            filtered = filtered[
+                filtered["Signal"].str.contains("BUY", na=False)
+            ]
+        elif signal == "WAIT":
+            filtered = filtered[
+                filtered["Signal"].str.contains("WAIT", na=False)
+            ]
+        elif signal == "SELL":
+            filtered = filtered[
+                filtered["Signal"].str.contains("SELL", na=False)
+            ]
+
+        if breakout != "Semua":
+            filtered = filtered[
+                filtered["Breakout"] == breakout
+            ]
+
+        st.caption(
+            f"Hasil setelah filter: {len(filtered)} saham"
+        )
+
+        # ----------------------------------------------------
+        # TOP 10 OPPORTUNITY FROM FULL UNIVERSE
+        # ----------------------------------------------------
+
+        st.subheader("🏆 Top 10 Opportunity — Full IDX")
+
+        top10 = result.head(10)
+
+        st.dataframe(
+            top10[
+                [
+                    "Kode","Nama","Sektor","Price",
+                    "Score","Opportunity","Trend","Signal",
+                    "RSI","Volume","R:R","Breakout"
+                ]
+            ],
+            width="stretch",
+            hide_index=True
+        )
+
+        # ----------------------------------------------------
+        # TOP BUY
+        # ----------------------------------------------------
+
+        st.subheader("🟢 Kandidat BUY")
+
+        buys = result[
+            result["Signal"].str.contains("BUY", na=False)
+        ].head(20)
+
+        if buys.empty:
+            st.warning(
+                "Belum ada kandidat BUY pada Full IDX."
+            )
+        else:
+            st.dataframe(
+                buys[
+                    [
+                        "Kode","Nama","Sektor","Price",
+                        "Score","Opportunity","Signal",
+                        "R:R","Breakout"
+                    ]
+                ],
+                width="stretch",
+                hide_index=True
+            )
+
+        # ----------------------------------------------------
+        # SECTOR STRENGTH
+        # ----------------------------------------------------
+
+        st.subheader("🏭 Sector Strength — Full IDX")
+
+        sector_rank = (
+            result.groupby("Sektor")
+            .agg(
+                Average_Score=("Score","mean"),
+                Average_Opportunity=("Opportunity","mean"),
+                Best_Opportunity=("Opportunity","max"),
+                Stocks=("Kode","count")
+            )
+            .reset_index()
+            .sort_values(
+                ["Average_Opportunity","Average_Score"],
+                ascending=[False,False]
+            )
+        )
+
+        st.dataframe(
+            sector_rank.head(10),
+            width="stretch",
+            hide_index=True
+        )
+
+        # ----------------------------------------------------
+        # FILTERED RANKING
+        # ----------------------------------------------------
+
+        st.subheader("📋 Ranking Setelah Filter")
+
+        if filtered.empty:
+            st.warning(
+                "Tidak ada saham yang memenuhi filter."
+            )
+        else:
+            st.dataframe(
+                filtered[
+                    [
+                        "Kode","Nama","Sektor","Price",
+                        "Score","Opportunity","Trend","Signal",
+                        "RSI","Volume","R:R","Breakout"
+                    ]
+                ].head(100),
+                width="stretch",
+                hide_index=True
+            )
+
+        # ----------------------------------------------------
+        # ANALISIS SAHAM PILIHAN
+        # ----------------------------------------------------
+
+        st.subheader("🔎 Analisis Saham Pilihan")
+
+        choices = filtered["Kode"].tolist()
+
+        if choices:
+
+            selected = st.selectbox(
+                "Pilih saham",
+                choices
+            )
+
+            if st.button(
+                "📈 BUKA ANALISIS SAHAM",
+                width="stretch"
+            ):
+                st.session_state["selected_stock"] = selected
+                st.rerun()
+
+        # ----------------------------------------------------
+        # DOWNLOAD CSV
+        # ----------------------------------------------------
+
+        st.subheader("💾 Export Hasil Scanner")
+
+        csv = result.to_csv(
+            index=False
+        ).encode("utf-8")
+
+        st.download_button(
+            "⬇️ Download Full IDX Ranking CSV",
+            data=csv,
+            file_name="sanggul_full_idx_scanner.csv",
+            mime="text/csv",
+            width="stretch"
+        )
+
+    else:
+        st.warning(
+            "Klik SCAN SELURUH IDX SEKARANG untuk memulai."
+        )
+
+
+# ============================================================
+# SINGLE STOCK
+# ============================================================
+
+else:
+
+    st.header("🔎 Analisis Saham")
+
+    default_stock = st.session_state.get(
+        "selected_stock",
+        "BBRI"
+    )
+
+    c1, c2 = st.columns([4,1])
+
+    with c1:
+        kode = st.text_input(
+            "Kode saham BEI",
+            value=default_stock
+        )
+
+    with c2:
+        st.write("")
+        update = st.button(
+            "🔄 UPDATE DATA",
+            width="stretch"
+        )
+
+    if update:
+        detailed_data.clear()
+
+    if kode:
+
+        with st.spinner(
+            "Mengambil data historis saham..."
+        ):
+            data = detailed_data(kode)
+
+        if data.empty:
+            st.error(
+                f"Data {kode.upper()}.JK tidak tersedia."
+            )
+            st.stop()
+
+        df = detailed_indicators(data)
+        last = df.iloc[-1]
+
+        close = float(last["Close"])
+
+        # Basic detailed score
+        score = 0
+
+        if close > last["MA20"]: score += 10
+        if close > last["MA50"]: score += 10
+        if close > last["MA200"]: score += 15
+        if last["MA20"] > last["MA50"] > last["MA200"]: score += 15
+        if 50 <= last["RSI"] <= 70: score += 15
+        if last["MACD"] > last["MACD_Signal"]: score += 10
+        if last["Volume_Ratio"] >= 1.2: score += 10
+        if close > last["MA20"] > last["MA50"]: score += 15
+
+        score = min(score, 100)
+
+        support = float(last["Support20"])
+        resistance = float(last["Resistance20"])
+        atr = float(last["ATR"])
+
+        risk = max(1.25 * atr, close * 0.02)
+        stop = close - risk
+        tp1 = resistance if resistance > close else close + atr
+        tp2 = close + 2 * risk
+        tp3 = close + 3 * risk
+
+        reward = max(tp1 - close, 0)
+        rr = reward / risk if risk > 0 else 0
+
+        if score >= 80 and rr >= 2:
+            signal = "STRONG BUY"
+        elif score >= 75 and rr >= 1.5:
+            signal = "BUY"
+        elif (resistance-close)/close <= 0.025 and score >= 60:
+            signal = "WAIT FOR BREAKOUT"
+        elif score < 50:
+            signal = "SELL / AVOID"
+        else:
+            signal = "WAIT"
+
+        trend = (
+            "BULLISH" if score >= 75
+            else "NEUTRAL" if score >= 55
+            else "BEARISH"
+        )
+
+        st.success(
+            f"Data {kode.upper()}.JK berhasil diperoleh."
+        )
+
+        st.caption(
+            f"Data terakhir: {df.index[-1].strftime('%d-%m-%Y')}"
+        )
+
+        c1,c2,c3,c4 = st.columns(4)
+
+        with c1:
+            st.metric(
+                "Harga Terakhir",
+                rupiah(close)
+            )
+
+        with c2:
+            st.metric(
+                "Technical Score",
+                f"{score}/100"
+            )
+
+        with c3:
+            st.metric(
+                "Trend",
+                trend
+            )
+
+        with c4:
+            st.metric(
+                "Signal",
+                signal
+            )
+
+        st.divider()
+
+        st.subheader("🎯 Support & Resistance")
+
+        s1,s2,s3,s4 = st.columns(4)
+
+        with s1:
+            st.metric(
+                "Support",
+                rupiah(support)
+            )
+
+        with s2:
+            st.metric(
+                "Harga",
+                rupiah(close)
+            )
+
+        with s3:
+            st.metric(
+                "Resistance",
+                rupiah(resistance)
+            )
+
+        with s4:
+            st.metric(
+                "Jarak Resistance",
+                f"{(resistance-close)/close*100:.2f}%"
+            )
+
+        st.subheader("📐 Risk / Reward")
+
+        r1,r2,r3 = st.columns(3)
+
+        with r1:
+            st.metric("Risk", rupiah(risk))
+
+        with r2:
+            st.metric(
+                "Potential Reward TP1",
+                rupiah(reward)
+            )
+
+        with r3:
+            st.metric(
+                "R:R",
+                f"1 : {rr:.2f}"
+            )
+
+        st.subheader("🎯 Trading Plan")
+
+        p1,p2,p3 = st.columns(3)
+
+        with p1:
+            buy_low = max(
+                support,
+                close - 0.75 * atr
+            )
+            buy_high = close
+
+            st.info(
+                f"### 🟢 BUY ZONE\n\n"
+                f"**{rupiah(buy_low)}**\n\n"
+                f"sampai\n\n"
+                f"**{rupiah(buy_high)}**"
+            )
+
+        with p2:
+            st.error(
+                f"### 🛑 STOP LOSS\n\n"
+                f"**{rupiah(stop)}**"
+            )
+
+        with p3:
+            st.success(
+                f"### 🎯 TARGET\n\n"
+                f"TP1 : **{rupiah(tp1)}**\n\n"
+                f"TP2 : **{rupiah(tp2)}**\n\n"
+                f"TP3 : **{rupiah(tp3)}**"
+            )
+
+        st.divider()
+
+        st.subheader(
+            "🕯️ Candlestick + MA + Bollinger Bands"
+        )
+
+        chart = df.dropna(
+            subset=["MA20","MA50","MA200"]
+        ).tail(180)
+
+        fig = go.Figure()
+
+        fig.add_trace(
+            go.Candlestick(
+                x=chart.index,
+                open=chart["Open"],
+                high=chart["High"],
+                low=chart["Low"],
+                close=chart["Close"],
+                name="Price"
+            )
+        )
+
+        for col,name in [
+            ("MA20","MA20"),
+            ("MA50","MA50"),
+            ("MA200","MA200"),
+            ("BB_Upper","BB Upper"),
+            ("BB_Lower","BB Lower")
+        ]:
+            fig.add_trace(
+                go.Scatter(
+                    x=chart.index,
+                    y=chart[col],
+                    mode="lines",
+                    name=name
+                )
+            )
+
+        fig.add_hline(
+            y=support,
+            annotation_text="Support"
+        )
+
+        fig.add_hline(
+            y=resistance,
+            annotation_text="Resistance"
+        )
+
+        fig.update_layout(
+            height=650,
+            xaxis_rangeslider_visible=False,
+            hovermode="x unified"
+        )
+
+        st.plotly_chart(
+            fig,
+            width="stretch"
+        )
+
+        st.subheader("📊 Technical Indicators")
+
+        i1,i2,i3,i4 = st.columns(4)
+
+        with i1:
+            st.metric(
+                "RSI 14",
+                f"{last['RSI']:.2f}"
+            )
+
+        with i2:
+            st.metric(
+                "MACD",
+                f"{last['MACD']:.2f}"
+            )
+
+        with i3:
+            st.metric(
+                "Volume Ratio",
+                f"{last['Volume_Ratio']:.2f}x"
+            )
+
+        with i4:
+            st.metric(
+                "ATR 14",
+                rupiah(last["ATR"])
+            )
+
+        st.subheader(
+            "📋 Data Teknikal Terakhir"
+        )
+
+        st.dataframe(
+            df[
+                [
+                    "Close","MA20","MA50","MA200",
+                    "RSI","MACD","MACD_Signal",
+                    "ATR","Volume_Ratio"
+                ]
+            ].tail(10),
+            width="stretch"
+        )
+
+        st.caption(
+            "Data harga berasal dari Yahoo Finance melalui yfinance, "
+            "bukan feed tick-by-tick resmi BEI. Universe emiten berasal "
+            "dari metadata saham IDX yang diperbarui berkala. "
+            "Signal adalah alat bantu analisis, bukan jaminan keuntungan."
+        )
