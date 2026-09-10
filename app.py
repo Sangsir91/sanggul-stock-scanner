@@ -370,23 +370,90 @@ def fast_analysis(df):
     )
 
     # ---------------------------
+    # TRADE READINESS = 100
+    # Answers: "How ready is this setup to trade now?"
+    # ---------------------------
+    readiness = 0.0
+    readiness += min(25.0, trend_score / 30.0 * 25.0)
+
+    setup_readiness = {
+        "BREAKOUT": 25,
+        "PULLBACK": 24,
+        "NEAR BREAKOUT": 20,
+        "TREND CONTINUATION": 17,
+        "WATCH": 8,
+        "NO SETUP": 2,
+    }[setup]
+    readiness += setup_readiness
+
+    if rr >= 3:
+        readiness += 20
+    elif rr >= 2.5:
+        readiness += 18
+    elif rr >= 2:
+        readiness += 16
+    elif rr >= 1.5:
+        readiness += 12
+    elif rr >= 1:
+        readiness += 6
+
+    # Momentum readiness favors healthy RSI rather than simply high RSI.
+    if 50 <= rsiv <= 68:
+        momentum_readiness = 15
+    elif 45 <= rsiv < 50 or 68 < rsiv <= 72:
+        momentum_readiness = 10
+    elif rsiv > 72:
+        momentum_readiness = 4
+    else:
+        momentum_readiness = 3
+    if macdv > macds:
+        momentum_readiness += 0  # already reflected in momentum score
+    readiness += momentum_readiness
+
+    volume_readiness = 10 if vr >= 1.5 else 8 if vr >= 1.2 else 5 if vr >= 1.0 else 2
+    readiness += volume_readiness
+
+    # Timing quality: reward proximity to a logical entry area.
+    if setup == "PULLBACK":
+        timing = 5 if min(distance_ma20, distance_ma50) <= 0.02 else 3
+    elif setup in ("BREAKOUT", "NEAR BREAKOUT"):
+        timing = 5 if distance_res <= 0.03 else 3
+    elif setup == "TREND CONTINUATION":
+        timing = 4 if distance_res > 0.03 else 2
+    else:
+        timing = 1
+    readiness += timing
+    trade_readiness = round(min(100.0, readiness), 1)
+
+    if trade_readiness >= 85:
+        entry_quality = "EXCELLENT"
+    elif trade_readiness >= 75:
+        entry_quality = "GOOD"
+    elif trade_readiness >= 65:
+        entry_quality = "FAIR"
+    elif trade_readiness >= 50:
+        entry_quality = "WAIT"
+    else:
+        entry_quality = "POOR"
+
+    # ---------------------------
     # DECISION ENGINE
     # ---------------------------
-    if technical_score >= 78 and rr >= 2.0 and breakout:
-        signal = "STRONG BUY — BREAKOUT"
-        decision = "BUY NOW"
-    elif technical_score >= 75 and rr >= 1.8 and pullback:
-        signal = "BUY — PULLBACK"
-        decision = "BUY ON PULLBACK"
-    elif technical_score >= 72 and rr >= 1.5 and near_breakout:
-        signal = "WATCH — NEAR BREAKOUT"
-        decision = "BUY ON BREAKOUT"
-    elif technical_score >= 75 and rr >= 1.5 and continuation:
-        signal = "BUY — TREND"
-        decision = "BUY / MANAGE RISK"
-    elif rr < 1.0 or technical_score < 45:
+    if rr < 1.0 or technical_score < 45:
         signal = "SELL / AVOID"
         decision = "AVOID"
+    elif breakout and trade_readiness >= 82 and rsiv <= 70 and rr >= 1.8:
+        signal = "STRONG BUY — BREAKOUT"
+        decision = "BUY NOW"
+    elif pullback and trade_readiness >= 75 and rr >= 1.8:
+        signal = "BUY — PULLBACK"
+        decision = "BUY ON PULLBACK"
+    elif near_breakout and trade_readiness >= 72 and rr >= 1.5:
+        signal = "WATCH — NEAR BREAKOUT"
+        decision = "BUY ON BREAKOUT"
+    elif continuation and trade_readiness >= 75 and rr >= 1.5:
+        signal = "BUY — TREND"
+        decision = "BUY / MANAGE RISK"
     else:
         signal = "WAIT"
         decision = "WAIT"
@@ -416,6 +483,8 @@ def fast_analysis(df):
         "VolumeScore": volume_score,
         "StructureScore": structure_score,
         "SetupScore": setup_score,
+        "TradeReadiness": trade_readiness,
+        "EntryQuality": entry_quality,
         "RSI": rsiv,
         "ROC20": roc,
         "Volume": vr,
@@ -714,7 +783,7 @@ if menu == "🏠 Full IDX Scanner":
         )
 
     st.info(
-        "V5 menggunakan universe saham IDX yang diperbarui berkala. "
+        "V5.2 menggunakan universe saham IDX yang diperbarui berkala. "
         "Saham yang tidak memiliki data historis cukup atau tidak tersedia "
         "di Yahoo Finance otomatis dilewati."
     )
@@ -840,6 +909,21 @@ if menu == "🏠 Full IDX Scanner":
             hide_index=True
         )
 
+        st.subheader("🎯 Top Trading Readiness")
+        readiness_cols = [
+            "Kode", "Nama", "Sektor", "Price", "TradeReadiness",
+            "EntryQuality", "Setup", "Decision", "Trend", "RSI", "R:R"
+        ]
+        ready_top = (
+            result[result["Decision"] != "AVOID"]
+            .sort_values(["TradeReadiness", "Opportunity", "R:R"], ascending=[False, False, False])
+            .head(10)
+        )
+        if ready_top.empty:
+            st.info("Belum ada setup dengan trade readiness yang layak.")
+        else:
+            st.dataframe(ready_top[readiness_cols], width="stretch", hide_index=True)
+
         # ----------------------------------------------------
         # THREE ACTION RANKINGS
         # ----------------------------------------------------
@@ -896,6 +980,8 @@ if menu == "🏠 Full IDX Scanner":
                 Average_Score=("Score", "mean"),
                 Average_Opportunity=("Opportunity", "mean"),
                 Best_Opportunity=("Opportunity", "max"),
+                Average_Readiness=("TradeReadiness", "mean"),
+                Best_Readiness=("TradeReadiness", "max"),
                 Bullish_Pct=("Trend", lambda s: (s == "BULLISH").mean() * 100),
                 Buy_Setups=("Decision", lambda s: s.isin(["BUY NOW", "BUY ON PULLBACK", "BUY ON BREAKOUT", "BUY / MANAGE RISK"]).sum()),
                 Stocks=("Kode", "count")
@@ -910,6 +996,8 @@ if menu == "🏠 Full IDX Scanner":
         sector_rank["Average_Score"] = sector_rank["Average_Score"].round(1)
         sector_rank["Average_Opportunity"] = sector_rank["Average_Opportunity"].round(1)
         sector_rank["Best_Opportunity"] = sector_rank["Best_Opportunity"].round(1)
+        sector_rank["Average_Readiness"] = sector_rank["Average_Readiness"].round(1)
+        sector_rank["Best_Readiness"] = sector_rank["Best_Readiness"].round(1)
         sector_rank["Bullish_Pct"] = sector_rank["Bullish_Pct"].round(0)
 
         st.dataframe(
@@ -933,8 +1021,8 @@ if menu == "🏠 Full IDX Scanner":
                 filtered[
                     [
                         "Kode","Nama","Sektor","Price",
-                        "Score","Opportunity","Setup","Decision","Trend","Signal",
-                        "RSI","Volume","R:R","Breakout"
+                        "Score","Opportunity","TradeReadiness","EntryQuality",
+                        "Setup","Decision","Trend","Signal","RSI","Volume","R:R","Breakout"
                     ]
                 ].head(100),
                 width="stretch",
@@ -955,7 +1043,7 @@ if menu == "🏠 Full IDX Scanner":
             plan_df["TP1"] = plan_df["TP1"].apply(lambda v: f"{v:,.0f}")
             plan_df["TP2"] = plan_df["TP2"].apply(lambda v: f"{v:,.0f}")
             st.dataframe(
-                plan_df[["Kode", "Setup", "Decision", "Buy Zone", "Stop Loss", "TP1", "TP2", "R:R"]],
+                plan_df[["Kode", "Setup", "Decision", "TradeReadiness", "EntryQuality", "Buy Zone", "Stop Loss", "TP1", "TP2", "R:R"]],
                 width="stretch", hide_index=True
             )
 
