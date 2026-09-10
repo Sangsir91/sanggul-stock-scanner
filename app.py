@@ -8,13 +8,13 @@ import time
 from io import StringIO
 
 # ============================================================
-# SANGGUL STOCK SCANNER IDX V5.3
+# SANGGUL STOCK SCANNER IDX V6.1
 # FULL IDX SCANNER
 # IHSG -> SECTOR -> ALL IDX -> TECHNICAL -> OPPORTUNITY
 # ============================================================
 
 st.set_page_config(
-    page_title="Sanggul Stock Scanner IDX V5.3",
+    page_title="Sanggul Stock Scanner IDX V6.1",
     page_icon="📈",
     layout="wide"
 )
@@ -479,7 +479,7 @@ def fast_analysis(df):
     trade_readiness = round(max(0.0, min(100.0, readiness)), 1)
 
     # ---------------------------
-    # DECISION ENGINE V5.3
+    # DECISION ENGINE V6.1
     # ---------------------------
     if rr < 1.0 or technical_score < 45:
         signal = "SELL / AVOID"
@@ -843,6 +843,8 @@ def get_fundamental(kode):
     current_ratio = _num(info, "currentRatio")
     market_cap = _num(info, "marketCap")
 
+    # Absolute valuation score is retained as a fallback. V6.1 later
+    # replaces it with a sector-relative score when enough peer data exists.
     val_parts = [
         _score_band(pe, [(12,20),(18,16),(25,12),(35,8),(1e9,3)]),
         _score_band(fpe, [(12,10),(18,8),(25,6),(35,4),(1e9,2)]),
@@ -878,6 +880,95 @@ def get_fundamental(kode):
     }
 
 
+
+def sector_group(sector):
+    """Normalize broad business groups for peer-relative valuation."""
+    s = str(sector or "").lower()
+    if any(k in s for k in ["finance", "bank", "insurance", "securities"]):
+        return "FINANCIALS"
+    if any(k in s for k in ["energy", "oil", "gas", "coal", "minerals"]):
+        return "ENERGY / MINERALS"
+    if any(k in s for k in ["technology", "software", "communications"]):
+        return "TECH / COMMUNICATIONS"
+    if any(k in s for k in ["health", "medical", "pharma"]):
+        return "HEALTHCARE"
+    if any(k in s for k in ["consumer", "retail", "food", "beverage"]):
+        return "CONSUMER"
+    if any(k in s for k in ["transport", "logistics"]):
+        return "TRANSPORT / LOGISTICS"
+    if any(k in s for k in ["utilities", "infrastructure"]):
+        return "UTILITIES / INFRA"
+    if any(k in s for k in ["industrial", "manufacturing", "producer"]):
+        return "INDUSTRIALS"
+    return "OTHER"
+
+
+def _lower_is_better_percentile(series):
+    """Return 0-100 where a lower positive valuation multiple scores higher."""
+    s = pd.to_numeric(series, errors="coerce")
+    valid = s.where((s > 0) & np.isfinite(s))
+    if valid.notna().sum() < 2:
+        return pd.Series(50.0, index=series.index)
+    # percentile rank: smallest multiple gets the highest score
+    return (1.0 - valid.rank(pct=True, method="average")) * 100.0
+
+
+def apply_sector_relative_valuation(work):
+    """
+    V6.1 valuation engine.
+    Uses peer-relative percentiles within broad sector groups.
+    Financials emphasize PE/PB; non-financials emphasize PE/EV/EBITDA/PS.
+    Falls back to 50 when a metric or peer group is insufficient.
+    """
+    w = work.copy()
+    w["SectorGroup"] = w["Sektor"].map(sector_group)
+
+    scores = pd.DataFrame(index=w.index)
+    for col in ["PE", "ForwardPE", "PB", "PS", "EV_EBITDA"]:
+        scores[col] = 50.0
+
+    for group, idx in w.groupby("SectorGroup", dropna=False).groups.items():
+        sub = w.loc[idx]
+        use_peer = len(sub) >= 3
+
+        metric_scores = pd.DataFrame(index=sub.index)
+        for col in ["PE", "ForwardPE", "PB", "PS", "EV_EBITDA"]:
+            metric_scores[col] = _lower_is_better_percentile(sub[col]) if use_peer else 50.0
+
+        # For very small peer groups, compare to all enriched names as a fallback.
+        if not use_peer:
+            for col in ["PE", "ForwardPE", "PB", "PS", "EV_EBITDA"]:
+                metric_scores[col] = _lower_is_better_percentile(w[col]).reindex(sub.index).fillna(50.0)
+
+        if group == "FINANCIALS":
+            # Banks/financials: book value and earnings multiples are more relevant.
+            val = (
+                0.40 * metric_scores["PB"] +
+                0.35 * metric_scores["PE"] +
+                0.10 * metric_scores["ForwardPE"] +
+                0.10 * metric_scores["PS"] +
+                0.05 * metric_scores["EV_EBITDA"]
+            )
+        else:
+            val = (
+                0.30 * metric_scores["PE"] +
+                0.20 * metric_scores["ForwardPE"] +
+                0.20 * metric_scores["EV_EBITDA"] +
+                0.20 * metric_scores["PS"] +
+                0.10 * metric_scores["PB"]
+            )
+
+        scores.loc[sub.index, "SectorRelativeValuation"] = val
+
+    w["ValuationScore"] = scores["SectorRelativeValuation"].fillna(w["ValuationScore"].fillna(50.0)).round(1)
+    w["ValuationMethod"] = np.where(
+        w["SectorGroup"].eq("FINANCIALS"),
+        "Peer-relative: PE/PB weighted",
+        "Peer-relative: PE/EVEBITDA/PS weighted"
+    )
+    return w
+
+
 def enrich_v6(result, limit=120, progress_callback=None):
     """Enrich top technical candidates with fundamentals; flow proxy is already available for all rows."""
     if result.empty:
@@ -909,6 +1000,9 @@ def enrich_v6(result, limit=120, progress_callback=None):
         work[field] = work["Kode"].map(lambda k: getv(k, field))
 
     work["V6Enriched"] = work["Kode"].isin(candidates) & work["FundamentalScore"].notna()
+
+    # V6.1: normalize valuation relative to sector peers among enriched candidates.
+    work = apply_sector_relative_valuation(work)
 
     # Neutral fallback for missing fundamentals, while keeping a flag so users know.
     f = work["FundamentalScore"].fillna(50.0)
@@ -948,7 +1042,7 @@ def enrich_v6(result, limit=120, progress_callback=None):
 # ============================================================
 
 st.title("📈 SANGGUL STOCK SCANNER IDX")
-st.caption("V6 — TECHNICAL → SETUP → R:R → ENTRY QUALITY → TRADE READINESS → FUNDAMENTAL → VALUATION → FLOW PROXY")
+st.caption("V6.1 — TECHNICAL → SETUP → R:R → TRADE READINESS → FUNDAMENTAL → SECTOR-RELATIVE VALUATION → FLOW PROXY → FINAL SCORE")
 
 menu = st.radio(
     "Menu",
@@ -1024,7 +1118,7 @@ if menu == "🏠 Full IDX Scanner":
         )
 
     st.info(
-        "V5.3 menggunakan universe saham IDX yang diperbarui berkala. "
+        "V6.1 menggunakan universe saham IDX yang diperbarui berkala. "
         "Saham yang tidak memiliki data historis cukup atau tidak tersedia "
         "di Yahoo Finance otomatis dilewati."
     )
@@ -1068,9 +1162,9 @@ if menu == "🏠 Full IDX Scanner":
             f"{len(result)} saham memiliki data teknikal yang cukup "
             f"untuk dianalisis."
         )
-        st.caption("V6 menambahkan Fundamental + Valuation dan Flow Proxy berbasis price-volume. Flow Proxy BUKAN data resmi foreign net buy/sell.")
+        st.caption("V6.1 menambahkan Fundamental + Valuation relatif sektor dan Flow Proxy berbasis price-volume. Flow Proxy BUKAN data resmi foreign net buy/sell.")
 
-        st.subheader("🧠 V6 Fundamental + Valuation + Flow")
+        st.subheader("🧠 V6.1 Fundamental + Valuation + Flow")
         st.info("Agar Full IDX tetap ringan di cloud, fundamental diperiksa untuk 120 kandidat teknikal/trading teratas. Flow Proxy tersedia dari data harga-volume untuk seluruh saham yang berhasil dianalisis.")
         if st.button("🧠 ENRICH TOP 120 DENGAN FUNDAMENTAL & VALUATION", width="stretch"):
             p6 = st.progress(0)
@@ -1081,19 +1175,20 @@ if menu == "🏠 Full IDX Scanner":
             with st.spinner("Mengambil fundamental & valuation kandidat teratas..."):
                 v6_result = enrich_v6(result, limit=120, progress_callback=update_v6)
             p6.progress(1.0)
-            s6.success(f"V6 enrichment selesai untuk {int(v6_result['V6Enriched'].sum())} saham.")
+            s6.success(f"V6.1 enrichment selesai untuk {int(v6_result['V6Enriched'].sum())} saham.")
             st.session_state["v6_scan"] = v6_result
 
         v6_result = st.session_state.get("v6_scan", pd.DataFrame())
         if not v6_result.empty:
-            st.subheader("⭐ Top 10 V6 Final Score")
+            st.subheader("⭐ Top 10 V6.1 Final Score")
             v6top = v6_result[v6_result["V6Enriched"]].head(10)
-            cols6 = ["Kode","Nama","Sektor","Price","FinalScore","Score","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","V6Decision"]
+            cols6 = ["Kode","Nama","Sektor","Price","FinalScore","Score","TradeReadiness","FundamentalScore","ValuationScore","ValuationMethod","FlowProxyScore","V6Decision"]
             st.dataframe(v6top[cols6], width="stretch", hide_index=True)
 
-            st.subheader("💰 Fundamental & Valuation")
+            st.subheader("💰 Fundamental & Sector-Relative Valuation")
+            st.caption("V6.1 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
             ftop = v6_result[v6_result["V6Enriched"]].head(20).copy()
-            fcols = ["Kode","Price","FundamentalScore","ValuationScore","PE","PB","PS","ROE","RevenueGrowth","EarningsGrowth","DebtEquity"]
+            fcols = ["Kode","Price","Sektor","SectorGroup","FundamentalScore","ValuationScore","ValuationMethod","PE","PB","PS","ROE","RevenueGrowth","EarningsGrowth","DebtEquity"]
             st.dataframe(ftop[fcols], width="stretch", hide_index=True)
 
             st.subheader("💧 Flow Proxy — Price & Volume")
@@ -1245,7 +1340,7 @@ if menu == "🏠 Full IDX Scanner":
         # V6 FINAL RANKING
         # ----------------------------------------------------
         if not v6_result.empty:
-            st.subheader("🏆 V6 Final Ranking — Technical + Fundamental + Valuation + Flow Proxy")
+            st.subheader("🏆 V6.1 Final Ranking — Technical + Fundamental + Sector-Relative Valuation + Flow Proxy")
             v6_filtered = v6_result.copy()
             if selected_sector != "Semua":
                 v6_filtered = v6_filtered[v6_filtered["Sektor"] == selected_sector]
@@ -1376,7 +1471,7 @@ if menu == "🏠 Full IDX Scanner":
         if not v6_result.empty:
             csv6 = v6_result.to_csv(index=False).encode("utf-8")
             st.download_button(
-                "⬇️ Download V6 Final Ranking CSV",
+                "⬇️ Download V6.1 Final Ranking CSV",
                 data=csv6,
                 file_name="sanggul_v6_final_ranking.csv",
                 mime="text/csv",
