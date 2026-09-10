@@ -2,5 +2,5 @@ streamlit>=1.50
 pandas>=2.2
 numpy>=1.26
 yfinance>=0.2.54
-openpyxl>=3.1
 plotly>=6.0
+openpyxl>=3.1
