@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
+import time
 from io import StringIO
 
 # ============================================================
@@ -174,6 +175,19 @@ def fast_analysis(df):
 
     roc20 = close.pct_change(20) * 100
 
+    # ----------------------------------------------------
+    # FLOW PROXY (NOT OFFICIAL FOREIGN NET FLOW)
+    # Uses price-volume behavior available from Yahoo Finance.
+    # ----------------------------------------------------
+    hl_range = (high - low).replace(0, np.nan)
+    mfm = ((close - low) - (high - close)) / hl_range
+    cmf20 = (mfm * volume).rolling(20).sum() / volume.rolling(20).sum()
+    obv = (np.sign(close.diff()).fillna(0) * volume).cumsum()
+    obv_change20 = obv.diff(20) / volume.rolling(20).mean()
+    up_volume20 = volume.where(close >= close.shift(1), 0).rolling(20).sum()
+    down_volume20 = volume.where(close < close.shift(1), 0).rolling(20).sum()
+    up_down_volume_ratio = up_volume20 / down_volume20.replace(0, np.nan)
+
     w = pd.DataFrame({
         "Close": close,
         "MA20": ma20,
@@ -190,6 +204,9 @@ def fast_analysis(df):
         "Support60": support60,
         "Resistance60": resistance60,
         "ROC20": roc20,
+        "CMF20": cmf20,
+        "OBVChange20": obv_change20,
+        "UpDownVolume": up_down_volume_ratio,
     }).dropna()
 
     if w.empty:
@@ -204,6 +221,9 @@ def fast_analysis(df):
     atrv = float(x["ATR"])
     vr = float(x["VolumeRatio"])
     roc = float(x["ROC20"])
+    cmf = float(x["CMF20"])
+    obv_change = float(x["OBVChange20"])
+    up_down_vol = float(x["UpDownVolume"]) if pd.notna(x["UpDownVolume"]) else 1.0
 
     # ---------------------------
     # 1) TREND SCORE = 30
@@ -520,6 +540,19 @@ def fast_analysis(df):
     tp2 = px + reward
     tp3 = px + reward * 1.50
 
+    # Flow proxy score 0-100. This is NOT official foreign net buy/sell data.
+    flow_score = 50.0
+    flow_score += 20 if cmf > 0.10 else 12 if cmf > 0.03 else 5 if cmf >= 0 else -8
+    flow_score += 15 if obv_change > 0.50 else 10 if obv_change > 0.20 else 4 if obv_change >= 0 else -8
+    flow_score += 15 if up_down_vol >= 1.30 else 10 if up_down_vol >= 1.05 else 3 if up_down_vol >= 0.90 else -8
+    flow_score = round(max(0.0, min(100.0, flow_score)), 1)
+    flow_label = (
+        "ACCUMULATION PROXY" if flow_score >= 70
+        else "POSITIVE PROXY" if flow_score >= 55
+        else "NEUTRAL PROXY" if flow_score >= 45
+        else "DISTRIBUTION PROXY"
+    )
+
     return {
         "Price": px,
         "Score": technical_score,
@@ -551,6 +584,11 @@ def fast_analysis(df):
         "TP2": tp2,
         "TP3": tp3,
         "Breakout": "YA" if breakout else "TIDAK",
+        "FlowProxyScore": flow_score,
+        "FlowProxy": flow_label,
+        "CMF20": cmf,
+        "OBVChange20": obv_change,
+        "UpDownVolume": up_down_vol,
         "Date": w.index[-1]
     }
 
@@ -757,11 +795,160 @@ def detailed_indicators(df):
 
 
 # ============================================================
+# V6 FUNDAMENTAL + VALUATION ENGINE
+# ============================================================
+
+def _num(info, key):
+    try:
+        v = info.get(key)
+        if v is None or isinstance(v, (dict, list, str)) and not isinstance(v, (int, float)):
+            return np.nan
+        v = float(v)
+        return v if np.isfinite(v) else np.nan
+    except Exception:
+        return np.nan
+
+
+def _score_band(v, bands):
+    if pd.isna(v):
+        return 50.0
+    for threshold, score in bands:
+        if v <= threshold:
+            return float(score)
+    return float(bands[-1][1])
+
+
+@st.cache_data(ttl=21600, show_spinner=False)
+def get_fundamental(kode):
+    """Retrieve Yahoo Finance fundamentals for one stock. Missing fields remain neutral."""
+    try:
+        info = yf.Ticker(yahoo_symbol(kode)).get_info()
+    except Exception:
+        return {"Available": False, "Error": "Fundamental data unavailable"}
+
+    if not info:
+        return {"Available": False, "Error": "Fundamental data unavailable"}
+
+    pe = _num(info, "trailingPE")
+    fpe = _num(info, "forwardPE")
+    pb = _num(info, "priceToBook")
+    ps = _num(info, "priceToSalesTrailing12Months")
+    ev_ebitda = _num(info, "enterpriseToEbitda")
+    roe = _num(info, "returnOnEquity") * 100 if not pd.isna(_num(info, "returnOnEquity")) else np.nan
+    margin = _num(info, "profitMargins") * 100 if not pd.isna(_num(info, "profitMargins")) else np.nan
+    op_margin = _num(info, "operatingMargins") * 100 if not pd.isna(_num(info, "operatingMargins")) else np.nan
+    revenue_growth = _num(info, "revenueGrowth") * 100 if not pd.isna(_num(info, "revenueGrowth")) else np.nan
+    earnings_growth = _num(info, "earningsGrowth") * 100 if not pd.isna(_num(info, "earningsGrowth")) else np.nan
+    debt_equity = _num(info, "debtToEquity")
+    current_ratio = _num(info, "currentRatio")
+    market_cap = _num(info, "marketCap")
+
+    val_parts = [
+        _score_band(pe, [(12,20),(18,16),(25,12),(35,8),(1e9,3)]),
+        _score_band(fpe, [(12,10),(18,8),(25,6),(35,4),(1e9,2)]),
+        _score_band(pb, [(1.5,10),(2.5,8),(4,6),(7,3),(1e9,1)]),
+        _score_band(ps, [(2.5,5),(5,4),(10,2),(1e9,1)]),
+        _score_band(ev_ebitda, [(8,5),(12,4),(18,2),(1e9,1)]),
+    ]
+    valuation_score = round(sum(val_parts), 1)
+
+    quality_parts = [
+        _score_band(roe, [(5,8),(10,14),(15,18),(25,20),(1e9,20)]),
+        _score_band(margin, [(0,5),(5,10),(10,14),(20,18),(1e9,20)]),
+        _score_band(revenue_growth, [(-10,4),(0,8),(5,12),(10,16),(1e9,20)]),
+        _score_band(earnings_growth, [(-10,4),(0,8),(5,12),(10,16),(1e9,20)]),
+        _score_band(debt_equity, [(30,20),(75,16),(150,12),(250,7),(1e9,3)]),
+    ]
+    fundamental_score = round(sum(quality_parts), 1)
+
+    # Clamp because some missing-value neutral scores can otherwise distort interpretation.
+    fundamental_score = max(0.0, min(100.0, fundamental_score))
+    valuation_score = max(0.0, min(50.0, valuation_score)) * 2
+
+    return {
+        "Available": True,
+        "FundamentalScore": fundamental_score,
+        "ValuationScore": valuation_score,
+        "PE": pe, "ForwardPE": fpe, "PB": pb, "PS": ps,
+        "EV_EBITDA": ev_ebitda, "ROE": roe, "ProfitMargin": margin,
+        "OperatingMargin": op_margin, "RevenueGrowth": revenue_growth,
+        "EarningsGrowth": earnings_growth, "DebtEquity": debt_equity,
+        "CurrentRatio": current_ratio, "MarketCap": market_cap,
+        "BusinessSector": info.get("sector", ""),
+    }
+
+
+def enrich_v6(result, limit=120, progress_callback=None):
+    """Enrich top technical candidates with fundamentals; flow proxy is already available for all rows."""
+    if result.empty:
+        return result
+
+    work = result.copy()
+    # Enrich the most promising technical/trading candidates to keep cloud runtime practical.
+    candidates = (
+        work.sort_values(["Opportunity", "TradeReadiness", "R:R"], ascending=[False, False, False])
+        .head(limit)["Kode"].tolist()
+    )
+    fund_map = {}
+    total = len(candidates)
+    for i, kode in enumerate(candidates, 1):
+        fund_map[kode] = get_fundamental(kode)
+        if progress_callback:
+            progress_callback(i / max(total, 1))
+        time.sleep(0.08)
+
+    def getv(k, field):
+        d = fund_map.get(k, {})
+        return d.get(field, np.nan)
+
+    for field in [
+        "FundamentalScore","ValuationScore","PE","ForwardPE","PB","PS",
+        "EV_EBITDA","ROE","ProfitMargin","OperatingMargin","RevenueGrowth",
+        "EarningsGrowth","DebtEquity","CurrentRatio","MarketCap","BusinessSector"
+    ]:
+        work[field] = work["Kode"].map(lambda k: getv(k, field))
+
+    work["V6Enriched"] = work["Kode"].isin(candidates) & work["FundamentalScore"].notna()
+
+    # Neutral fallback for missing fundamentals, while keeping a flag so users know.
+    f = work["FundamentalScore"].fillna(50.0)
+    v = work["ValuationScore"].fillna(50.0)
+    flow = work["FlowProxyScore"].fillna(50.0)
+
+    work["FinalScore"] = (
+        0.30 * work["Score"]
+        + 0.20 * work["TradeReadiness"]
+        + 0.25 * f
+        + 0.10 * v
+        + 0.15 * flow
+    ).round(1)
+
+    # V6 decision overlay: technical timing remains the gate; fundamentals/valuation can confirm or downgrade.
+    def v6_decision(r):
+        base = r["Decision"]
+        if base == "AVOID":
+            return "AVOID"
+        if not bool(r["V6Enriched"]):
+            return base
+        if r["FundamentalScore"] < 35 or r["ValuationScore"] < 35:
+            return "WAIT — FUNDAMENTAL CHECK" if base != "AVOID" else "AVOID"
+        if base in ["BUY NOW", "BUY ON PULLBACK", "BUY ON BREAKOUT", "BUY / MANAGE RISK"] and r["FinalScore"] >= 70:
+            return base
+        if r["FinalScore"] >= 65 and base != "AVOID":
+            return "WATCH — V6 CONFIRMATION"
+        return "WAIT"
+
+    work["V6Decision"] = work.apply(v6_decision, axis=1)
+    work["V6Status"] = np.where(work["V6Enriched"], "ENRICHED", "TECHNICAL ONLY")
+    return work.sort_values(["FinalScore", "TradeReadiness", "Opportunity"], ascending=[False, False, False]).reset_index(drop=True)
+
+
+# ============================================================
 # UI
 # ============================================================
 
 st.title("📈 SANGGUL STOCK SCANNER IDX")
-st.caption("V5.3 — FULL IDX SCANNER • TECHNICAL → SETUP → R:R → ENTRY QUALITY → TRADE READINESS")
+st.caption("V6 — TECHNICAL → SETUP → R:R → ENTRY QUALITY → TRADE READINESS → FUNDAMENTAL → VALUATION → FLOW PROXY")
 
 menu = st.radio(
     "Menu",
@@ -881,7 +1068,38 @@ if menu == "🏠 Full IDX Scanner":
             f"{len(result)} saham memiliki data teknikal yang cukup "
             f"untuk dianalisis."
         )
-        st.caption("V5.3 memisahkan saham yang menarik dari saham yang benar-benar siap dieksekusi. Entry Quality hanya EXCELLENT/GOOD jika timing entry dan R:R juga memenuhi syarat.")
+        st.caption("V6 menambahkan Fundamental + Valuation dan Flow Proxy berbasis price-volume. Flow Proxy BUKAN data resmi foreign net buy/sell.")
+
+        st.subheader("🧠 V6 Fundamental + Valuation + Flow")
+        st.info("Agar Full IDX tetap ringan di cloud, fundamental diperiksa untuk 120 kandidat teknikal/trading teratas. Flow Proxy tersedia dari data harga-volume untuk seluruh saham yang berhasil dianalisis.")
+        if st.button("🧠 ENRICH TOP 120 DENGAN FUNDAMENTAL & VALUATION", width="stretch"):
+            p6 = st.progress(0)
+            s6 = st.empty()
+            def update_v6(v):
+                p6.progress(v)
+                s6.info(f"Enrichment fundamental: {v*100:.0f}%")
+            with st.spinner("Mengambil fundamental & valuation kandidat teratas..."):
+                v6_result = enrich_v6(result, limit=120, progress_callback=update_v6)
+            p6.progress(1.0)
+            s6.success(f"V6 enrichment selesai untuk {int(v6_result['V6Enriched'].sum())} saham.")
+            st.session_state["v6_scan"] = v6_result
+
+        v6_result = st.session_state.get("v6_scan", pd.DataFrame())
+        if not v6_result.empty:
+            st.subheader("⭐ Top 10 V6 Final Score")
+            v6top = v6_result[v6_result["V6Enriched"]].head(10)
+            cols6 = ["Kode","Nama","Sektor","Price","FinalScore","Score","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","V6Decision"]
+            st.dataframe(v6top[cols6], width="stretch", hide_index=True)
+
+            st.subheader("💰 Fundamental & Valuation")
+            ftop = v6_result[v6_result["V6Enriched"]].head(20).copy()
+            fcols = ["Kode","Price","FundamentalScore","ValuationScore","PE","PB","PS","ROE","RevenueGrowth","EarningsGrowth","DebtEquity"]
+            st.dataframe(ftop[fcols], width="stretch", hide_index=True)
+
+            st.subheader("💧 Flow Proxy — Price & Volume")
+            flowtop = v6_result.sort_values("FlowProxyScore", ascending=False).head(20)
+            flowcols = ["Kode","Price","FlowProxyScore","FlowProxy","CMF20","OBVChange20","UpDownVolume"]
+            st.dataframe(flowtop[flowcols], width="stretch", hide_index=True)
 
         st.subheader("🎛️ Filter Full IDX")
 
@@ -1024,6 +1242,30 @@ if menu == "🏠 Full IDX Scanner":
             )
 
         # ----------------------------------------------------
+        # V6 FINAL RANKING
+        # ----------------------------------------------------
+        if not v6_result.empty:
+            st.subheader("🏆 V6 Final Ranking — Technical + Fundamental + Valuation + Flow Proxy")
+            v6_filtered = v6_result.copy()
+            if selected_sector != "Semua":
+                v6_filtered = v6_filtered[v6_filtered["Sektor"] == selected_sector]
+            v6_filtered = v6_filtered[v6_filtered["Score"] >= min_score]
+            if breakout != "Semua":
+                v6_filtered = v6_filtered[v6_filtered["Breakout"] == breakout]
+            v6_filtered = v6_filtered[v6_filtered["V6Enriched"]]
+            if signal == "BUY":
+                v6_filtered = v6_filtered[v6_filtered["V6Decision"].str.contains("BUY", na=False)]
+            elif signal == "WAIT":
+                v6_filtered = v6_filtered[v6_filtered["V6Decision"].str.contains("WAIT|WATCH", na=False, regex=True)]
+            elif signal == "SELL":
+                v6_filtered = v6_filtered[v6_filtered["V6Decision"].str.contains("AVOID", na=False)]
+            v6_filtered = v6_filtered.sort_values(["FinalScore","TradeReadiness","R:R"], ascending=[False,False,False]).head(50)
+            if v6_filtered.empty:
+                st.info("Belum ada saham V6 yang memenuhi filter.")
+            else:
+                st.dataframe(v6_filtered[["Kode","Nama","Sektor","Price","FinalScore","V6Decision","Setup","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","R:R"]], width="stretch", hide_index=True)
+
+        # ----------------------------------------------------
         # SECTOR STRENGTH
         # ----------------------------------------------------
 
@@ -1130,6 +1372,16 @@ if menu == "🏠 Full IDX Scanner":
         # ----------------------------------------------------
 
         st.subheader("💾 Export Hasil Scanner")
+
+        if not v6_result.empty:
+            csv6 = v6_result.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "⬇️ Download V6 Final Ranking CSV",
+                data=csv6,
+                file_name="sanggul_v6_final_ranking.csv",
+                mime="text/csv",
+                width="stretch"
+            )
 
         csv = result.to_csv(
             index=False
