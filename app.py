@@ -7,13 +7,13 @@ import plotly.graph_objects as go
 from io import StringIO
 
 # ============================================================
-# SANGGUL STOCK SCANNER IDX V5.1
+# SANGGUL STOCK SCANNER IDX V5.3
 # FULL IDX SCANNER
 # IHSG -> SECTOR -> ALL IDX -> TECHNICAL -> OPPORTUNITY
 # ============================================================
 
 st.set_page_config(
-    page_title="Sanggul Stock Scanner IDX V5.1",
+    page_title="Sanggul Stock Scanner IDX V5.3",
     page_icon="📈",
     layout="wide"
 )
@@ -370,18 +370,52 @@ def fast_analysis(df):
     )
 
     # ---------------------------
+    # ENTRY ZONE / TIMING ENGINE
+    # ---------------------------
+    prior_resistance = float(prior_res) if pd.notna(prior_res) else resistance
+
+    if setup == "PULLBACK":
+        anchor = ma20v if distance_ma20 <= distance_ma50 else ma50v
+        entry_low = max(support, anchor - 0.50 * atrv)
+        entry_high = anchor + 0.25 * atrv
+        entry_ready = entry_low <= px <= entry_high
+        entry_status = "READY" if entry_ready else (
+            "WAIT FOR PULLBACK" if px > entry_high else "BELOW IDEAL ZONE"
+        )
+    elif setup == "BREAKOUT":
+        entry_low = max(prior_resistance, px - 0.25 * atrv)
+        entry_high = prior_resistance + 0.75 * atrv
+        entry_ready = px <= entry_high
+        entry_status = "READY" if entry_ready else "EXTENDED"
+    elif setup == "NEAR BREAKOUT":
+        entry_low = prior_resistance * 1.002
+        entry_high = prior_resistance + 0.50 * atrv
+        entry_ready = False
+        entry_status = "WAIT FOR BREAKOUT"
+    elif setup == "TREND CONTINUATION":
+        entry_low = max(support, ma20v - 0.50 * atrv)
+        entry_high = ma20v + 0.50 * atrv
+        entry_ready = entry_low <= px <= entry_high
+        entry_status = "READY" if entry_ready else "WAIT FOR BETTER ENTRY"
+    else:
+        entry_low = max(support, px - atrv)
+        entry_high = px
+        entry_ready = False
+        entry_status = "WAIT"
+
+    # ---------------------------
     # TRADE READINESS = 100
-    # Answers: "How ready is this setup to trade now?"
+    # Focuses on whether the setup is tradable NOW, not merely attractive.
     # ---------------------------
     readiness = 0.0
-    readiness += min(25.0, trend_score / 30.0 * 25.0)
+    readiness += (trend_score / 30.0) * 25.0
 
     setup_readiness = {
-        "BREAKOUT": 25,
-        "PULLBACK": 24,
-        "NEAR BREAKOUT": 20,
-        "TREND CONTINUATION": 17,
-        "WATCH": 8,
+        "BREAKOUT": 23,
+        "PULLBACK": 23,
+        "NEAR BREAKOUT": 17,
+        "TREND CONTINUATION": 16,
+        "WATCH": 7,
         "NO SETUP": 2,
     }[setup]
     readiness += setup_readiness
@@ -397,66 +431,82 @@ def fast_analysis(df):
     elif rr >= 1:
         readiness += 6
 
-    # Momentum readiness favors healthy RSI rather than simply high RSI.
     if 50 <= rsiv <= 68:
-        momentum_readiness = 15
+        readiness += 14
     elif 45 <= rsiv < 50 or 68 < rsiv <= 72:
-        momentum_readiness = 10
+        readiness += 9
     elif rsiv > 72:
-        momentum_readiness = 4
+        readiness += 2
     else:
-        momentum_readiness = 3
-    if macdv > macds:
-        momentum_readiness += 0  # already reflected in momentum score
-    readiness += momentum_readiness
+        readiness += 3
 
-    volume_readiness = 10 if vr >= 1.5 else 8 if vr >= 1.2 else 5 if vr >= 1.0 else 2
-    readiness += volume_readiness
+    readiness += 8 if vr >= 1.5 else 6 if vr >= 1.2 else 4 if vr >= 1.0 else 1
 
-    # Timing quality: reward proximity to a logical entry area.
-    if setup == "PULLBACK":
-        timing = 5 if min(distance_ma20, distance_ma50) <= 0.02 else 3
-    elif setup in ("BREAKOUT", "NEAR BREAKOUT"):
-        timing = 5 if distance_res <= 0.03 else 3
-    elif setup == "TREND CONTINUATION":
-        timing = 4 if distance_res > 0.03 else 2
+    # Timing is a decisive gate.
+    if entry_ready:
+        readiness += 7
     else:
-        timing = 1
-    readiness += timing
-    trade_readiness = round(min(100.0, readiness), 1)
+        readiness -= 4
 
-    if trade_readiness >= 85:
-        entry_quality = "EXCELLENT"
-    elif trade_readiness >= 75:
-        entry_quality = "GOOD"
-    elif trade_readiness >= 65:
-        entry_quality = "FAIR"
-    elif trade_readiness >= 50:
-        entry_quality = "WAIT"
-    else:
-        entry_quality = "POOR"
+    # Overbought or extended price reduces immediate readiness.
+    if rsiv > 70:
+        readiness -= 5
+    if setup == "BREAKOUT" and px > prior_resistance + 1.0 * atrv:
+        readiness -= 6
+        entry_status = "EXTENDED"
+        entry_ready = False
+
+    trade_readiness = round(max(0.0, min(100.0, readiness)), 1)
 
     # ---------------------------
-    # DECISION ENGINE
+    # DECISION ENGINE V5.3
     # ---------------------------
     if rr < 1.0 or technical_score < 45:
         signal = "SELL / AVOID"
         decision = "AVOID"
-    elif breakout and trade_readiness >= 82 and rsiv <= 70 and rr >= 1.8:
+        reason = "Risk/reward atau kualitas teknikal tidak memadai."
+    elif breakout and entry_ready and trade_readiness >= 78 and rsiv <= 70 and rr >= 1.8:
         signal = "STRONG BUY — BREAKOUT"
         decision = "BUY NOW"
-    elif pullback and trade_readiness >= 75 and rr >= 1.8:
+        reason = "Breakout terkonfirmasi, timing masih wajar, momentum sehat, dan R:R memadai."
+    elif pullback and entry_ready and trade_readiness >= 78 and rr >= 1.8:
         signal = "BUY — PULLBACK"
         decision = "BUY ON PULLBACK"
-    elif near_breakout and trade_readiness >= 72 and rr >= 1.5:
-        signal = "WATCH — NEAR BREAKOUT"
+        reason = "Harga berada di zona pullback yang logis dengan trend bullish dan R:R memadai."
+    elif pullback and not entry_ready and px > entry_high:
+        signal = "WAIT — PULLBACK"
+        decision = "WAIT FOR PULLBACK"
+        reason = "Trend bullish, tetapi harga masih di atas zona entry pullback."
+    elif near_breakout and rr >= 1.5:
+        signal = "WAIT — BREAKOUT"
         decision = "BUY ON BREAKOUT"
-    elif continuation and trade_readiness >= 75 and rr >= 1.5:
+        reason = "Harga dekat resistance; tunggu breakout dan konfirmasi volume."
+    elif continuation and entry_ready and trade_readiness >= 75 and rr >= 1.5:
         signal = "BUY — TREND"
         decision = "BUY / MANAGE RISK"
+        reason = "Trend continuation dengan timing entry yang masih berada di zona wajar."
+    elif continuation:
+        signal = "WAIT — BETTER ENTRY"
+        decision = "WAIT"
+        reason = "Trend positif tetapi harga belum berada di zona entry yang optimal."
     else:
         signal = "WAIT"
         decision = "WAIT"
+        reason = "Setup belum memenuhi seluruh syarat entry."
+
+    # Entry quality now depends on actual entry timing and decision.
+    if decision in ("BUY NOW", "BUY ON PULLBACK", "BUY / MANAGE RISK") and entry_ready and rr >= 2.0:
+        entry_quality = "EXCELLENT"
+    elif decision in ("BUY NOW", "BUY ON PULLBACK", "BUY / MANAGE RISK") and entry_ready and rr >= 1.5:
+        entry_quality = "GOOD"
+    elif decision == "BUY ON BREAKOUT":
+        entry_quality = "WAIT FOR BREAKOUT"
+    elif decision in ("WAIT FOR PULLBACK", "WAIT"):
+        entry_quality = "WAIT"
+    elif decision == "AVOID":
+        entry_quality = "POOR"
+    else:
+        entry_quality = "FAIR"
 
     if trend_score >= 24:
         trend = "BULLISH"
@@ -485,6 +535,10 @@ def fast_analysis(df):
         "SetupScore": setup_score,
         "TradeReadiness": trade_readiness,
         "EntryQuality": entry_quality,
+        "EntryStatus": entry_status,
+        "EntryLow": float(entry_low),
+        "EntryHigh": float(entry_high),
+        "DecisionReason": reason,
         "RSI": rsiv,
         "ROC20": roc,
         "Volume": vr,
@@ -707,7 +761,7 @@ def detailed_indicators(df):
 # ============================================================
 
 st.title("📈 SANGGUL STOCK SCANNER IDX")
-st.caption("V5 — FULL IDX SCANNER • IHSG → SECTOR → ALL IDX → OPPORTUNITY")
+st.caption("V5.3 — FULL IDX SCANNER • TECHNICAL → SETUP → R:R → ENTRY QUALITY → TRADE READINESS")
 
 menu = st.radio(
     "Menu",
@@ -783,7 +837,7 @@ if menu == "🏠 Full IDX Scanner":
         )
 
     st.info(
-        "V5.2 menggunakan universe saham IDX yang diperbarui berkala. "
+        "V5.3 menggunakan universe saham IDX yang diperbarui berkala. "
         "Saham yang tidak memiliki data historis cukup atau tidak tersedia "
         "di Yahoo Finance otomatis dilewati."
     )
@@ -827,6 +881,7 @@ if menu == "🏠 Full IDX Scanner":
             f"{len(result)} saham memiliki data teknikal yang cukup "
             f"untuk dianalisis."
         )
+        st.caption("V5.3 memisahkan saham yang menarik dari saham yang benar-benar siap dieksekusi. Entry Quality hanya EXCELLENT/GOOD jika timing entry dan R:R juga memenuhi syarat.")
 
         st.subheader("🎛️ Filter Full IDX")
 
@@ -901,7 +956,7 @@ if menu == "🏠 Full IDX Scanner":
         top10 = result.head(10)
         top_cols = [
             "Kode", "Nama", "Sektor", "Price", "Score", "Opportunity",
-            "Setup", "Decision", "Trend", "RSI", "R:R", "Breakout"
+            "Setup", "Decision", "Trend", "RSI", "R:R", "Breakout", "EntryStatus"
         ]
         st.dataframe(
             top10[top_cols],
@@ -912,10 +967,10 @@ if menu == "🏠 Full IDX Scanner":
         st.subheader("🎯 Top Trading Readiness")
         readiness_cols = [
             "Kode", "Nama", "Sektor", "Price", "TradeReadiness",
-            "EntryQuality", "Setup", "Decision", "Trend", "RSI", "R:R"
+            "EntryQuality", "EntryStatus", "Setup", "Decision", "Trend", "RSI", "R:R"
         ]
         ready_top = (
-            result[result["Decision"] != "AVOID"]
+            result[(result["Decision"] != "AVOID") & (result["TradeReadiness"] >= 60)]
             .sort_values(["TradeReadiness", "Opportunity", "R:R"], ascending=[False, False, False])
             .head(10)
         )
@@ -984,6 +1039,7 @@ if menu == "🏠 Full IDX Scanner":
                 Best_Readiness=("TradeReadiness", "max"),
                 Bullish_Pct=("Trend", lambda s: (s == "BULLISH").mean() * 100),
                 Buy_Setups=("Decision", lambda s: s.isin(["BUY NOW", "BUY ON PULLBACK", "BUY ON BREAKOUT", "BUY / MANAGE RISK"]).sum()),
+                Ready_Trades=("EntryQuality", lambda s: s.isin(["EXCELLENT", "GOOD"]).sum()),
                 Stocks=("Kode", "count")
             )
             .reset_index()
@@ -1021,7 +1077,7 @@ if menu == "🏠 Full IDX Scanner":
                 filtered[
                     [
                         "Kode","Nama","Sektor","Price",
-                        "Score","Opportunity","TradeReadiness","EntryQuality",
+                        "Score","Opportunity","TradeReadiness","EntryQuality","EntryStatus",
                         "Setup","Decision","Trend","Signal","RSI","Volume","R:R","Breakout"
                     ]
                 ].head(100),
@@ -1038,12 +1094,12 @@ if menu == "🏠 Full IDX Scanner":
         if plan_df.empty:
             st.info("Belum ada kandidat dengan R:R ≥ 1.5 setelah filter.")
         else:
-            plan_df["Buy Zone"] = plan_df["Price"].apply(lambda v: f"{v*0.99:,.0f}–{v*1.01:,.0f}")
+            plan_df["Buy Zone"] = plan_df.apply(lambda r: f"{r['EntryLow']:,.0f}–{r['EntryHigh']:,.0f}", axis=1)
             plan_df["Stop Loss"] = plan_df["StopLoss"].apply(lambda v: f"{v:,.0f}")
             plan_df["TP1"] = plan_df["TP1"].apply(lambda v: f"{v:,.0f}")
             plan_df["TP2"] = plan_df["TP2"].apply(lambda v: f"{v:,.0f}")
             st.dataframe(
-                plan_df[["Kode", "Setup", "Decision", "TradeReadiness", "EntryQuality", "Buy Zone", "Stop Loss", "TP1", "TP2", "R:R"]],
+                plan_df[["Kode", "Setup", "Decision", "TradeReadiness", "EntryQuality", "EntryStatus", "Buy Zone", "Stop Loss", "TP1", "TP2", "R:R"]],
                 width="stretch", hide_index=True
             )
 
