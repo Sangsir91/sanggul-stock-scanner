@@ -8,13 +8,13 @@ import time
 from io import StringIO
 
 # ============================================================
-# SANGGUL STOCK SCANNER IDX V6.1
+# SANGGUL STOCK SCANNER IDX V6.2
 # FULL IDX SCANNER
 # IHSG -> SECTOR -> ALL IDX -> TECHNICAL -> OPPORTUNITY
 # ============================================================
 
 st.set_page_config(
-    page_title="Sanggul Stock Scanner IDX V6.1",
+    page_title="Sanggul Stock Scanner IDX V6.2",
     page_icon="📈",
     layout="wide"
 )
@@ -131,8 +131,8 @@ def extract_ticker_data(batch, ticker):
 # FAST INDICATORS UNTUK FULL SCAN
 # ------------------------------------------------------------
 
-def fast_analysis(df):
-    """Fast technical engine for the full IDX scan."""
+def fast_analysis(df, focus_days=126):
+    """Fast technical engine: keep 2y history for MA200, but weight recent 3/6-month behavior."""
     if df.empty or len(df) < 210:
         return None
 
@@ -140,6 +140,14 @@ def fast_analysis(df):
     high = df["High"]
     low = df["Low"]
     volume = df["Volume"]
+
+    # Recent analysis window: MA200 still uses the full 2y history, while
+    # momentum/structure gets an explicit recent 3-6 month focus.
+    focus_days = int(max(63, min(focus_days, len(df))))
+    recent = df.tail(focus_days)
+    focus_return = float(recent["Close"].iloc[-1] / recent["Close"].iloc[0] - 1.0) * 100 if len(recent) > 1 else 0.0
+    focus_high = float(recent["High"].max())
+    focus_low = float(recent["Low"].min())
 
     ma20 = close.rolling(20).mean()
     ma50 = close.rolling(50).mean()
@@ -174,6 +182,8 @@ def fast_analysis(df):
     resistance60 = high.rolling(60).max()
 
     roc20 = close.pct_change(20) * 100
+    roc60 = close.pct_change(60) * 100
+    roc120 = close.pct_change(120) * 100
 
     # ----------------------------------------------------
     # FLOW PROXY (NOT OFFICIAL FOREIGN NET FLOW)
@@ -204,6 +214,8 @@ def fast_analysis(df):
         "Support60": support60,
         "Resistance60": resistance60,
         "ROC20": roc20,
+        "ROC60": roc60,
+        "ROC120": roc120,
         "CMF20": cmf20,
         "OBVChange20": obv_change20,
         "UpDownVolume": up_down_volume_ratio,
@@ -221,6 +233,8 @@ def fast_analysis(df):
     atrv = float(x["ATR"])
     vr = float(x["VolumeRatio"])
     roc = float(x["ROC20"])
+    roc60v = float(x["ROC60"]) if pd.notna(x["ROC60"]) else 0.0
+    roc120v = float(x["ROC120"]) if pd.notna(x["ROC120"]) else 0.0
     cmf = float(x["CMF20"])
     obv_change = float(x["OBVChange20"])
     up_down_vol = float(x["UpDownVolume"]) if pd.notna(x["UpDownVolume"]) else 1.0
@@ -252,6 +266,13 @@ def fast_analysis(df):
         momentum_score += 3
     if roc > 5:
         momentum_score += 3
+    # Recent-window momentum: reward positive 3-6 month behavior.
+    if focus_return > 10:
+        momentum_score += 2
+    elif focus_return > 0:
+        momentum_score += 1
+
+    momentum_score = min(20, momentum_score)
 
     # ---------------------------
     # 3) VOLUME SCORE = 15
@@ -294,6 +315,15 @@ def fast_analysis(df):
         structure_score += 3
     if distance_res <= 0.04:
         structure_score += 3
+    # Recent focus-window position: avoid rewarding stocks near the bottom of
+    # their recent 3-6 month range.
+    if focus_high > focus_low:
+        focus_position = (px - focus_low) / (focus_high - focus_low)
+        if focus_position >= 0.70:
+            structure_score += 1
+        elif focus_position < 0.30:
+            structure_score -= 2
+    structure_score = int(max(0, min(15, structure_score)))
     if ma20v > ma50v:
         structure_score += 0  # already represented in trend score
 
@@ -479,7 +509,7 @@ def fast_analysis(df):
     trade_readiness = round(max(0.0, min(100.0, readiness)), 1)
 
     # ---------------------------
-    # DECISION ENGINE V6.1
+    # DECISION ENGINE V6.2
     # ---------------------------
     if rr < 1.0 or technical_score < 45:
         signal = "SELL / AVOID"
@@ -574,6 +604,12 @@ def fast_analysis(df):
         "DecisionReason": reason,
         "RSI": rsiv,
         "ROC20": roc,
+        "ROC60": roc60v,
+        "ROC120": roc120v,
+        "FocusReturn": focus_return,
+        "FocusDays": focus_days,
+        "FocusHigh": focus_high,
+        "FocusLow": focus_low,
         "Volume": vr,
         "R:R": float(rr),
         "Support": support,
@@ -597,7 +633,7 @@ def fast_analysis(df):
 # FULL IDX SCANNER
 # ------------------------------------------------------------
 
-def scan_full_idx(universe, batch_size=40, progress_callback=None):
+def scan_full_idx(universe, batch_size=40, focus_days=126, progress_callback=None):
     results = []
     tickers = universe["Yahoo"].tolist()
 
@@ -611,7 +647,7 @@ def scan_full_idx(universe, batch_size=40, progress_callback=None):
 
         for ticker in batch_tickers:
             df = extract_ticker_data(batch, ticker)
-            a = fast_analysis(df)
+            a = fast_analysis(df, focus_days=focus_days)
 
             if a is None:
                 continue
@@ -843,7 +879,7 @@ def get_fundamental(kode):
     current_ratio = _num(info, "currentRatio")
     market_cap = _num(info, "marketCap")
 
-    # Absolute valuation score is retained as a fallback. V6.1 later
+    # Absolute valuation score is retained as a fallback. V6.2 later
     # replaces it with a sector-relative score when enough peer data exists.
     val_parts = [
         _score_band(pe, [(12,20),(18,16),(25,12),(35,8),(1e9,3)]),
@@ -915,7 +951,7 @@ def _lower_is_better_percentile(series):
 
 def apply_sector_relative_valuation(work):
     """
-    V6.1 valuation engine.
+    V6.2 valuation engine.
     Uses peer-relative percentiles within broad sector groups.
     Financials emphasize PE/PB; non-financials emphasize PE/EV/EBITDA/PS.
     Falls back to 50 when a metric or peer group is insufficient.
@@ -1001,7 +1037,7 @@ def enrich_v6(result, limit=120, progress_callback=None):
 
     work["V6Enriched"] = work["Kode"].isin(candidates) & work["FundamentalScore"].notna()
 
-    # V6.1: normalize valuation relative to sector peers among enriched candidates.
+    # V6.2: normalize valuation relative to sector peers among enriched candidates.
     work = apply_sector_relative_valuation(work)
 
     # Neutral fallback for missing fundamentals, while keeping a flag so users know.
@@ -1042,7 +1078,7 @@ def enrich_v6(result, limit=120, progress_callback=None):
 # ============================================================
 
 st.title("📈 SANGGUL STOCK SCANNER IDX")
-st.caption("V6.1 — TECHNICAL → SETUP → R:R → TRADE READINESS → FUNDAMENTAL → SECTOR-RELATIVE VALUATION → FLOW PROXY → FINAL SCORE")
+st.caption("V6.2 — 2Y HISTORY → 3/6M FOCUS → TECHNICAL → SETUP → R:R → TRADE READINESS → FUNDAMENTAL → SECTOR-RELATIVE VALUATION → FLOW PROXY → FINAL SCORE")
 
 menu = st.radio(
     "Menu",
@@ -1097,7 +1133,7 @@ if menu == "🏠 Full IDX Scanner":
         )
         st.stop()
 
-    u1, u2, u3 = st.columns(3)
+    u1, u2, u3, u4 = st.columns(4)
 
     with u1:
         st.metric(
@@ -1107,20 +1143,30 @@ if menu == "🏠 Full IDX Scanner":
 
     with u2:
         st.metric(
-            "Periode Scan",
-            "1 Tahun"
+            "Data Historis",
+            "2 Tahun"
         )
 
     with u3:
+        focus_choice = st.selectbox(
+            "Fokus Analisis",
+            ["3 Bulan", "6 Bulan"],
+            index=1,
+            help="MA200 tetap dihitung dari 2 tahun data; scoring momentum dan struktur diberi fokus pada periode ini."
+        )
+
+    focus_days_ui = 63 if focus_choice == "3 Bulan" else 126
+
+    with u4:
         st.metric(
             "Batch",
             "50 saham"
         )
 
     st.info(
-        "V6.1 menggunakan universe saham IDX yang diperbarui berkala. "
-        "Saham yang tidak memiliki data historis cukup atau tidak tersedia "
-        "di Yahoo Finance otomatis dilewati."
+        "V6.2 mengambil 2 tahun data historis untuk menjaga kestabilan MA200, "
+        f"sementara analisis utama berfokus pada {focus_choice.lower()}. "
+        "Saham yang tidak memiliki data historis cukup atau tidak tersedia di Yahoo Finance otomatis dilewati."
     )
 
     if st.button(
@@ -1140,7 +1186,8 @@ if menu == "🏠 Full IDX Scanner":
         with st.spinner("Scanning Full IDX..."):
             result = scan_full_idx(
                 universe,
-                batch_size=40,
+                batch_size=50,
+                focus_days=focus_days_ui,
                 progress_callback=update_progress
             )
 
@@ -1162,9 +1209,9 @@ if menu == "🏠 Full IDX Scanner":
             f"{len(result)} saham memiliki data teknikal yang cukup "
             f"untuk dianalisis."
         )
-        st.caption("V6.1 menambahkan Fundamental + Valuation relatif sektor dan Flow Proxy berbasis price-volume. Flow Proxy BUKAN data resmi foreign net buy/sell.")
+        st.caption("V6.2 menambahkan Fundamental + Valuation relatif sektor dan Flow Proxy berbasis price-volume. Flow Proxy BUKAN data resmi foreign net buy/sell.")
 
-        st.subheader("🧠 V6.1 Fundamental + Valuation + Flow")
+        st.subheader("🧠 V6.2 Fundamental + Valuation + Flow")
         st.info("Agar Full IDX tetap ringan di cloud, fundamental diperiksa untuk 120 kandidat teknikal/trading teratas. Flow Proxy tersedia dari data harga-volume untuk seluruh saham yang berhasil dianalisis.")
         if st.button("🧠 ENRICH TOP 120 DENGAN FUNDAMENTAL & VALUATION", width="stretch"):
             p6 = st.progress(0)
@@ -1175,18 +1222,18 @@ if menu == "🏠 Full IDX Scanner":
             with st.spinner("Mengambil fundamental & valuation kandidat teratas..."):
                 v6_result = enrich_v6(result, limit=120, progress_callback=update_v6)
             p6.progress(1.0)
-            s6.success(f"V6.1 enrichment selesai untuk {int(v6_result['V6Enriched'].sum())} saham.")
+            s6.success(f"V6.2 enrichment selesai untuk {int(v6_result['V6Enriched'].sum())} saham.")
             st.session_state["v6_scan"] = v6_result
 
         v6_result = st.session_state.get("v6_scan", pd.DataFrame())
         if not v6_result.empty:
-            st.subheader("⭐ Top 10 V6.1 Final Score")
+            st.subheader("⭐ Top 10 V6.2 Final Score")
             v6top = v6_result[v6_result["V6Enriched"]].head(10)
             cols6 = ["Kode","Nama","Sektor","Price","FinalScore","Score","TradeReadiness","FundamentalScore","ValuationScore","ValuationMethod","FlowProxyScore","V6Decision"]
             st.dataframe(v6top[cols6], width="stretch", hide_index=True)
 
             st.subheader("💰 Fundamental & Sector-Relative Valuation")
-            st.caption("V6.1 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
+            st.caption("V6.2 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
             ftop = v6_result[v6_result["V6Enriched"]].head(20).copy()
             fcols = ["Kode","Price","Sektor","SectorGroup","FundamentalScore","ValuationScore","ValuationMethod","PE","PB","PS","ROE","RevenueGrowth","EarningsGrowth","DebtEquity"]
             st.dataframe(ftop[fcols], width="stretch", hide_index=True)
@@ -1340,7 +1387,7 @@ if menu == "🏠 Full IDX Scanner":
         # V6 FINAL RANKING
         # ----------------------------------------------------
         if not v6_result.empty:
-            st.subheader("🏆 V6.1 Final Ranking — Technical + Fundamental + Sector-Relative Valuation + Flow Proxy")
+            st.subheader("🏆 V6.2 Final Ranking — Technical + Fundamental + Sector-Relative Valuation + Flow Proxy")
             v6_filtered = v6_result.copy()
             if selected_sector != "Semua":
                 v6_filtered = v6_filtered[v6_filtered["Sektor"] == selected_sector]
@@ -1471,7 +1518,7 @@ if menu == "🏠 Full IDX Scanner":
         if not v6_result.empty:
             csv6 = v6_result.to_csv(index=False).encode("utf-8")
             st.download_button(
-                "⬇️ Download V6.1 Final Ranking CSV",
+                "⬇️ Download V6.2 Final Ranking CSV",
                 data=csv6,
                 file_name="sanggul_v6_final_ranking.csv",
                 mime="text/csv",
