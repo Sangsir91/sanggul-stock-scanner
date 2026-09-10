@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -6,13 +7,13 @@ import plotly.graph_objects as go
 from io import StringIO
 
 # ============================================================
-# SANGGUL STOCK SCANNER IDX V5
+# SANGGUL STOCK SCANNER IDX V5.1
 # FULL IDX SCANNER
 # IHSG -> SECTOR -> ALL IDX -> TECHNICAL -> OPPORTUNITY
 # ============================================================
 
 st.set_page_config(
-    page_title="Sanggul Stock Scanner IDX V5",
+    page_title="Sanggul Stock Scanner IDX V5.1",
     page_icon="📈",
     layout="wide"
 )
@@ -130,6 +131,7 @@ def extract_ticker_data(batch, ticker):
 # ------------------------------------------------------------
 
 def fast_analysis(df):
+    """Fast technical engine for the full IDX scan."""
     if df.empty or len(df) < 210:
         return None
 
@@ -145,7 +147,6 @@ def fast_analysis(df):
     delta = close.diff()
     gain = delta.clip(lower=0).rolling(14).mean()
     loss = (-delta.clip(upper=0)).rolling(14).mean()
-
     rs = gain / loss.replace(0, np.nan)
     rsi = 100 - (100 / (1 + rs))
 
@@ -155,20 +156,23 @@ def fast_analysis(df):
     macd_signal = macd.ewm(span=9, adjust=False).mean()
 
     prev_close = close.shift(1)
-
     tr = pd.concat([
         high - low,
         (high - prev_close).abs(),
         (low - prev_close).abs()
     ], axis=1).max(axis=1)
-
     atr = tr.rolling(14).mean()
 
     volume_ma = volume.rolling(20).mean()
     volume_ratio = volume / volume_ma
 
-    support = low.rolling(20).min()
-    resistance = high.rolling(20).max()
+    support20 = low.rolling(20).min()
+    resistance20 = high.rolling(20).max()
+    prior_resistance20 = resistance20.shift(1)
+    support60 = low.rolling(60).min()
+    resistance60 = high.rolling(60).max()
+
+    roc20 = close.pct_change(20) * 100
 
     w = pd.DataFrame({
         "Close": close,
@@ -180,8 +184,12 @@ def fast_analysis(df):
         "MACDSignal": macd_signal,
         "ATR": atr,
         "VolumeRatio": volume_ratio,
-        "Support": support,
-        "Resistance": resistance
+        "Support20": support20,
+        "Resistance20": resistance20,
+        "PriorResistance20": prior_resistance20,
+        "Support60": support60,
+        "Resistance60": resistance60,
+        "ROC20": roc20,
     }).dropna()
 
     if w.empty:
@@ -189,109 +197,236 @@ def fast_analysis(df):
 
     x = w.iloc[-1]
     px = float(x["Close"])
+    ma20v, ma50v, ma200v = map(float, [x["MA20"], x["MA50"], x["MA200"]])
+    rsiv = float(x["RSI"])
+    macdv = float(x["MACD"])
+    macds = float(x["MACDSignal"])
+    atrv = float(x["ATR"])
+    vr = float(x["VolumeRatio"])
+    roc = float(x["ROC20"])
 
-    score = 0
-    if px > x["MA20"]:
-        score += 10
-    if px > x["MA50"]:
-        score += 10
-    if px > x["MA200"]:
-        score += 15
-    if x["MA20"] > x["MA50"] > x["MA200"]:
-        score += 15
-    if 50 <= x["RSI"] <= 70:
-        score += 15
-    if x["MACD"] > x["MACDSignal"]:
-        score += 10
-    if x["VolumeRatio"] >= 1.2:
-        score += 10
-    if px > x["MA20"] and x["MA20"] > x["MA50"]:
-        score += 15
+    # ---------------------------
+    # 1) TREND SCORE = 30
+    # ---------------------------
+    trend_score = 0
+    trend_score += 6 if px > ma20v else 0
+    trend_score += 6 if px > ma50v else 0
+    trend_score += 6 if px > ma200v else 0
+    trend_score += 6 if ma20v > ma50v else 0
+    trend_score += 6 if ma50v > ma200v else 0
 
-    score = min(score, 100)
+    # ---------------------------
+    # 2) MOMENTUM SCORE = 20
+    # ---------------------------
+    momentum_score = 0
+    if 50 <= rsiv <= 68:
+        momentum_score += 8
+    elif 45 <= rsiv < 50 or 68 < rsiv <= 72:
+        momentum_score += 5
+    elif rsiv > 72:
+        momentum_score += 2
 
-    sup = float(x["Support"])
-    res = float(x["Resistance"])
+    if macdv > macds:
+        momentum_score += 6
+    if roc > 0:
+        momentum_score += 3
+    if roc > 5:
+        momentum_score += 3
 
-    # Cari resistance terdekat di atas harga dari 20/60 hari
-    res60 = float(w["Resistance"].iloc[-1])
-    sup60 = float(w["Support"].iloc[-1])
+    # ---------------------------
+    # 3) VOLUME SCORE = 15
+    # ---------------------------
+    if vr >= 1.5:
+        volume_score = 15
+    elif vr >= 1.2:
+        volume_score = 11
+    elif vr >= 1.0:
+        volume_score = 7
+    elif vr >= 0.8:
+        volume_score = 3
+    else:
+        volume_score = 0
 
-    resistances = [v for v in [res, res60] if v > px]
-    supports = [v for v in [sup, sup60] if v < px]
+    # ---------------------------
+    # PRICE STRUCTURE
+    # ---------------------------
+    res_candidates = [
+        float(x["Resistance20"]),
+        float(x["Resistance60"])
+    ]
+    resistances = [v for v in res_candidates if v > px]
+    resistance = min(resistances) if resistances else max(res_candidates)
 
-    resistance = min(resistances) if resistances else res
-    support = max(supports) if supports else sup
+    sup_candidates = [float(x["Support20"]), float(x["Support60"])]
+    supports = [v for v in sup_candidates if v < px]
+    support = max(supports) if supports else min(sup_candidates)
 
-    atr_value = float(x["ATR"])
-    risk = max(1.25 * atr_value, px * 0.02)
+    distance_res = (resistance - px) / px if px else 0
+    distance_ma20 = abs(px - ma20v) / px if px else 0
+    distance_ma50 = abs(px - ma50v) / px if px else 0
 
-    stop = px - risk
-    reward = max(resistance - px, atr_value)
+    structure_score = 0
+    if px > ma20v:
+        structure_score += 5
+    if px > support:
+        structure_score += 4
+    if distance_res <= 0.08:
+        structure_score += 3
+    if distance_res <= 0.04:
+        structure_score += 3
+    if ma20v > ma50v:
+        structure_score += 0  # already represented in trend score
 
-    rr = reward / risk if risk > 0 else 0
-
-    distance_res = (resistance - px) / px
-
-    # Breakout sederhana:
-    # close di atas resistance hari sebelumnya + volume >= 1.2x
-    prev_res = w["Resistance"].shift(1).iloc[-1]
+    # ---------------------------
+    # SETUP DETECTION = 20
+    # ---------------------------
+    prior_res = x["PriorResistance20"]
     breakout = (
-        pd.notna(prev_res)
-        and px > float(prev_res)
-        and float(x["VolumeRatio"]) >= 1.2
+        pd.notna(prior_res)
+        and px > float(prior_res) * 1.002
+        and vr >= 1.2
     )
 
-    if breakout and score >= 75:
+    bullish_alignment = px > ma20v > ma50v > ma200v
+    pullback = (
+        bullish_alignment
+        and (distance_ma20 <= 0.03 or distance_ma50 <= 0.03)
+        and 45 <= rsiv <= 65
+        and px > support
+    )
+
+    near_breakout = (
+        not breakout
+        and distance_res <= 0.03
+        and trend_score >= 24
+        and momentum_score >= 10
+    )
+
+    continuation = (
+        bullish_alignment
+        and not breakout
+        and not pullback
+        and distance_res > 0.03
+        and momentum_score >= 10
+    )
+
+    if breakout:
+        setup = "BREAKOUT"
+        setup_score = 20
+    elif pullback:
+        setup = "PULLBACK"
+        setup_score = 18
+    elif near_breakout:
+        setup = "NEAR BREAKOUT"
+        setup_score = 15
+    elif continuation:
+        setup = "TREND CONTINUATION"
+        setup_score = 12
+    elif trend_score >= 18:
+        setup = "WATCH"
+        setup_score = 7
+    else:
+        setup = "NO SETUP"
+        setup_score = 2
+
+    # ---------------------------
+    # 4) TECHNICAL SCORE = 100
+    # ---------------------------
+    technical_score = min(
+        100,
+        int(trend_score + momentum_score + volume_score + structure_score + setup_score)
+    )
+
+    # ---------------------------
+    # RISK / REWARD
+    # ---------------------------
+    risk = max(1.20 * atrv, px * 0.02)
+    stop = px - risk
+
+    # Target uses the nearest meaningful resistance; if too close, use 2 ATR.
+    raw_reward = resistance - px
+    reward = max(raw_reward, 2.0 * atrv)
+    rr = reward / risk if risk > 0 else 0
+
+    # Risk/reward component contributes 0-20 to Opportunity.
+    if rr >= 3:
+        rr_component = 20
+    elif rr >= 2.5:
+        rr_component = 18
+    elif rr >= 2:
+        rr_component = 16
+    elif rr >= 1.5:
+        rr_component = 12
+    elif rr >= 1.0:
+        rr_component = 6
+    else:
+        rr_component = 0
+
+    # Opportunity emphasizes technical quality but prevents a high score
+    # from being driven by technicals alone.
+    opportunity = round(
+        0.60 * technical_score + rr_component,
+        1
+    )
+
+    # ---------------------------
+    # DECISION ENGINE
+    # ---------------------------
+    if technical_score >= 78 and rr >= 2.0 and breakout:
         signal = "STRONG BUY — BREAKOUT"
-    elif score >= 80 and rr >= 2:
-        signal = "STRONG BUY"
-    elif score >= 75 and rr >= 1.5:
-        signal = "BUY"
-    elif distance_res <= 0.025 and score >= 60:
-        signal = "WAIT FOR BREAKOUT"
-    elif score < 50:
+        decision = "BUY NOW"
+    elif technical_score >= 75 and rr >= 1.8 and pullback:
+        signal = "BUY — PULLBACK"
+        decision = "BUY ON PULLBACK"
+    elif technical_score >= 72 and rr >= 1.5 and near_breakout:
+        signal = "WATCH — NEAR BREAKOUT"
+        decision = "BUY ON BREAKOUT"
+    elif technical_score >= 75 and rr >= 1.5 and continuation:
+        signal = "BUY — TREND"
+        decision = "BUY / MANAGE RISK"
+    elif rr < 1.0 or technical_score < 45:
         signal = "SELL / AVOID"
+        decision = "AVOID"
     else:
         signal = "WAIT"
+        decision = "WAIT"
 
-    if score >= 75:
+    if trend_score >= 24:
         trend = "BULLISH"
-    elif score >= 55:
+    elif trend_score >= 15:
         trend = "NEUTRAL"
     else:
         trend = "BEARISH"
 
-    # Opportunity Score:
-    # Technical 60% + R:R 20% + Setup 20%
-    rr_component = min(max(rr / 2.0, 0), 1) * 20
-
-    if breakout:
-        setup_component = 20
-    elif score >= 70 and distance_res > 0.025:
-        setup_component = 15
-    elif distance_res <= 0.025:
-        setup_component = 5
-    else:
-        setup_component = 10
-
-    opportunity = round(
-        0.60 * score + rr_component + setup_component,
-        1
-    )
+    # Three staged targets.
+    tp1 = px + reward * 0.50
+    tp2 = px + reward
+    tp3 = px + reward * 1.50
 
     return {
         "Price": px,
-        "Score": score,
+        "Score": technical_score,
         "Opportunity": opportunity,
         "Trend": trend,
         "Signal": signal,
-        "RSI": float(x["RSI"]),
-        "Volume": float(x["VolumeRatio"]),
+        "Decision": decision,
+        "Setup": setup,
+        "TrendScore": trend_score,
+        "MomentumScore": momentum_score,
+        "VolumeScore": volume_score,
+        "StructureScore": structure_score,
+        "SetupScore": setup_score,
+        "RSI": rsiv,
+        "ROC20": roc,
+        "Volume": vr,
         "R:R": float(rr),
         "Support": support,
         "Resistance": resistance,
         "DistanceResistance": distance_res * 100,
+        "StopLoss": stop,
+        "TP1": tp1,
+        "TP2": tp2,
+        "TP3": tp3,
         "Breakout": "YA" if breakout else "TIDAK",
         "Date": w.index[-1]
     }
@@ -695,44 +830,58 @@ if menu == "🏠 Full IDX Scanner":
         st.subheader("🏆 Top 10 Opportunity — Full IDX")
 
         top10 = result.head(10)
-
+        top_cols = [
+            "Kode", "Nama", "Sektor", "Price", "Score", "Opportunity",
+            "Setup", "Decision", "Trend", "RSI", "R:R", "Breakout"
+        ]
         st.dataframe(
-            top10[
-                [
-                    "Kode","Nama","Sektor","Price",
-                    "Score","Opportunity","Trend","Signal",
-                    "RSI","Volume","R:R","Breakout"
-                ]
-            ],
+            top10[top_cols],
             width="stretch",
             hide_index=True
         )
 
         # ----------------------------------------------------
-        # TOP BUY
+        # THREE ACTION RANKINGS
         # ----------------------------------------------------
 
-        st.subheader("🟢 Kandidat BUY")
-
-        buys = result[
-            result["Signal"].str.contains("BUY", na=False)
-        ].head(20)
-
-        if buys.empty:
-            st.warning(
-                "Belum ada kandidat BUY pada Full IDX."
-            )
+        st.subheader("🚀 Top Breakout")
+        breakout_df = result[
+            (result["Setup"] == "BREAKOUT") &
+            (result["R:R"] >= 1.5)
+        ].sort_values(["Opportunity", "R:R"], ascending=[False, False]).head(10)
+        if breakout_df.empty:
+            st.info("Belum ada setup breakout yang memenuhi R:R ≥ 1.5.")
         else:
             st.dataframe(
-                buys[
-                    [
-                        "Kode","Nama","Sektor","Price",
-                        "Score","Opportunity","Signal",
-                        "R:R","Breakout"
-                    ]
-                ],
-                width="stretch",
-                hide_index=True
+                breakout_df[["Kode", "Nama", "Sektor", "Price", "Score", "Opportunity", "R:R", "Decision"]],
+                width="stretch", hide_index=True
+            )
+
+        st.subheader("🔄 Top Pullback")
+        pullback_df = result[
+            (result["Setup"] == "PULLBACK") &
+            (result["R:R"] >= 1.5)
+        ].sort_values(["Opportunity", "R:R"], ascending=[False, False]).head(10)
+        if pullback_df.empty:
+            st.info("Belum ada setup pullback yang memenuhi R:R ≥ 1.5.")
+        else:
+            st.dataframe(
+                pullback_df[["Kode", "Nama", "Sektor", "Price", "Score", "Opportunity", "RSI", "R:R", "Decision"]],
+                width="stretch", hide_index=True
+            )
+
+        st.subheader("🟢 Kandidat BUY")
+        buys = result[
+            result["Decision"].isin(["BUY NOW", "BUY ON PULLBACK", "BUY ON BREAKOUT", "BUY / MANAGE RISK"])
+            & (result["R:R"] >= 1.5)
+        ].sort_values(["Opportunity", "R:R"], ascending=[False, False]).head(20)
+
+        if buys.empty:
+            st.warning("Belum ada kandidat BUY dengan R:R ≥ 1.5 pada Full IDX.")
+        else:
+            st.dataframe(
+                buys[["Kode", "Nama", "Sektor", "Price", "Score", "Opportunity", "Setup", "Decision", "R:R"]],
+                width="stretch", hide_index=True
             )
 
         # ----------------------------------------------------
@@ -744,20 +893,27 @@ if menu == "🏠 Full IDX Scanner":
         sector_rank = (
             result.groupby("Sektor")
             .agg(
-                Average_Score=("Score","mean"),
-                Average_Opportunity=("Opportunity","mean"),
-                Best_Opportunity=("Opportunity","max"),
-                Stocks=("Kode","count")
+                Average_Score=("Score", "mean"),
+                Average_Opportunity=("Opportunity", "mean"),
+                Best_Opportunity=("Opportunity", "max"),
+                Bullish_Pct=("Trend", lambda s: (s == "BULLISH").mean() * 100),
+                Buy_Setups=("Decision", lambda s: s.isin(["BUY NOW", "BUY ON PULLBACK", "BUY ON BREAKOUT", "BUY / MANAGE RISK"]).sum()),
+                Stocks=("Kode", "count")
             )
             .reset_index()
             .sort_values(
-                ["Average_Opportunity","Average_Score"],
-                ascending=[False,False]
+                ["Average_Opportunity", "Bullish_Pct", "Best_Opportunity"],
+                ascending=[False, False, False]
             )
         )
 
+        sector_rank["Average_Score"] = sector_rank["Average_Score"].round(1)
+        sector_rank["Average_Opportunity"] = sector_rank["Average_Opportunity"].round(1)
+        sector_rank["Best_Opportunity"] = sector_rank["Best_Opportunity"].round(1)
+        sector_rank["Bullish_Pct"] = sector_rank["Bullish_Pct"].round(0)
+
         st.dataframe(
-            sector_rank.head(10),
+            sector_rank.head(15),
             width="stretch",
             hide_index=True
         )
@@ -777,12 +933,30 @@ if menu == "🏠 Full IDX Scanner":
                 filtered[
                     [
                         "Kode","Nama","Sektor","Price",
-                        "Score","Opportunity","Trend","Signal",
+                        "Score","Opportunity","Setup","Decision","Trend","Signal",
                         "RSI","Volume","R:R","Breakout"
                     ]
                 ].head(100),
                 width="stretch",
                 hide_index=True
+            )
+
+        # ----------------------------------------------------
+        # QUICK TRADING PLAN
+        # ----------------------------------------------------
+
+        st.subheader("🎯 Trading Plan — Kandidat Terpilih")
+        plan_df = filtered[filtered["R:R"] >= 1.5].head(10).copy()
+        if plan_df.empty:
+            st.info("Belum ada kandidat dengan R:R ≥ 1.5 setelah filter.")
+        else:
+            plan_df["Buy Zone"] = plan_df["Price"].apply(lambda v: f"{v*0.99:,.0f}–{v*1.01:,.0f}")
+            plan_df["Stop Loss"] = plan_df["StopLoss"].apply(lambda v: f"{v:,.0f}")
+            plan_df["TP1"] = plan_df["TP1"].apply(lambda v: f"{v:,.0f}")
+            plan_df["TP2"] = plan_df["TP2"].apply(lambda v: f"{v:,.0f}")
+            st.dataframe(
+                plan_df[["Kode", "Setup", "Decision", "Buy Zone", "Stop Loss", "TP1", "TP2", "R:R"]],
+                width="stretch", hide_index=True
             )
 
         # ----------------------------------------------------
