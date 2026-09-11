@@ -198,7 +198,7 @@ def fast_analysis(df, focus_days=126):
     down_volume20 = volume.where(close < close.shift(1), 0).rolling(20).sum()
     up_down_volume_ratio = up_volume20 / down_volume20.replace(0, np.nan)
 
-    # V6.9 Flow Intelligence: multi-horizon price-volume pressure proxy.
+    # V6.9.4 Flow Intelligence: multi-horizon price-volume pressure proxy.
     # This is NOT official BEI foreign net buy/sell data. It is derived from
     # daily OHLCV available from Yahoo Finance and is explicitly labeled proxy.
     def flow_components(n):
@@ -1015,7 +1015,13 @@ def _lower_is_better_percentile(series, max_reasonable=None):
         valid = valid.where(valid <= max_reasonable)
     if valid.notna().sum() < 2:
         return pd.Series(50.0, index=series.index)
-    return (1.0 - valid.rank(pct=True, method="average")) * 100.0
+    # Empirical percentile with midpoint ranks. Unlike rank(pct=True),
+    # the best peer does not automatically receive 100, which prevents
+    # small peer groups from creating a cluster of perfect valuation scores.
+    n = int(valid.notna().sum())
+    ranks = valid.rank(method="average", ascending=True)
+    score = ((n - ranks + 0.5) / n) * 100.0
+    return score.clip(5.0, 95.0)
 
 
 def apply_sector_relative_valuation(work):
@@ -1159,7 +1165,8 @@ def enrich_v6(result, limit=150, style="📈 Swing Trading Mingguan", progress_c
     work["V6Status"] = np.where(work["V6Enriched"], "ENRICHED", "TECHNICAL ONLY")
     work = apply_style_scores(work, style)
     work = apply_action_engine(work, style)
-    return work.sort_values(["ActionScore", "StyleScore", "FinalScore", "TradeReadiness"], ascending=[False, False, False, False]).reset_index(drop=True)
+    work = calculate_top10_readiness(work, style)
+    return work.sort_values(["Top10Readiness", "ConvictionScore", "TradeReadiness"], ascending=[False, False, False]).reset_index(drop=True)
 
 
 # ============================================================
@@ -1410,6 +1417,103 @@ def calculate_flow_intelligence(df):
     return x
 
 
+def calculate_top10_readiness(df, style):
+    """V6.9.3 Top 10 Readiness: action-oriented ranking, not raw score ranking.
+
+    Combines conviction, timing, risk/reward, flow confirmation, entry state
+    and data confidence. It is deliberately independent from ActionScore so
+    the Top 10 answers: 'which names are most ready to act on now?'
+    """
+    x = df.copy()
+    conv = _safe_num_series(x, "ConvictionScore", 50)
+    timing = _safe_num_series(x, "TimingScore", 50)
+    flowq = _safe_num_series(x, "FlowQualityScore", 50)
+    conf = _safe_num_series(x, "ConvictionConfidence", 50)
+    rrn = x.get("R:R", pd.Series(np.nan, index=x.index)).apply(rr_score)
+    entry = x.get("EntryStatus", pd.Series("WAIT", index=x.index)).astype(str)
+    entry_score = np.select(
+        [
+            entry.eq("READY"),
+            entry.eq("WAIT FOR PULLBACK"),
+            entry.eq("WAIT FOR BREAKOUT"),
+            entry.eq("WAIT FOR BETTER ENTRY"),
+            entry.eq("EXTENDED"),
+        ],
+        [100, 88, 85, 72, 35],
+        default=55
+    )
+
+    if style == "⚡ Trading Harian":
+        style_flow = _safe_num_series(x, "DayFlowScore", 50)
+    elif style == "📈 Swing Trading Mingguan":
+        style_flow = _safe_num_series(x, "SwingFlowScore", 50)
+    else:
+        style_flow = _safe_num_series(x, "InvestorFlowScore", 50)
+
+    flow_confirmation = (0.60*flowq + 0.40*style_flow).clip(5,95)
+    readiness = (
+        0.35*conv +
+        0.20*timing +
+        0.15*rrn +
+        0.15*flow_confirmation +
+        0.10*entry_score +
+        0.05*conf
+    ).clip(0,100)
+    x["Top10ReadinessRaw"] = readiness.round(1)
+
+    # V6.9.4 Risk Gate: readiness must be actionable, not merely attractive.
+    rr_value = pd.to_numeric(x.get("R:R", pd.Series(np.nan, index=x.index)), errors="coerce")
+    decision_text = x.get("ConvictionDecision", pd.Series("WAIT", index=x.index)).astype(str)
+    entry_text = x.get("EntryStatus", pd.Series("WAIT", index=x.index)).astype(str)
+    confidence_band = x.get("DataConfidenceBand", pd.Series("MODERATE", index=x.index)).astype(str)
+    gate_penalty = np.zeros(len(x), dtype=float)
+    gate_penalty += np.where(rr_value < 1.20, 12, 0)
+    gate_penalty += np.where(rr_value < 1.00, 8, 0)
+    gate_penalty += np.where(entry_text.eq("EXTENDED"), 15, 0)
+    gate_penalty += np.where(decision_text.str.contains("AVOID|LOW CONVICTION", case=False, regex=True), 20, 0)
+    gate_penalty += np.where(confidence_band.eq("LOW"), 5, 0)
+    x["ReadinessGatePenalty"] = gate_penalty.round(1)
+    x["Top10Readiness"] = (readiness - gate_penalty).clip(0, 100).round(1)
+
+    def readiness_grade(v):
+        if v >= 85: return "A — ACTION READY"
+        if v >= 78: return "B — HIGH PRIORITY"
+        if v >= 70: return "C — WATCHLIST"
+        if v >= 60: return "D — WAIT"
+        return "E — LOW PRIORITY"
+    x["Top10ReadinessGrade"] = x["Top10Readiness"].apply(readiness_grade)
+
+    def reason(r):
+        parts = []
+        if float(r.get("ConvictionScore", 50)) >= 75: parts.append("conviction")
+        if str(r.get("EntryStatus", "")) in ["READY", "WAIT FOR PULLBACK", "WAIT FOR BREAKOUT"]: parts.append("entry")
+        if float(r.get("R:R", 0) if pd.notna(r.get("R:R", np.nan)) else 0) >= 1.5: parts.append("R:R")
+        if float(r.get("FlowQualityScore", 50)) >= 62: parts.append("flow")
+        return " + ".join(parts) if parts else "belum ada konfirmasi kuat"
+    x["Top10Reason"] = x.apply(reason, axis=1)
+
+    # Eligibility is deliberately stricter than ranking. A stock can rank well
+    # but still be ineligible for an immediate top-pick recommendation.
+    x["TopPickEligible"] = (
+        (x["ConvictionScore"] >= 65) &
+        (x["TimingScore"] >= 60) &
+        (rr_value >= 1.20) &
+        (~entry_text.eq("EXTENDED")) &
+        (~decision_text.str.contains("AVOID|LOW CONVICTION", case=False, regex=True))
+    )
+    x["TopPickStatus"] = np.where(x["TopPickEligible"], "ELIGIBLE", "WATCH / WAIT")
+    x["TopPickReason"] = np.where(
+        x["TopPickEligible"],
+        "Conviction + timing + R:R memenuhi risk gate",
+        np.select(
+            [rr_value < 1.20, entry_text.eq("EXTENDED"), decision_text.str.contains("AVOID|LOW CONVICTION", case=False, regex=True)],
+            ["R:R belum memenuhi batas", "Harga terlalu extended", "Conviction/decision belum aman"],
+            default="Menunggu konfirmasi tambahan"
+        )
+    )
+    return x
+
+
 def style_board(result, style):
     w = apply_style_scores(result.copy(), style)
     if "V6Enriched" not in w.columns:
@@ -1417,7 +1521,8 @@ def style_board(result, style):
         w["FundamentalScore"] = 50.0
         w["ValuationScore"] = 50.0
     w = apply_action_engine(w, style)
-    return w.sort_values(["ActionScore", "StyleScore", "TradeReadiness"], ascending=[False, False, False]).reset_index(drop=True)
+    w = calculate_top10_readiness(w, style)
+    return w.sort_values(["Top10Readiness", "ConvictionScore", "TradeReadiness"], ascending=[False, False, False]).reset_index(drop=True)
 
 # ============================================================
 # V6.6 DATA QUALITY + OUTLIER PROTECTION + CONFIDENCE ENGINE
@@ -1598,7 +1703,7 @@ def _safe_num_series(df, name, default=50.0):
 
 
 def calculate_conviction(df, style):
-    """V6.9 Decision Intelligence.
+    """V6.9.4 Decision Intelligence.
     Separates QUALITY, TIMING and DATA CONFIDENCE. Confidence informs the
     interpretation of a score instead of heavily penalising a fundamentally
     strong setup when some optional fields are unavailable.
@@ -1960,7 +2065,7 @@ if menu == "🏠 Full IDX Scanner":
             f"{len(result)} saham memiliki data teknikal yang cukup "
             f"untuk dianalisis."
         )
-        st.caption("V6.9 memisahkan Day Trading, Swing Trading, dan Investor serta memisahkan Quality, Timing dan Data Confidence. Investor memakai fundamental, valuasi relatif sektor, Flow Proxy, serta Data Quality/Confidence. Flow Proxy BUKAN data resmi foreign net buy/sell.")
+        st.caption("V6.9.4 memisahkan Day Trading, Swing Trading, dan Investor serta memisahkan Quality, Timing dan Data Confidence. Investor memakai fundamental, valuasi relatif sektor, Flow Proxy, serta Data Quality/Confidence. Flow Proxy BUKAN data resmi foreign net buy/sell.")
 
         st.subheader("🎯 Multi-Style Action Board")
         st.info("Ranking dipisahkan untuk tiga gaya. Untuk Investor Jangka Panjang, ranking final membutuhkan enrichment fundamental & valuasi.")
@@ -2012,10 +2117,24 @@ if menu == "🏠 Full IDX Scanner":
                     v6_result[c] = np.nan
 
         if not v6_result.empty:
-            st.subheader(f"⭐ Top 10 — {style}")
-            v6top = v6_result[v6_result["V6Enriched"]].head(10)
-            cols6 = ["Kode","Nama","Sektor","Price","ConvictionScore","ConvictionGrade","ConvictionConfidence","ConvictionDecision","ActionScore","Action","StyleScore","FinalScore","Score","TradeReadiness","FundamentalScore","ValuationScore","ValuationMethod","FlowProxyScore","StyleDecision"]
+            st.subheader(f"⭐ Top 10 Readiness — {style}")
+            v6top = calculate_top10_readiness(v6_result[v6_result["V6Enriched"]].copy(), style)
+            v6top = v6top.sort_values(["Top10Readiness","ConvictionScore","TimingScore"], ascending=[False,False,False]).head(10).copy()
+            v6top["Top10Rank"] = range(1, len(v6top) + 1)
+            cols6 = ["Top10Rank","Kode","Nama","Sektor","Price","Top10Readiness","Top10ReadinessGrade","ConvictionScore","TimingScore","EntryQuality","EntryStatus","R:R","FlowQualityScore","FlowRegime","FundamentalScore","ValuationScore","ConvictionConfidence","ConvictionDecision","Top10Reason"]
             st.dataframe(safe_display_columns(v6top, cols6), width="stretch", hide_index=True)
+            st.caption("V6.9.4 Top 10 Readiness memakai Risk Gate tambahan. Ranking tidak hanya mencari saham bagus, tetapi juga menyaring R:R rendah, entry terlalu extended, conviction rendah dan confidence rendah.")
+
+            st.subheader("🏆 Top 3 Actionable Picks — Risk-Gated")
+            eligible = v6top[v6top["TopPickEligible"]].copy() if "TopPickEligible" in v6top.columns else pd.DataFrame()
+            if not eligible.empty:
+                eligible = eligible.sort_values(["Top10Readiness","ConvictionScore","R:R"], ascending=[False,False,False]).head(3).copy()
+                eligible["TopPickRank"] = range(1, len(eligible) + 1)
+                pick_cols = ["TopPickRank","Kode","Nama","Sektor","Price","Top10Readiness","Top10ReadinessGrade","ConvictionScore","TimingScore","EntryQuality","EntryStatus","R:R","FlowQualityScore","FlowRegime","ConvictionDecision","TopPickStatus","TopPickReason"]
+                st.dataframe(safe_display_columns(eligible, pick_cols), width="stretch", hide_index=True)
+                st.success("Top 3 di atas sudah melewati risk gate dasar. Tetap lakukan validasi chart, likuiditas, berita material dan kondisi pasar sebelum transaksi.")
+            else:
+                st.warning("Belum ada saham yang memenuhi seluruh Top Pick Risk Gate. Ini lebih baik daripada memaksakan rekomendasi BUY.")
 
             if style == "🏦 Investor Jangka Panjang":
                 st.subheader("🏦 Investor Intelligence — Investment Grade")
@@ -2024,9 +2143,9 @@ if menu == "🏠 Full IDX Scanner":
                 st.dataframe(safe_display_columns(invtop, invcols), width="stretch", hide_index=True)
                 st.caption("InvestorScore sudah disesuaikan dengan Data Confidence. Outlier valuasi tidak diperlakukan sebagai data valid. Flow Proxy hanya indikator price-volume, bukan foreign net buy/sell resmi.")
 
-            st.subheader("🧠 V6.9 Decision Intelligence — Quality + Timing + Confidence")
+            st.subheader("🧠 V6.9.4 Decision Intelligence — Quality + Timing + Confidence")
             convtop = v6_result[v6_result["V6Enriched"]].sort_values(["ConvictionScore","QualityScore","TimingScore"], ascending=[False,False,False]).head(20)
-            convcols = ["Kode","Nama","Sektor","Price","ConvictionScore","ConvictionGrade","QualityScore","TimingScore","EntryQuality","ConvictionConfidence","DataConfidenceBand","ConvictionDecision","Score","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","R:R","EntryStatus"]
+            convcols = ["Kode","Nama","Sektor","Price","ConvictionScore","ConvictionGrade","QualityScore","TimingScore","EntryQuality","ConvictionConfidence","DataConfidenceBand","ConvictionDecision","Top10Readiness","Top10ReadinessGrade","Score","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","R:R","EntryStatus"]
             st.dataframe(safe_display_columns(convtop, convcols), width="stretch", hide_index=True)
             st.caption("V6.8 memisahkan kualitas saham, kualitas timing entry dan confidence data. Confidence adalah indikator kelengkapan data, bukan ukuran kualitas bisnis.")
 
@@ -2041,7 +2160,7 @@ if menu == "🏠 Full IDX Scanner":
                 matrix_cols = ["Style","Kode","Price","ConvictionScore","ConvictionGrade","QualityScore","TimingScore","EntryQuality","ConvictionConfidence","ConvictionDecision"]
                 st.dataframe(safe_display_columns(matrix, matrix_cols), width="stretch", hide_index=True)
 
-            st.subheader("🌊 V6.9 Flow Intelligence — Multi-Horizon")
+            st.subheader("🌊 V6.9.4 Flow Intelligence — Multi-Horizon")
             st.info("Flow Intelligence adalah PROXY berbasis harga-volume dari data harian. Ini BUKAN data resmi foreign net buy/sell BEI. Gunakan sebagai konfirmasi, bukan sebagai bukti transaksi investor asing.")
             flow_int = calculate_flow_intelligence(v6_result[v6_result["V6Enriched"]].copy())
             flow_int = flow_int.sort_values(["FlowTrendScore","FlowConsistency"], ascending=[False,False]).head(20)
