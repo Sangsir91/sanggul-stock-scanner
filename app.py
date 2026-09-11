@@ -14,7 +14,7 @@ from io import StringIO
 # ============================================================
 
 st.set_page_config(
-    page_title="Sanggul Stock Scanner IDX V6.7.1",
+    page_title="Sanggul Stock Scanner IDX V6.9.2",
     page_icon="📈",
     layout="wide"
 )
@@ -214,11 +214,22 @@ def fast_analysis(df, focus_days=126):
     cmf60, obv60, ud60 = flow_components(60)
 
     def proxy_score(cmf_n, obv_n, ud_n):
-        score = 50.0
-        score += np.select([cmf_n > 0.12, cmf_n > 0.05, cmf_n >= 0, cmf_n >= -0.05], [22, 14, 5, -6], default=-14)
-        score += np.select([obv_n > 0.60, obv_n > 0.20, obv_n >= 0, obv_n >= -0.20], [18, 12, 5, -6], default=-12)
-        score += np.select([ud_n > 1.40, ud_n > 1.10, ud_n >= 0.90], [10, 6, 2], default=-8)
-        return pd.Series(score, index=cmf_n.index).clip(0,100)
+        # V6.9.1 calibration: continuous transforms replace the old step
+        # thresholds that caused widespread 100/100/100 saturation.
+        # Each component is centred around 50 and compressed into a useful
+        # 5..95 range; extreme values are possible but uncommon.
+        cmf = pd.to_numeric(cmf_n, errors="coerce").fillna(0.0).clip(-0.30, 0.30)
+        obv = pd.to_numeric(obv_n, errors="coerce").fillna(0.0).clip(-3.0, 3.0)
+        ud = pd.to_numeric(ud_n, errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(1.0).clip(0.20, 5.0)
+
+        cmf_component = 50.0 + 42.0 * np.tanh(cmf / 0.12)
+        obv_component = 50.0 + 32.0 * np.tanh(obv / 1.20)
+        ud_component = 50.0 + 26.0 * np.tanh(np.log(ud) / 0.55)
+
+        score = (0.45 * cmf_component +
+                 0.35 * obv_component +
+                 0.20 * ud_component)
+        return pd.Series(score, index=cmf_n.index).clip(5,95)
 
     flow5 = proxy_score(cmf5, obv5, ud5)
     flow20 = proxy_score(cmf20, obv20, ud20)
@@ -1371,6 +1382,27 @@ def calculate_flow_intelligence(df):
     x["SwingFlowScore"] = (0.25*f5 + 0.50*f20 + 0.25*f60).clip(5,95).round(1)
     x["InvestorFlowScore"] = (0.15*f5 + 0.30*f20 + 0.55*f60).clip(5,95).round(1)
 
+    # Flow quality: confirmation/divergence and relative volume influence the
+    # decision engine, but only as a modest adjustment. Flow remains a proxy.
+    alignment_bonus = np.select(
+        [
+            x["PriceFlowAlignment"].eq("CONFIRMED POSITIVE"),
+            x["PriceFlowAlignment"].eq("BULLISH DIVERGENCE"),
+            x["PriceFlowAlignment"].eq("BEARISH DIVERGENCE"),
+            x["PriceFlowAlignment"].eq("CONFIRMED NEGATIVE"),
+        ],
+        [5.0, 3.0, -4.0, -5.0],
+        default=0.0
+    )
+    volume_bonus = np.select(
+        [x["FlowRelativeVolume"] >= 1.50, x["FlowRelativeVolume"] >= 1.15,
+         x["FlowRelativeVolume"] <= 0.60, x["FlowRelativeVolume"] <= 0.80],
+        [3.0, 1.0, -3.0, -1.0],
+        default=0.0
+    )
+    x["FlowDecisionImpact"] = (0.60*alignment_bonus + 0.40*volume_bonus).round(1)
+    x["FlowQualityScore"] = (x["FlowTrendScore"] + x["FlowDecisionImpact"]).clip(5,95).round(1)
+
     # Confidence is higher when all horizons exist and volume is meaningful.
     complete = x[["FlowProxy5D","FlowProxy20D","FlowProxy60D"]].notna().all(axis=1)
     x["FlowProxyConfidence"] = np.where(complete, 85, 55)
@@ -1582,6 +1614,11 @@ def calculate_conviction(df, style):
         flow = _safe_num_series(x, "SwingFlowScore", 50)
     else:
         flow = _safe_num_series(x, "InvestorFlowScore", 50)
+    flow_quality = _safe_num_series(x, "FlowQualityScore", 50)
+    flow_impact = _safe_num_series(x, "FlowDecisionImpact", 0)
+    # Keep the flow contribution bounded: proxy flow can confirm or weaken
+    # conviction, but it should never dominate technical/fundamental evidence.
+    flow = (0.85*flow + 0.15*flow_quality).clip(5,95)
     fund = _safe_num_series(x, "FundamentalScore", 50)
     val = _safe_num_series(x, "ValuationScore", 50)
     inv_conf = _safe_num_series(x, "InvestorDataConfidence", 50)
@@ -1610,6 +1647,10 @@ def calculate_conviction(df, style):
     else:
         quality = 0.35*fund + 0.25*val + 0.15*flow + 0.15*tech + 0.10*readiness
         raw = 0.82*quality + 0.18*x["TimingScore"]
+
+    # Small final flow adjustment makes the decision engine responsive to
+    # confirmation/divergence without allowing a proxy signal to overwhelm the setup.
+    raw = (raw + flow_impact).clip(0,100)
 
     # Data confidence is a separate diagnostic. It is intentionally a soft
     # modifier (90%-100%) so incomplete optional data does not erase a strong setup.
@@ -1772,7 +1813,7 @@ def style_board(result, style):
 # ============================================================
 
 st.title("📈 SANGGUL STOCK SCANNER IDX")
-st.caption("V6.9 — FLOW INTELLIGENCE + DECISION INTELLIGENCE + MULTI-STYLE")
+st.caption("V6.9.2 — SMART FLOW + CONVICTION + DECISION INTELLIGENCE + MULTI-STYLE")
 
 menu = st.radio(
     "Menu",
@@ -2004,7 +2045,7 @@ if menu == "🏠 Full IDX Scanner":
             st.info("Flow Intelligence adalah PROXY berbasis harga-volume dari data harian. Ini BUKAN data resmi foreign net buy/sell BEI. Gunakan sebagai konfirmasi, bukan sebagai bukti transaksi investor asing.")
             flow_int = calculate_flow_intelligence(v6_result[v6_result["V6Enriched"]].copy())
             flow_int = flow_int.sort_values(["FlowTrendScore","FlowConsistency"], ascending=[False,False]).head(20)
-            flow_cols = ["Kode","Nama","Sektor","Price","Flow5DScore","Flow20DScore","Flow60DScore","FlowTrendScore","FlowAcceleration","FlowConsistency","FlowRelativeVolume","FlowRegime","FlowSignal","FlowDivergence","PriceFlowAlignment","DayFlowScore","SwingFlowScore","InvestorFlowScore"]
+            flow_cols = ["Kode","Nama","Sektor","Price","Flow5DScore","Flow20DScore","Flow60DScore","FlowTrendScore","FlowAcceleration","FlowConsistency","FlowRelativeVolume","FlowQualityScore","FlowDecisionImpact","FlowRegime","FlowSignal","FlowDivergence","PriceFlowAlignment","DayFlowScore","SwingFlowScore","InvestorFlowScore"]
             st.dataframe(safe_display_columns(flow_int, flow_cols), width="stretch", hide_index=True)
             st.caption("V6.9.1: 5D = tactical, 20D = swing, 60D = investor. Flow kini memakai transformasi kontinu agar tidak jenuh di 100, ditambah relative volume dan price-flow divergence. Tetap PROXY price-volume, bukan foreign flow resmi.")
 
