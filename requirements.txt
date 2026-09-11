@@ -3,4 +3,3 @@ pandas>=2.2
 numpy>=1.26
 yfinance>=0.2.54
 plotly>=6.0
-openpyxl>=3.1
