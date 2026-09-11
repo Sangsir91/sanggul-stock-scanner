@@ -572,9 +572,9 @@ def fast_analysis(df, focus_days=126):
 
     # Flow proxy score 0-100. This is NOT official foreign net buy/sell data.
     flow_score = 50.0
-    flow_score += 20 if cmf > 0.10 else 12 if cmf > 0.03 else 5 if cmf >= 0 else -8
-    flow_score += 15 if obv_change > 0.50 else 10 if obv_change > 0.20 else 4 if obv_change >= 0 else -8
-    flow_score += 15 if up_down_vol >= 1.30 else 10 if up_down_vol >= 1.05 else 3 if up_down_vol >= 0.90 else -8
+    flow_score += 18 if cmf > 0.10 else 11 if cmf > 0.03 else 5 if cmf >= 0 else -8
+    flow_score += 14 if obv_change > 0.50 else 9 if obv_change > 0.20 else 4 if obv_change >= 0 else -8
+    flow_score += 14 if up_down_vol >= 1.30 else 9 if up_down_vol >= 1.05 else 3 if up_down_vol >= 0.90 else -8
     flow_score = round(max(0.0, min(100.0, flow_score)), 1)
     flow_label = (
         "ACCUMULATION PROXY" if flow_score >= 70
@@ -949,13 +949,14 @@ def sector_group(sector):
     return "OTHER"
 
 
-def _lower_is_better_percentile(series):
-    """Return 0-100 where a lower positive valuation multiple scores higher."""
+def _lower_is_better_percentile(series, max_reasonable=None):
+    """Return 0-100 where lower positive multiples score higher, excluding obvious outliers."""
     s = pd.to_numeric(series, errors="coerce")
     valid = s.where((s > 0) & np.isfinite(s))
+    if max_reasonable is not None:
+        valid = valid.where(valid <= max_reasonable)
     if valid.notna().sum() < 2:
         return pd.Series(50.0, index=series.index)
-    # percentile rank: smallest multiple gets the highest score
     return (1.0 - valid.rank(pct=True, method="average")) * 100.0
 
 
@@ -979,12 +980,13 @@ def apply_sector_relative_valuation(work):
 
         metric_scores = pd.DataFrame(index=sub.index)
         for col in ["PE", "ForwardPE", "PB", "PS", "EV_EBITDA"]:
-            metric_scores[col] = _lower_is_better_percentile(sub[col]) if use_peer else 50.0
+            limits = {"PE":200, "ForwardPE":200, "PB":50, "PS":100, "EV_EBITDA":100}
+            metric_scores[col] = _lower_is_better_percentile(sub[col], limits[col]) if use_peer else 50.0
 
         # For very small peer groups, compare to all enriched names as a fallback.
         if not use_peer:
             for col in ["PE", "ForwardPE", "PB", "PS", "EV_EBITDA"]:
-                metric_scores[col] = _lower_is_better_percentile(w[col]).reindex(sub.index).fillna(50.0)
+                metric_scores[col] = _lower_is_better_percentile(w[col], limits[col]).reindex(sub.index).fillna(50.0)
 
         if group == "FINANCIALS":
             # Banks/financials: book value and earnings multiples are more relevant.
@@ -1229,7 +1231,7 @@ def style_board(result, style):
     return w.sort_values(["ActionScore", "StyleScore", "TradeReadiness"], ascending=[False, False, False]).reset_index(drop=True)
 
 # ============================================================
-# V6.5 INVESTOR INTELLIGENCE ENGINE
+# V6.6 DATA QUALITY + OUTLIER PROTECTION + CONFIDENCE ENGINE
 # ============================================================
 def _band_score(v, bands):
     if pd.isna(v):
@@ -1303,26 +1305,57 @@ def calculate_investor_metrics(w):
         0.20*x["CashFlowScore"]
     ).round(1)
 
-    x["InvestorScore"] = (
+    # V6.6: data quality/confidence. Missing or implausible fundamentals reduce confidence,
+    # rather than silently receiving a full-quality interpretation.
+    validity_rules = {
+        "ROE": lambda z: z.between(-100, 100),
+        "ROA": lambda z: z.between(-100, 100),
+        "ProfitMargin": lambda z: z.between(-100, 100),
+        "RevenueGrowth": lambda z: z.between(-1000, 1000),
+        "EarningsGrowth": lambda z: z.between(-1000, 1000),
+        "DebtEquity": lambda z: z.between(0, 2000),
+        "CurrentRatio": lambda z: z.between(0, 100),
+        "PE": lambda z: z.between(0.1, 200),
+        "PB": lambda z: z.between(0.05, 50),
+        "PS": lambda z: z.between(0.05, 100),
+        "EV_EBITDA": lambda z: z.between(0.1, 100),
+        "ForwardPE": lambda z: z.between(0.1, 200),
+    }
+    valid_cols = []
+    for name, rule in validity_rules.items():
+        if name in x.columns:
+            z = pd.to_numeric(x[name], errors="coerce")
+            valid_cols.append(rule(z).fillna(False).rename(name))
+        else:
+            valid_cols.append(pd.Series(False, index=x.index, name=name))
+    validity = pd.concat(valid_cols, axis=1)
+    x["InvestorDataCompleteness"] = (validity.mean(axis=1)*100).round(0)
+    x["InvestorDataConfidence"] = (
+        0.70*x["InvestorDataCompleteness"] +
+        0.30*np.where(validity[["PE","PB","PS","EV_EBITDA","ForwardPE"]].any(axis=1), 100, 45)
+    ).clip(0,100).round(0)
+
+    base_investor_score = (
         0.45*x["InvestorFundamentalScore"] +
         0.25*x["InvestorValuationScore"] +
         0.15*x["FlowProxyScore"].fillna(50) +
         0.15*x["TradeReadiness"].fillna(50)
-    ).clip(0,100).round(1)
+    )
+    confidence_factor = 0.65 + 0.35*(x["InvestorDataConfidence"]/100.0)
+    x["InvestorScoreRaw"] = base_investor_score.clip(0,100).round(1)
+    x["InvestorScore"] = (base_investor_score * confidence_factor).clip(0,100).round(1)
 
-    # Robust completeness check: missing fundamental columns are treated as unavailable,
-    # not as a KeyError that can stop the entire Streamlit app.
-    required_fund_cols = ["ROE","RevenueGrowth","EarningsGrowth","DebtEquity","PE","PB"]
-    completeness_frame = x.reindex(columns=required_fund_cols)
-    x["InvestorDataCompleteness"] = (
-        completeness_frame.notna().mean(axis=1)*100
-    ).round(0)
+    # Valuation confidence: if valuation multiples are missing/implausible, downgrade certainty.
+    val_valid = validity[["PE","PB","PS","EV_EBITDA","ForwardPE"]]
+    x["ValuationConfidence"] = (val_valid.mean(axis=1)*100).round(0)
+    x["FlowProxyConfidence"] = np.where(x["FlowProxyScore"].notna(), 100, 0)
 
     def grade(r):
         score=r["InvestorScore"]
         completeness=r["InvestorDataCompleteness"]
-        if completeness < 50: return "C — DATA LIMITED"
-        if score >= 85: return "A+ — HIGH QUALITY"
+        confidence = r["InvestorDataConfidence"]
+        if confidence < 50: return "C — DATA LIMITED"
+        if score >= 85 and confidence >= 80: return "A+ — HIGH QUALITY"
         if score >= 78: return "A — QUALITY"
         if score >= 70: return "B — GOOD"
         if score >= 60: return "C — SPECULATIVE"
@@ -1330,9 +1363,9 @@ def calculate_investor_metrics(w):
     x["InvestmentGrade"] = x.apply(grade, axis=1)
 
     def inv_action(r):
-        if r["InvestorDataCompleteness"] < 50:
+        if r["InvestorDataConfidence"] < 50:
             return "FUNDAMENTAL CHECK"
-        if r["InvestorScore"] >= 80 and r["InvestorValuationScore"] >= 60 and r["QualityScore"] >= 65:
+        if r["InvestorScore"] >= 80 and r["InvestorValuationScore"] >= 60 and r["QualityScore"] >= 65 and r["ValuationConfidence"] >= 40:
             return "ACCUMULATE / HOLD"
         if r["InvestorScore"] >= 70 and r["InvestorValuationScore"] >= 50:
             return "WATCH / ACCUMULATE ON WEAKNESS"
@@ -1509,7 +1542,7 @@ if menu == "🏠 Full IDX Scanner":
             f"{len(result)} saham memiliki data teknikal yang cukup "
             f"untuk dianalisis."
         )
-        st.caption("V6.5 memisahkan Day Trading, Swing Trading, dan Investor; Investor memakai Fundamental Quality, Growth, Balance Sheet, Cash Flow, dan Sector-Relative Valuation. Flow Proxy BUKAN data resmi foreign net buy/sell.")
+        st.caption("V6.6 memisahkan Day Trading, Swing Trading, dan Investor. Investor memakai fundamental, valuasi relatif sektor, Flow Proxy, serta Data Quality/Confidence. Flow Proxy BUKAN data resmi foreign net buy/sell.")
 
         st.subheader("🎯 Multi-Style Action Board")
         st.info("Ranking dipisahkan untuk tiga gaya. Untuk Investor Jangka Panjang, ranking final membutuhkan enrichment fundamental & valuasi.")
@@ -1520,8 +1553,8 @@ if menu == "🏠 Full IDX Scanner":
                 st.markdown(f"**{board_style}**")
                 st.dataframe(board[["Kode","ActionScore","Action","Setup","Trend","R:R"]], width="stretch", hide_index=True)
 
-        st.subheader("🧠 V6.5 Investor Intelligence — Fundamental + Valuation + Flow")
-        st.info("Agar Full IDX tetap ringan di cloud, fundamental diperiksa untuk 150 kandidat teknikal/trading teratas. Investor ranking memakai quality, growth, balance sheet, cash flow, sector-relative valuation, dan Flow Proxy.")
+        st.subheader("🧠 V6.6 Investor Intelligence — Quality + Valuation + Confidence")
+        st.info("Agar Full IDX tetap ringan di cloud, fundamental diperiksa untuk 150 kandidat teratas. V6.6 memvalidasi outlier, menghitung data completeness dan confidence, lalu menurunkan bobot saham yang datanya kurang dapat dipercaya.")
         if st.button("🧠 ENRICH TOP 150 — FUNDAMENTAL, VALUATION & INVESTOR QUALITY", width="stretch"):
             p6 = st.progress(0)
             s6 = st.empty()
@@ -1547,14 +1580,14 @@ if menu == "🏠 Full IDX Scanner":
             if style == "🏦 Investor Jangka Panjang":
                 st.subheader("🏦 Investor Intelligence — Investment Grade")
                 invtop = investor_board_v65(v6_result[v6_result["V6Enriched"]].copy()).head(15)
-                invcols = ["Kode","Nama","Sektor","Price","InvestorScore","InvestmentGrade","InvestorAction","QualityScore","GrowthScore","BalanceSheetScore","CashFlowScore","InvestorValuationScore","InvestorDataCompleteness"]
+                invcols = ["Kode","Nama","Sektor","Price","InvestorScore","InvestorScoreRaw","InvestmentGrade","InvestorAction","QualityScore","GrowthScore","BalanceSheetScore","CashFlowScore","InvestorValuationScore","ValuationConfidence","InvestorDataCompleteness","InvestorDataConfidence"]
                 st.dataframe(invtop[invcols], width="stretch", hide_index=True)
-                st.caption("InvestorScore memprioritaskan kualitas bisnis, pertumbuhan, neraca, cash flow, valuasi relatif sektor, Flow Proxy, dan kesiapan harga. Ini alat bantu analisis, bukan rekomendasi investasi.")
+                st.caption("InvestorScore sudah disesuaikan dengan Data Confidence. Outlier valuasi tidak diperlakukan sebagai data valid. Flow Proxy hanya indikator price-volume, bukan foreign net buy/sell resmi.")
 
             st.subheader("💰 Fundamental & Sector-Relative Valuation")
-            st.caption("V6.5 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
+            st.caption("V6.6 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
             ftop = v6_result[v6_result["V6Enriched"]].head(20).copy()
-            fcols = ["Kode","Price","Sektor","SectorGroup","FundamentalScore","ValuationScore","ValuationMethod","PE","PB","PS","ROE","RevenueGrowth","EarningsGrowth","DebtEquity"]
+            fcols = ["Kode","Price","Sektor","SectorGroup","FundamentalScore","ValuationScore","ValuationMethod","PE","PB","PS","ROE","RevenueGrowth","EarningsGrowth","DebtEquity","ValuationConfidence","InvestorDataConfidence"]
             st.dataframe(ftop[fcols], width="stretch", hide_index=True)
 
             st.subheader("💧 Flow Proxy — Price & Volume")
