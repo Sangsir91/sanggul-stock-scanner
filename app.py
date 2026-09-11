@@ -8,13 +8,13 @@ import time
 from io import StringIO
 
 # ============================================================
-# SANGGUL STOCK SCANNER IDX V6.3
+# SANGGUL STOCK SCANNER IDX V6.7
 # FULL IDX SCANNER
 # IHSG -> SECTOR -> ALL IDX -> TECHNICAL -> OPPORTUNITY
 # ============================================================
 
 st.set_page_config(
-    page_title="Sanggul Stock Scanner IDX V6.4",
+    page_title="Sanggul Stock Scanner IDX V6.7",
     page_icon="📈",
     layout="wide"
 )
@@ -1049,8 +1049,15 @@ def enrich_v6(result, limit=150, style="📈 Swing Trading Mingguan", progress_c
 
     work["V6Enriched"] = work["Kode"].isin(candidates) & work["FundamentalScore"].notna()
 
-    # V6.3: normalize valuation relative to sector peers among enriched candidates.
+    # V6.7 calibration: keep raw scores for auditability, but compress extreme 100s
+    # so a perfect-looking score is reserved for genuinely exceptional cases.
+    work["FundamentalScoreRaw"] = pd.to_numeric(work["FundamentalScore"], errors="coerce")
+    work["FundamentalScore"] = (50.0 + (work["FundamentalScoreRaw"] - 50.0) * 0.85).clip(5, 95).round(1)
+
+    # Sector-relative valuation followed by shrinkage toward neutral.
     work = apply_sector_relative_valuation(work)
+    work["ValuationScoreRaw"] = pd.to_numeric(work["ValuationScore"], errors="coerce")
+    work["ValuationScore"] = (50.0 + (work["ValuationScoreRaw"] - 50.0) * 0.75).clip(10, 95).round(1)
 
     # Neutral fallback for missing fundamentals, while keeping a flag so users know.
     f = work["FundamentalScore"].fillna(50.0)
@@ -1400,11 +1407,114 @@ def safe_display_columns(df, columns):
     return out.reindex(columns=columns)
 
 # ============================================================
+# V6.7 CONVICTION ENGINE
+# ============================================================
+def _safe_num_series(df, name, default=50.0):
+    if name in df.columns:
+        return pd.to_numeric(df[name], errors="coerce").fillna(default)
+    return pd.Series(float(default), index=df.index)
+
+
+def calculate_conviction(df, style):
+    """Final conviction score: technical + timing + fundamentals + valuation + flow.
+    Missing enrichment never becomes an artificial 100; confidence acts as a brake.
+    """
+    x = df.copy()
+    tech = _safe_num_series(x, "Score", 50)
+    readiness = _safe_num_series(x, "TradeReadiness", 50)
+    rr = x.get("R:R", pd.Series(np.nan, index=x.index)).apply(rr_score)
+    flow = _safe_num_series(x, "FlowProxyScore", 50)
+    fund = _safe_num_series(x, "FundamentalScore", 50)
+    val = _safe_num_series(x, "ValuationScore", 50)
+    confidence = _safe_num_series(x, "InvestorDataConfidence", 50)
+    val_conf = _safe_num_series(x, "ValuationConfidence", 50)
+
+    # Timing score: READY best, EXTENDED penalized.
+    entry = x.get("EntryStatus", pd.Series("WAIT", index=x.index)).astype(str)
+    timing = pd.Series(60.0, index=x.index)
+    timing += np.where(entry.eq("READY"), 25, 0)
+    timing += np.where(entry.eq("WAIT FOR PULLBACK"), 10, 0)
+    timing += np.where(entry.eq("WAIT FOR BREAKOUT"), 8, 0)
+    timing += np.where(entry.eq("WAIT FOR BETTER ENTRY"), 5, 0)
+    timing += np.where(entry.eq("EXTENDED"), -25, 0)
+    timing = timing.clip(0, 100)
+
+    # Different weights by style. Investor requires actual fundamental evidence.
+    if style == "⚡ Trading Harian":
+        raw = 0.38*tech + 0.25*readiness + 0.15*timing + 0.10*rr + 0.12*flow
+    elif style == "📈 Swing Trading Mingguan":
+        raw = 0.30*tech + 0.25*readiness + 0.18*timing + 0.17*rr + 0.10*flow
+    else:
+        raw = 0.20*tech + 0.15*readiness + 0.25*fund + 0.22*val + 0.10*flow + 0.08*timing
+
+    # Confidence brake: 65%–100% of raw score.
+    conf = (0.60*confidence + 0.40*val_conf).clip(0,100)
+    factor = 0.65 + 0.35*(conf/100.0)
+    x["ConvictionRaw"] = raw.clip(0,100).round(1)
+    x["ConvictionScore"] = (raw*factor).clip(0,100).round(1)
+    x["ConvictionConfidence"] = conf.round(0)
+
+    def grade(v):
+        if v >= 85: return "A — HIGH CONVICTION"
+        if v >= 75: return "B — STRONG"
+        if v >= 65: return "C — WATCH"
+        if v >= 55: return "D — LOW"
+        return "E — AVOID"
+    x["ConvictionGrade"] = x["ConvictionScore"].apply(grade)
+
+    def decision(r):
+        c = r["ConvictionScore"]
+        conf = r["ConvictionConfidence"]
+        entry = str(r.get("EntryStatus", "WAIT"))
+        base = str(r.get("Decision", "WAIT"))
+        if c < 55:
+            return "AVOID / LOW CONVICTION"
+        if entry == "EXTENDED" and c >= 70:
+            return "WAIT — DO NOT CHASE"
+        if style == "🏦 Investor Jangka Panjang":
+            if c >= 85 and conf >= 75:
+                return "ACCUMULATE / HOLD"
+            if c >= 75 and conf >= 60:
+                return "ACCUMULATE ON WEAKNESS"
+            return "WATCH"
+        if c >= 85 and base.startswith("BUY"):
+            return base
+        if c >= 75 and base.startswith("BUY"):
+            return base
+        if c >= 70:
+            return "WATCH FOR CONFIRMATION"
+        return "WAIT"
+
+    x["ConvictionDecision"] = x.apply(decision, axis=1)
+    return x
+
+
+# Final override: style score remains useful for ranking, ConvictionScore becomes the
+# decision-quality metric shown to the user.
+_base_apply_style_scores_v67 = apply_style_scores
+def apply_style_scores(df, style):
+    w = _base_apply_style_scores_v67(df, style)
+    w = calculate_conviction(w, style)
+    # Investor style uses conviction rather than raw fundamental/valuation scores alone.
+    if style == "🏦 Investor Jangka Panjang":
+        w["StyleScore"] = w["ConvictionScore"]
+        w["StyleDecision"] = w["ConvictionDecision"]
+    return w
+
+
+def style_board(result, style):
+    w = apply_style_scores(result.copy(), style)
+    if "V6Enriched" not in w.columns:
+        w["V6Enriched"] = False
+    w = apply_action_engine(w, style)
+    return w.sort_values(["ConvictionScore", "ActionScore", "TradeReadiness"], ascending=[False, False, False]).reset_index(drop=True)
+
+# ============================================================
 # UI
 # ============================================================
 
 st.title("📈 SANGGUL STOCK SCANNER IDX")
-st.caption("V6.5 — MULTI-STYLE + INVESTOR INTELLIGENCE")
+st.caption("V6.7 — MULTI-STYLE + CONVICTION ENGINE")
 
 menu = st.radio(
     "Menu",
@@ -1551,7 +1661,7 @@ if menu == "🏠 Full IDX Scanner":
             f"{len(result)} saham memiliki data teknikal yang cukup "
             f"untuk dianalisis."
         )
-        st.caption("V6.6 memisahkan Day Trading, Swing Trading, dan Investor. Investor memakai fundamental, valuasi relatif sektor, Flow Proxy, serta Data Quality/Confidence. Flow Proxy BUKAN data resmi foreign net buy/sell.")
+        st.caption("V6.7 memisahkan Day Trading, Swing Trading, dan Investor. Investor memakai fundamental, valuasi relatif sektor, Flow Proxy, serta Data Quality/Confidence. Flow Proxy BUKAN data resmi foreign net buy/sell.")
 
         st.subheader("🎯 Multi-Style Action Board")
         st.info("Ranking dipisahkan untuk tiga gaya. Untuk Investor Jangka Panjang, ranking final membutuhkan enrichment fundamental & valuasi.")
@@ -1562,7 +1672,7 @@ if menu == "🏠 Full IDX Scanner":
                 st.markdown(f"**{board_style}**")
                 st.dataframe(safe_display_columns(board, ["Kode","ActionScore","Action","Setup","Trend","R:R"]), width="stretch", hide_index=True)
 
-        st.subheader("🧠 V6.6 Investor Intelligence — Quality + Valuation + Confidence")
+        st.subheader("🧠 V6.7 Conviction Engine — Technical + Fundamental + Valuation + Flow")
         st.info("Agar Full IDX tetap ringan di cloud, fundamental diperiksa untuk 150 kandidat teratas. V6.6 memvalidasi outlier, menghitung data completeness dan confidence, lalu menurunkan bobot saham yang datanya kurang dapat dipercaya.")
         if st.button("🧠 ENRICH TOP 150 — FUNDAMENTAL, VALUATION & INVESTOR QUALITY", width="stretch"):
             p6 = st.progress(0)
@@ -1593,8 +1703,14 @@ if menu == "🏠 Full IDX Scanner":
                 st.dataframe(safe_display_columns(invtop, invcols), width="stretch", hide_index=True)
                 st.caption("InvestorScore sudah disesuaikan dengan Data Confidence. Outlier valuasi tidak diperlakukan sebagai data valid. Flow Proxy hanya indikator price-volume, bukan foreign net buy/sell resmi.")
 
+            st.subheader("🧠 V6.7 Conviction Ranking")
+            convtop = v6_result[v6_result["V6Enriched"]].sort_values(["ConvictionScore","ConvictionConfidence"], ascending=[False,False]).head(20)
+            convcols = ["Kode","Nama","Sektor","Price","ConvictionScore","ConvictionGrade","ConvictionConfidence","ConvictionRaw","ConvictionDecision","Score","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","R:R","EntryStatus"]
+            st.dataframe(safe_display_columns(convtop, convcols), width="stretch", hide_index=True)
+            st.caption("Conviction bukan jaminan return. Skor ini menggabungkan kualitas teknikal, timing entry, fundamental, valuasi relatif, flow proxy dan confidence data.")
+
             st.subheader("💰 Fundamental & Sector-Relative Valuation")
-            st.caption("V6.6 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
+            st.caption("V6.7 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
             ftop = v6_result[v6_result["V6Enriched"]].head(20).copy()
             fcols = ["Kode","Price","Sektor","SectorGroup","FundamentalScore","ValuationScore","ValuationMethod","PE","PB","PS","ROE","RevenueGrowth","EarningsGrowth","DebtEquity","ValuationConfidence","InvestorDataConfidence"]
             st.dataframe(safe_display_columns(ftop, fcols), width="stretch", hide_index=True)
@@ -1766,7 +1882,7 @@ if menu == "🏠 Full IDX Scanner":
             if v6_filtered.empty:
                 st.info("Belum ada saham V6 yang memenuhi filter.")
             else:
-                st.dataframe(safe_display_columns(v6_filtered, ["Kode","Nama","Sektor","Price","ActionScore","Action","StyleScore","FinalScore","StyleDecision","Setup","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","R:R"]), width="stretch", hide_index=True)
+                st.dataframe(safe_display_columns(v6_filtered, ["Kode","Nama","Sektor","Price","ActionScore","Action","ConvictionScore","ConvictionGrade","ConvictionDecision","StyleScore","FinalScore","Setup","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","R:R"]), width="stretch", hide_index=True)
 
         # ----------------------------------------------------
         # SECTOR STRENGTH
@@ -1879,9 +1995,9 @@ if menu == "🏠 Full IDX Scanner":
         if not v6_result.empty:
             csv6 = v6_result.to_csv(index=False).encode("utf-8")
             st.download_button(
-                "⬇️ Download V6.4 Final Ranking CSV",
+                "⬇️ Download V6.7 Final Ranking CSV",
                 data=csv6,
-                file_name="sanggul_v6_4_multi_style_ranking.csv",
+                file_name="sanggul_v6_7_conviction_ranking.csv",
                 mime="text/csv",
                 width="stretch"
             )
