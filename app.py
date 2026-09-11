@@ -1310,8 +1310,12 @@ def calculate_investor_metrics(w):
         0.15*x["TradeReadiness"].fillna(50)
     ).clip(0,100).round(1)
 
+    # Robust completeness check: missing fundamental columns are treated as unavailable,
+    # not as a KeyError that can stop the entire Streamlit app.
+    required_fund_cols = ["ROE","RevenueGrowth","EarningsGrowth","DebtEquity","PE","PB"]
+    completeness_frame = x.reindex(columns=required_fund_cols)
     x["InvestorDataCompleteness"] = (
-        x[["ROE","RevenueGrowth","EarningsGrowth","DebtEquity","PE","PB"]].notna().mean(axis=1)*100
+        completeness_frame.notna().mean(axis=1)*100
     ).round(0)
 
     def grade(r):
