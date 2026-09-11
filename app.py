@@ -1391,6 +1391,15 @@ def apply_style_scores(df, style):
     return w
 
 # ============================================================
+# SAFE DISPLAY HELPERS
+# ============================================================
+def safe_display_columns(df, columns):
+    """Return requested display columns without crashing when optional
+    enrichment fields are missing from a dataframe."""
+    out = df.copy()
+    return out.reindex(columns=columns)
+
+# ============================================================
 # UI
 # ============================================================
 
@@ -1551,7 +1560,7 @@ if menu == "🏠 Full IDX Scanner":
             board = style_board(result, board_style).head(5)
             with col:
                 st.markdown(f"**{board_style}**")
-                st.dataframe(board[["Kode","ActionScore","Action","Setup","Trend","R:R"]], width="stretch", hide_index=True)
+                st.dataframe(safe_display_columns(board, ["Kode","ActionScore","Action","Setup","Trend","R:R"]), width="stretch", hide_index=True)
 
         st.subheader("🧠 V6.6 Investor Intelligence — Quality + Valuation + Confidence")
         st.info("Agar Full IDX tetap ringan di cloud, fundamental diperiksa untuk 150 kandidat teratas. V6.6 memvalidasi outlier, menghitung data completeness dan confidence, lalu menurunkan bobot saham yang datanya kurang dapat dipercaya.")
@@ -1575,25 +1584,25 @@ if menu == "🏠 Full IDX Scanner":
             st.subheader(f"⭐ Top 10 — {style}")
             v6top = v6_result[v6_result["V6Enriched"]].head(10)
             cols6 = ["Kode","Nama","Sektor","Price","ActionScore","Action","StyleScore","FinalScore","Score","TradeReadiness","FundamentalScore","ValuationScore","ValuationMethod","FlowProxyScore","StyleDecision"]
-            st.dataframe(v6top[cols6], width="stretch", hide_index=True)
+            st.dataframe(safe_display_columns(v6top, cols6), width="stretch", hide_index=True)
 
             if style == "🏦 Investor Jangka Panjang":
                 st.subheader("🏦 Investor Intelligence — Investment Grade")
                 invtop = investor_board_v65(v6_result[v6_result["V6Enriched"]].copy()).head(15)
                 invcols = ["Kode","Nama","Sektor","Price","InvestorScore","InvestorScoreRaw","InvestmentGrade","InvestorAction","QualityScore","GrowthScore","BalanceSheetScore","CashFlowScore","InvestorValuationScore","ValuationConfidence","InvestorDataCompleteness","InvestorDataConfidence"]
-                st.dataframe(invtop[invcols], width="stretch", hide_index=True)
+                st.dataframe(safe_display_columns(invtop, invcols), width="stretch", hide_index=True)
                 st.caption("InvestorScore sudah disesuaikan dengan Data Confidence. Outlier valuasi tidak diperlakukan sebagai data valid. Flow Proxy hanya indikator price-volume, bukan foreign net buy/sell resmi.")
 
             st.subheader("💰 Fundamental & Sector-Relative Valuation")
             st.caption("V6.6 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
             ftop = v6_result[v6_result["V6Enriched"]].head(20).copy()
             fcols = ["Kode","Price","Sektor","SectorGroup","FundamentalScore","ValuationScore","ValuationMethod","PE","PB","PS","ROE","RevenueGrowth","EarningsGrowth","DebtEquity","ValuationConfidence","InvestorDataConfidence"]
-            st.dataframe(ftop[fcols], width="stretch", hide_index=True)
+            st.dataframe(safe_display_columns(ftop, fcols), width="stretch", hide_index=True)
 
             st.subheader("💧 Flow Proxy — Price & Volume")
             flowtop = v6_result.sort_values("FlowProxyScore", ascending=False).head(20)
             flowcols = ["Kode","Price","FlowProxyScore","FlowProxy","CMF20","OBVChange20","UpDownVolume"]
-            st.dataframe(flowtop[flowcols], width="stretch", hide_index=True)
+            st.dataframe(safe_display_columns(flowtop, flowcols), width="stretch", hide_index=True)
 
         st.subheader("🎛️ Filter Full IDX")
 
@@ -1689,7 +1698,7 @@ if menu == "🏠 Full IDX Scanner":
         if ready_top.empty:
             st.info("Belum ada setup dengan trade readiness yang layak.")
         else:
-            st.dataframe(ready_top[readiness_cols], width="stretch", hide_index=True)
+            st.dataframe(safe_display_columns(ready_top, readiness_cols), width="stretch", hide_index=True)
 
         # ----------------------------------------------------
         # THREE ACTION RANKINGS
@@ -1757,7 +1766,7 @@ if menu == "🏠 Full IDX Scanner":
             if v6_filtered.empty:
                 st.info("Belum ada saham V6 yang memenuhi filter.")
             else:
-                st.dataframe(v6_filtered[["Kode","Nama","Sektor","Price","ActionScore","Action","StyleScore","FinalScore","StyleDecision","Setup","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","R:R"]], width="stretch", hide_index=True)
+                st.dataframe(safe_display_columns(v6_filtered, ["Kode","Nama","Sektor","Price","ActionScore","Action","StyleScore","FinalScore","StyleDecision","Setup","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","R:R"]), width="stretch", hide_index=True)
 
         # ----------------------------------------------------
         # SECTOR STRENGTH
