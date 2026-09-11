@@ -8,13 +8,13 @@ import time
 from io import StringIO
 
 # ============================================================
-# SANGGUL STOCK SCANNER IDX V6.7
+# SANGGUL STOCK SCANNER IDX V6.7.1
 # FULL IDX SCANNER
 # IHSG -> SECTOR -> ALL IDX -> TECHNICAL -> OPPORTUNITY
 # ============================================================
 
 st.set_page_config(
-    page_title="Sanggul Stock Scanner IDX V6.7",
+    page_title="Sanggul Stock Scanner IDX V6.7.1",
     page_icon="📈",
     layout="wide"
 )
@@ -1057,7 +1057,17 @@ def enrich_v6(result, limit=150, style="📈 Swing Trading Mingguan", progress_c
     # Sector-relative valuation followed by shrinkage toward neutral.
     work = apply_sector_relative_valuation(work)
     work["ValuationScoreRaw"] = pd.to_numeric(work["ValuationScore"], errors="coerce")
-    work["ValuationScore"] = (50.0 + (work["ValuationScoreRaw"] - 50.0) * 0.75).clip(10, 95).round(1)
+    # V6.7.1: calibrate extreme peer-percentile scores so one peer rank does not
+    # create a large cluster at exactly 87.5 after shrinkage.
+    rawv = work["ValuationScoreRaw"].fillna(50.0).clip(0, 100)
+    centered = (rawv - 50.0) / 50.0
+    calibrated = 50.0 + 45.0 * np.sign(centered) * np.power(np.abs(centered), 0.78)
+    calibrated = calibrated + np.where(rawv > 50, (rawv % 7) * 0.08, -(rawv % 7) * 0.04)
+    work["ValuationScore"] = calibrated.clip(10, 95).round(1)
+    val_cols = ["PE", "ForwardPE", "PB", "PS", "EV_EBITDA"]
+    valid_count = pd.DataFrame({c: pd.to_numeric(work[c], errors="coerce") for c in val_cols}, index=work.index)
+    valid_count = valid_count.where(np.isfinite(valid_count))
+    work["ValuationDataCompleteness"] = (valid_count.notna().sum(axis=1) / len(val_cols) * 100).round(0)
 
     # Neutral fallback for missing fundamentals, while keeping a flag so users know.
     f = work["FundamentalScore"].fillna(50.0)
@@ -1428,6 +1438,7 @@ def calculate_conviction(df, style):
     val = _safe_num_series(x, "ValuationScore", 50)
     confidence = _safe_num_series(x, "InvestorDataConfidence", 50)
     val_conf = _safe_num_series(x, "ValuationConfidence", 50)
+    val_complete = _safe_num_series(x, "ValuationDataCompleteness", 50)
 
     # Timing score: READY best, EXTENDED penalized.
     entry = x.get("EntryStatus", pd.Series("WAIT", index=x.index)).astype(str)
@@ -1448,7 +1459,7 @@ def calculate_conviction(df, style):
         raw = 0.20*tech + 0.15*readiness + 0.25*fund + 0.22*val + 0.10*flow + 0.08*timing
 
     # Confidence brake: 65%–100% of raw score.
-    conf = (0.60*confidence + 0.40*val_conf).clip(0,100)
+    conf = (0.50*confidence + 0.30*val_conf + 0.20*val_complete).clip(0,100)
     factor = 0.65 + 0.35*(conf/100.0)
     x["ConvictionRaw"] = raw.clip(0,100).round(1)
     x["ConvictionScore"] = (raw*factor).clip(0,100).round(1)
@@ -1514,7 +1525,7 @@ def style_board(result, style):
 # ============================================================
 
 st.title("📈 SANGGUL STOCK SCANNER IDX")
-st.caption("V6.7 — MULTI-STYLE + CONVICTION ENGINE")
+st.caption("V6.7.1 — MULTI-STYLE + CONVICTION ENGINE + CALIBRATED VALUATION")
 
 menu = st.radio(
     "Menu",
@@ -1661,7 +1672,7 @@ if menu == "🏠 Full IDX Scanner":
             f"{len(result)} saham memiliki data teknikal yang cukup "
             f"untuk dianalisis."
         )
-        st.caption("V6.7 memisahkan Day Trading, Swing Trading, dan Investor. Investor memakai fundamental, valuasi relatif sektor, Flow Proxy, serta Data Quality/Confidence. Flow Proxy BUKAN data resmi foreign net buy/sell.")
+        st.caption("V6.7.1 memisahkan Day Trading, Swing Trading, dan Investor. Investor memakai fundamental, valuasi relatif sektor, Flow Proxy, serta Data Quality/Confidence. Flow Proxy BUKAN data resmi foreign net buy/sell.")
 
         st.subheader("🎯 Multi-Style Action Board")
         st.info("Ranking dipisahkan untuk tiga gaya. Untuk Investor Jangka Panjang, ranking final membutuhkan enrichment fundamental & valuasi.")
@@ -1683,7 +1694,7 @@ if menu == "🏠 Full IDX Scanner":
             with st.spinner("Mengambil fundamental & valuation kandidat teratas..."):
                 v6_result = enrich_v6(result, limit=150, style=style, progress_callback=update_v6)
             p6.progress(1.0)
-            s6.success(f"V6.5 enrichment selesai untuk {int(v6_result['V6Enriched'].sum())} saham.")
+            s6.success(f"V6.7.1 enrichment selesai untuk {int(v6_result['V6Enriched'].sum())} saham.")
             st.session_state["v6_scan"] = v6_result
             st.session_state["v6_style"] = style
 
@@ -1693,7 +1704,7 @@ if menu == "🏠 Full IDX Scanner":
         if not v6_result.empty:
             st.subheader(f"⭐ Top 10 — {style}")
             v6top = v6_result[v6_result["V6Enriched"]].head(10)
-            cols6 = ["Kode","Nama","Sektor","Price","ActionScore","Action","StyleScore","FinalScore","Score","TradeReadiness","FundamentalScore","ValuationScore","ValuationMethod","FlowProxyScore","StyleDecision"]
+            cols6 = ["Kode","Nama","Sektor","Price","ConvictionScore","ConvictionGrade","ConvictionConfidence","ConvictionDecision","ActionScore","Action","StyleScore","FinalScore","Score","TradeReadiness","FundamentalScore","ValuationScore","ValuationMethod","FlowProxyScore","StyleDecision"]
             st.dataframe(safe_display_columns(v6top, cols6), width="stretch", hide_index=True)
 
             if style == "🏦 Investor Jangka Panjang":
@@ -1710,9 +1721,9 @@ if menu == "🏠 Full IDX Scanner":
             st.caption("Conviction bukan jaminan return. Skor ini menggabungkan kualitas teknikal, timing entry, fundamental, valuasi relatif, flow proxy dan confidence data.")
 
             st.subheader("💰 Fundamental & Sector-Relative Valuation")
-            st.caption("V6.7 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
+            st.caption("V6.7.1 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
             ftop = v6_result[v6_result["V6Enriched"]].head(20).copy()
-            fcols = ["Kode","Price","Sektor","SectorGroup","FundamentalScore","ValuationScore","ValuationMethod","PE","PB","PS","ROE","RevenueGrowth","EarningsGrowth","DebtEquity","ValuationConfidence","InvestorDataConfidence"]
+            fcols = ["Kode","Price","Sektor","SectorGroup","FundamentalScore","ValuationScore","ValuationMethod","PE","PB","PS","ROE","RevenueGrowth","EarningsGrowth","DebtEquity","ValuationConfidence","ValuationDataCompleteness","InvestorDataConfidence"]
             st.dataframe(safe_display_columns(ftop, fcols), width="stretch", hide_index=True)
 
             st.subheader("💧 Flow Proxy — Price & Volume")
@@ -1995,7 +2006,7 @@ if menu == "🏠 Full IDX Scanner":
         if not v6_result.empty:
             csv6 = v6_result.to_csv(index=False).encode("utf-8")
             st.download_button(
-                "⬇️ Download V6.7 Final Ranking CSV",
+                "⬇️ Download V6.7.1 Final Ranking CSV",
                 data=csv6,
                 file_name="sanggul_v6_7_conviction_ranking.csv",
                 mime="text/csv",
