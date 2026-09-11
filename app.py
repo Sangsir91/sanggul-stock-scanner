@@ -1424,7 +1424,10 @@ def calculate_top10_readiness(df, style):
     and data confidence. It is deliberately independent from ActionScore so
     the Top 10 answers: 'which names are most ready to act on now?'
     """
-    x = df.copy()
+    # V6.9.5: always materialize the flow fields before calculating
+    # readiness. Older session-state data may contain FlowRegime but miss
+    # FlowQualityScore, which previously appeared as None in the Top 10 table.
+    x = calculate_flow_intelligence(df.copy())
     conv = _safe_num_series(x, "ConvictionScore", 50)
     timing = _safe_num_series(x, "TimingScore", 50)
     flowq = _safe_num_series(x, "FlowQualityScore", 50)
@@ -1498,6 +1501,8 @@ def calculate_top10_readiness(df, style):
         (x["ConvictionScore"] >= 65) &
         (x["TimingScore"] >= 60) &
         (rr_value >= 1.20) &
+        (_safe_num_series(x, "FlowQualityScore", 50) >= 50) &
+        (~x.get("FlowRegime", pd.Series("NEUTRAL / MIXED", index=x.index)).astype(str).str.contains("DISTRIBUTION", case=False, regex=False)) &
         (~entry_text.eq("EXTENDED")) &
         (~decision_text.str.contains("AVOID|LOW CONVICTION", case=False, regex=True))
     )
@@ -1506,8 +1511,10 @@ def calculate_top10_readiness(df, style):
         x["TopPickEligible"],
         "Conviction + timing + R:R memenuhi risk gate",
         np.select(
-            [rr_value < 1.20, entry_text.eq("EXTENDED"), decision_text.str.contains("AVOID|LOW CONVICTION", case=False, regex=True)],
-            ["R:R belum memenuhi batas", "Harga terlalu extended", "Conviction/decision belum aman"],
+            [rr_value < 1.20, _safe_num_series(x, "FlowQualityScore", 50) < 50,
+             x.get("FlowRegime", pd.Series("NEUTRAL / MIXED", index=x.index)).astype(str).str.contains("DISTRIBUTION", case=False, regex=False),
+             entry_text.eq("EXTENDED"), decision_text.str.contains("AVOID|LOW CONVICTION", case=False, regex=True)],
+            ["R:R belum memenuhi batas", "Flow belum cukup mendukung", "Flow menunjukkan distribusi", "Harga terlalu extended", "Conviction/decision belum aman"],
             default="Menunggu konfirmasi tambahan"
         )
     )
