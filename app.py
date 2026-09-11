@@ -8,13 +8,13 @@ import time
 from io import StringIO
 
 # ============================================================
-# SANGGUL STOCK SCANNER IDX V6.7.1
+# SANGGUL STOCK SCANNER IDX V6.9.5
 # FULL IDX SCANNER
 # IHSG -> SECTOR -> ALL IDX -> TECHNICAL -> OPPORTUNITY
 # ============================================================
 
 st.set_page_config(
-    page_title="Sanggul Stock Scanner IDX V6.9.2",
+    page_title="Sanggul Stock Scanner IDX V6.9.5",
     page_icon="📈",
     layout="wide"
 )
@@ -1820,99 +1820,6 @@ def apply_style_scores(df, style):
     return w
 
 
-# ============================================================
-# V6.9 FLOW INTELLIGENCE — MULTI-HORIZON PRICE/VOLUME PROXY
-# ============================================================
-def calculate_flow_intelligence(df):
-    """V6.9.1 Smart Flow Calibration.
-
-    Builds a continuous multi-horizon price-volume flow proxy. This is NOT
-    official BEI foreign net buy/sell or broker transaction data.
-    """
-    x = df.copy()
-    f5 = _safe_num_series(x, "FlowProxy5D", 50)
-    f20 = _safe_num_series(x, "FlowProxy20D", 50)
-    f60 = _safe_num_series(x, "FlowProxy60D", 50)
-
-    # Style-specific horizons: tactical, swing and investor.
-    x["Flow5DScore"] = f5.round(1)
-    x["Flow20DScore"] = f20.round(1)
-    x["Flow60DScore"] = f60.round(1)
-    x["FlowTrendScore"] = (0.20*f5 + 0.45*f20 + 0.35*f60).clip(5,95).round(1)
-    x["FlowAcceleration"] = (f5 - f60).round(1)
-
-    # Consistency is deliberately softer than the old formula so a strong
-    # short-term reversal is not automatically treated as bad flow.
-    dispersion = 0.50*(f5-f20).abs() + 0.30*(f20-f60).abs() + 0.20*(f5-f60).abs()
-    x["FlowConsistency"] = (100 - dispersion).clip(0,100).round(1)
-
-    # Relative volume and price-flow alignment.
-    rvol = _safe_num_series(x, "Volume", 1)
-    if "VolumeRatio" in x.columns:
-        rvol = pd.to_numeric(x["VolumeRatio"], errors="coerce").fillna(1.0)
-    elif "Volume_Ratio" in x.columns:
-        rvol = pd.to_numeric(x["Volume_Ratio"], errors="coerce").fillna(1.0)
-    else:
-        rvol = pd.Series(1.0, index=x.index)
-    x["FlowRelativeVolume"] = rvol.clip(0.1, 5.0).round(2)
-
-    price_ret = pd.to_numeric(x.get("FocusReturn", pd.Series(0.0, index=x.index)), errors="coerce").fillna(0.0)
-    flow_trend = x["FlowTrendScore"]
-    alignment = np.select(
-        [
-            (price_ret > 3) & (flow_trend >= 60),
-            (price_ret < -3) & (flow_trend >= 60),
-            (price_ret > 3) & (flow_trend <= 42),
-            (price_ret < -3) & (flow_trend <= 42),
-        ],
-        ["CONFIRMED POSITIVE", "BULLISH DIVERGENCE", "BEARISH DIVERGENCE", "CONFIRMED NEGATIVE"],
-        default="NEUTRAL / MIXED"
-    )
-    x["PriceFlowAlignment"] = alignment
-
-    divergence = np.select(
-        [(price_ret > 3) & (flow_trend <= 45), (price_ret < -3) & (flow_trend >= 60)],
-        ["BEARISH DIVERGENCE", "BULLISH DIVERGENCE"],
-        default="NONE / NORMAL"
-    )
-    x["FlowDivergence"] = divergence
-
-    def label(r):
-        score = float(r["FlowTrendScore"])
-        accel = float(r["FlowAcceleration"])
-        consistency = float(r["FlowConsistency"])
-        if score >= 75 and accel >= 5 and consistency >= 65:
-            return "STRONG ACCUMULATION"
-        if score >= 63 and accel >= 0:
-            return "ACCUMULATION"
-        if score >= 57 and accel >= 3:
-            return "EARLY ACCUMULATION"
-        if score <= 35 and accel <= -5 and consistency >= 65:
-            return "STRONG DISTRIBUTION"
-        if score <= 43 and accel <= 0:
-            return "DISTRIBUTION"
-        if score <= 48 and accel <= -3:
-            return "EARLY DISTRIBUTION"
-        return "NEUTRAL / MIXED"
-
-    x["FlowRegime"] = x.apply(label, axis=1)
-    x["FlowSignal"] = np.where(
-        x["FlowRegime"].str.contains("ACCUMULATION"), "POSITIVE",
-        np.where(x["FlowRegime"].str.contains("DISTRIBUTION"), "NEGATIVE", "NEUTRAL")
-    )
-
-    # Style weights requested for V6.9.1.
-    x["DayFlowScore"] = (0.50*f5 + 0.30*f20 + 0.20*f60).clip(5,95).round(1)
-    x["SwingFlowScore"] = (0.25*f5 + 0.50*f20 + 0.25*f60).clip(5,95).round(1)
-    x["InvestorFlowScore"] = (0.15*f5 + 0.30*f20 + 0.55*f60).clip(5,95).round(1)
-
-    # Confidence is higher when all horizons exist and volume is meaningful.
-    complete = x[["FlowProxy5D","FlowProxy20D","FlowProxy60D"]].notna().all(axis=1)
-    x["FlowProxyConfidence"] = np.where(complete, 85, 55)
-    x["FlowProxyConfidence"] = np.where(x["FlowRelativeVolume"] < 0.5, np.maximum(x["FlowProxyConfidence"]-10, 40), x["FlowProxyConfidence"])
-    return x
-
-
 def style_board(result, style):
     w = apply_style_scores(result.copy(), style)
     if "V6Enriched" not in w.columns:
@@ -2130,7 +2037,7 @@ if menu == "🏠 Full IDX Scanner":
             v6top["Top10Rank"] = range(1, len(v6top) + 1)
             cols6 = ["Top10Rank","Kode","Nama","Sektor","Price","Top10Readiness","Top10ReadinessGrade","ConvictionScore","TimingScore","EntryQuality","EntryStatus","R:R","FlowQualityScore","FlowRegime","FundamentalScore","ValuationScore","ConvictionConfidence","ConvictionDecision","Top10Reason"]
             st.dataframe(safe_display_columns(v6top, cols6), width="stretch", hide_index=True)
-            st.caption("V6.9.4 Top 10 Readiness memakai Risk Gate tambahan. Ranking tidak hanya mencari saham bagus, tetapi juga menyaring R:R rendah, entry terlalu extended, conviction rendah dan confidence rendah.")
+            st.caption("V6.9.5 Top 10 Readiness memakai Risk Gate + Flow Quality. Ranking tidak hanya mencari saham bagus, tetapi juga menyaring R:R rendah, entry terlalu extended, conviction rendah dan confidence rendah.")
 
             st.subheader("🏆 Top 3 Actionable Picks — Risk-Gated")
             eligible = v6top[v6top["TopPickEligible"]].copy() if "TopPickEligible" in v6top.columns else pd.DataFrame()
@@ -2150,7 +2057,7 @@ if menu == "🏠 Full IDX Scanner":
                 st.dataframe(safe_display_columns(invtop, invcols), width="stretch", hide_index=True)
                 st.caption("InvestorScore sudah disesuaikan dengan Data Confidence. Outlier valuasi tidak diperlakukan sebagai data valid. Flow Proxy hanya indikator price-volume, bukan foreign net buy/sell resmi.")
 
-            st.subheader("🧠 V6.9.4 Decision Intelligence — Quality + Timing + Confidence")
+            st.subheader("🧠 V6.9.5 Decision Intelligence — Quality + Timing + Confidence + Flow")
             convtop = v6_result[v6_result["V6Enriched"]].sort_values(["ConvictionScore","QualityScore","TimingScore"], ascending=[False,False,False]).head(20)
             convcols = ["Kode","Nama","Sektor","Price","ConvictionScore","ConvictionGrade","QualityScore","TimingScore","EntryQuality","ConvictionConfidence","DataConfidenceBand","ConvictionDecision","Top10Readiness","Top10ReadinessGrade","Score","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","R:R","EntryStatus"]
             st.dataframe(safe_display_columns(convtop, convcols), width="stretch", hide_index=True)
@@ -2167,13 +2074,13 @@ if menu == "🏠 Full IDX Scanner":
                 matrix_cols = ["Style","Kode","Price","ConvictionScore","ConvictionGrade","QualityScore","TimingScore","EntryQuality","ConvictionConfidence","ConvictionDecision"]
                 st.dataframe(safe_display_columns(matrix, matrix_cols), width="stretch", hide_index=True)
 
-            st.subheader("🌊 V6.9.4 Flow Intelligence — Multi-Horizon")
+            st.subheader("🌊 V6.9.5 Flow Intelligence — Multi-Horizon + Quality")
             st.info("Flow Intelligence adalah PROXY berbasis harga-volume dari data harian. Ini BUKAN data resmi foreign net buy/sell BEI. Gunakan sebagai konfirmasi, bukan sebagai bukti transaksi investor asing.")
             flow_int = calculate_flow_intelligence(v6_result[v6_result["V6Enriched"]].copy())
             flow_int = flow_int.sort_values(["FlowTrendScore","FlowConsistency"], ascending=[False,False]).head(20)
             flow_cols = ["Kode","Nama","Sektor","Price","Flow5DScore","Flow20DScore","Flow60DScore","FlowTrendScore","FlowAcceleration","FlowConsistency","FlowRelativeVolume","FlowQualityScore","FlowDecisionImpact","FlowRegime","FlowSignal","FlowDivergence","PriceFlowAlignment","DayFlowScore","SwingFlowScore","InvestorFlowScore"]
             st.dataframe(safe_display_columns(flow_int, flow_cols), width="stretch", hide_index=True)
-            st.caption("V6.9.1: 5D = tactical, 20D = swing, 60D = investor. Flow kini memakai transformasi kontinu agar tidak jenuh di 100, ditambah relative volume dan price-flow divergence. Tetap PROXY price-volume, bukan foreign flow resmi.")
+            st.caption("V6.9.5: 5D = tactical, 20D = swing, 60D = investor. Flow kini memakai transformasi kontinu agar tidak jenuh di 100, ditambah relative volume dan price-flow divergence. Tetap PROXY price-volume, bukan foreign flow resmi.")
 
             st.subheader("💰 Fundamental & Sector-Relative Valuation")
             st.caption("V6.8 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
