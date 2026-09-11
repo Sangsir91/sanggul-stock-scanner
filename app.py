@@ -605,12 +605,15 @@ def fast_analysis(df, focus_days=126):
     tp2 = px + reward
     tp3 = px + reward * 1.50
 
-    # Flow proxy score 0-100. This is NOT official foreign net buy/sell data.
-    flow_score = 50.0
-    flow_score += 18 if cmf > 0.10 else 11 if cmf > 0.03 else 5 if cmf >= 0 else -8
-    flow_score += 14 if obv_change > 0.50 else 9 if obv_change > 0.20 else 4 if obv_change >= 0 else -8
-    flow_score += 14 if up_down_vol >= 1.30 else 9 if up_down_vol >= 1.05 else 3 if up_down_vol >= 0.90 else -8
-    flow_score = round(max(0.0, min(100.0, flow_score)), 1)
+    # V6.9.1 Smart Flow Calibration. This is NOT official foreign net buy/sell.
+    # Use continuous transforms instead of step thresholds so stocks do not
+    # collapse into a large cluster at 100. CMF is naturally bounded near [-1,1],
+    # while OBV change and up/down volume ratio need nonlinear scaling.
+    cmf_component = 50.0 + 42.0 * np.tanh(cmf / 0.12)
+    obv_component = 50.0 + 32.0 * np.tanh(obv_change / 0.75)
+    ud_component = 50.0 + 28.0 * np.tanh(np.log(max(up_down_vol, 0.20)) / 0.55)
+    flow_score = 0.45 * cmf_component + 0.35 * obv_component + 0.20 * ud_component
+    flow_score = round(float(np.clip(flow_score, 5.0, 95.0)), 1)
     flow_label = (
         "ACCUMULATION PROXY" if flow_score >= 70
         else "POSITIVE PROXY" if flow_score >= 55
@@ -1286,42 +1289,76 @@ def apply_action_engine(df, style):
 # V6.9 FLOW INTELLIGENCE — MULTI-HORIZON PRICE/VOLUME PROXY
 # ============================================================
 def calculate_flow_intelligence(df):
-    """Build a transparent multi-horizon flow proxy.
+    """V6.9.1 Smart Flow Calibration.
 
-    IMPORTANT: these values are price-volume proxies, not official BEI
-    foreign net buy/sell. They are useful for accumulation/distribution
-    context, but must never be presented as broker/foreign transaction data.
+    Builds a continuous multi-horizon price-volume flow proxy. This is NOT
+    official BEI foreign net buy/sell or broker transaction data.
     """
     x = df.copy()
     f5 = _safe_num_series(x, "FlowProxy5D", 50)
     f20 = _safe_num_series(x, "FlowProxy20D", 50)
     f60 = _safe_num_series(x, "FlowProxy60D", 50)
-    base = _safe_num_series(x, "FlowProxyScore", 50)
 
-    # 5D = tactical pressure, 20D = swing accumulation, 60D = medium-term flow.
+    # Style-specific horizons: tactical, swing and investor.
     x["Flow5DScore"] = f5.round(1)
     x["Flow20DScore"] = f20.round(1)
     x["Flow60DScore"] = f60.round(1)
-    x["FlowTrendScore"] = (0.20*f5 + 0.45*f20 + 0.35*f60).clip(0,100).round(1)
+    x["FlowTrendScore"] = (0.20*f5 + 0.45*f20 + 0.35*f60).clip(5,95).round(1)
     x["FlowAcceleration"] = (f5 - f60).round(1)
-    x["FlowConsistency"] = (100 - (f5-f20).abs()*0.60 - (f20-f60).abs()*0.40).clip(0,100).round(1)
-    x["FlowProxyConfidence"] = np.where(
-        x[["FlowProxy5D","FlowProxy20D","FlowProxy60D"]].notna().all(axis=1), 85, 55
+
+    # Consistency is deliberately softer than the old formula so a strong
+    # short-term reversal is not automatically treated as bad flow.
+    dispersion = 0.50*(f5-f20).abs() + 0.30*(f20-f60).abs() + 0.20*(f5-f60).abs()
+    x["FlowConsistency"] = (100 - dispersion).clip(0,100).round(1)
+
+    # Relative volume and price-flow alignment.
+    rvol = _safe_num_series(x, "Volume", 1)
+    if "VolumeRatio" in x.columns:
+        rvol = pd.to_numeric(x["VolumeRatio"], errors="coerce").fillna(1.0)
+    elif "Volume_Ratio" in x.columns:
+        rvol = pd.to_numeric(x["Volume_Ratio"], errors="coerce").fillna(1.0)
+    else:
+        rvol = pd.Series(1.0, index=x.index)
+    x["FlowRelativeVolume"] = rvol.clip(0.1, 5.0).round(2)
+
+    price_ret = pd.to_numeric(x.get("FocusReturn", pd.Series(0.0, index=x.index)), errors="coerce").fillna(0.0)
+    flow_trend = x["FlowTrendScore"]
+    alignment = np.select(
+        [
+            (price_ret > 3) & (flow_trend >= 60),
+            (price_ret < -3) & (flow_trend >= 60),
+            (price_ret > 3) & (flow_trend <= 42),
+            (price_ret < -3) & (flow_trend <= 42),
+        ],
+        ["CONFIRMED POSITIVE", "BULLISH DIVERGENCE", "BEARISH DIVERGENCE", "CONFIRMED NEGATIVE"],
+        default="NEUTRAL / MIXED"
     )
+    x["PriceFlowAlignment"] = alignment
+
+    divergence = np.select(
+        [(price_ret > 3) & (flow_trend <= 45), (price_ret < -3) & (flow_trend >= 60)],
+        ["BEARISH DIVERGENCE", "BULLISH DIVERGENCE"],
+        default="NONE / NORMAL"
+    )
+    x["FlowDivergence"] = divergence
 
     def label(r):
         score = float(r["FlowTrendScore"])
         accel = float(r["FlowAcceleration"])
         consistency = float(r["FlowConsistency"])
-        if score >= 72 and accel >= 5 and consistency >= 65:
-            return "STRONG ACCUMULATION PROXY"
-        if score >= 62 and accel >= 0:
-            return "ACCUMULATION PROXY"
-        if score <= 38 and accel <= -5 and consistency >= 65:
-            return "STRONG DISTRIBUTION PROXY"
-        if score <= 45:
-            return "DISTRIBUTION PROXY"
-        return "NEUTRAL / MIXED PROXY"
+        if score >= 75 and accel >= 5 and consistency >= 65:
+            return "STRONG ACCUMULATION"
+        if score >= 63 and accel >= 0:
+            return "ACCUMULATION"
+        if score >= 57 and accel >= 3:
+            return "EARLY ACCUMULATION"
+        if score <= 35 and accel <= -5 and consistency >= 65:
+            return "STRONG DISTRIBUTION"
+        if score <= 43 and accel <= 0:
+            return "DISTRIBUTION"
+        if score <= 48 and accel <= -3:
+            return "EARLY DISTRIBUTION"
+        return "NEUTRAL / MIXED"
 
     x["FlowRegime"] = x.apply(label, axis=1)
     x["FlowSignal"] = np.where(
@@ -1329,10 +1366,15 @@ def calculate_flow_intelligence(df):
         np.where(x["FlowRegime"].str.contains("DISTRIBUTION"), "NEGATIVE", "NEUTRAL")
     )
 
-    # Style-specific flow contribution.
-    x["DayFlowScore"] = (0.55*f5 + 0.30*f20 + 0.15*f60).round(1)
-    x["SwingFlowScore"] = (0.20*f5 + 0.50*f20 + 0.30*f60).round(1)
-    x["InvestorFlowScore"] = (0.10*f5 + 0.35*f20 + 0.55*f60).round(1)
+    # Style weights requested for V6.9.1.
+    x["DayFlowScore"] = (0.50*f5 + 0.30*f20 + 0.20*f60).clip(5,95).round(1)
+    x["SwingFlowScore"] = (0.25*f5 + 0.50*f20 + 0.25*f60).clip(5,95).round(1)
+    x["InvestorFlowScore"] = (0.15*f5 + 0.30*f20 + 0.55*f60).clip(5,95).round(1)
+
+    # Confidence is higher when all horizons exist and volume is meaningful.
+    complete = x[["FlowProxy5D","FlowProxy20D","FlowProxy60D"]].notna().all(axis=1)
+    x["FlowProxyConfidence"] = np.where(complete, 85, 55)
+    x["FlowProxyConfidence"] = np.where(x["FlowRelativeVolume"] < 0.5, np.maximum(x["FlowProxyConfidence"]-10, 40), x["FlowProxyConfidence"])
     return x
 
 
@@ -1629,42 +1671,76 @@ def apply_style_scores(df, style):
 # V6.9 FLOW INTELLIGENCE — MULTI-HORIZON PRICE/VOLUME PROXY
 # ============================================================
 def calculate_flow_intelligence(df):
-    """Build a transparent multi-horizon flow proxy.
+    """V6.9.1 Smart Flow Calibration.
 
-    IMPORTANT: these values are price-volume proxies, not official BEI
-    foreign net buy/sell. They are useful for accumulation/distribution
-    context, but must never be presented as broker/foreign transaction data.
+    Builds a continuous multi-horizon price-volume flow proxy. This is NOT
+    official BEI foreign net buy/sell or broker transaction data.
     """
     x = df.copy()
     f5 = _safe_num_series(x, "FlowProxy5D", 50)
     f20 = _safe_num_series(x, "FlowProxy20D", 50)
     f60 = _safe_num_series(x, "FlowProxy60D", 50)
-    base = _safe_num_series(x, "FlowProxyScore", 50)
 
-    # 5D = tactical pressure, 20D = swing accumulation, 60D = medium-term flow.
+    # Style-specific horizons: tactical, swing and investor.
     x["Flow5DScore"] = f5.round(1)
     x["Flow20DScore"] = f20.round(1)
     x["Flow60DScore"] = f60.round(1)
-    x["FlowTrendScore"] = (0.20*f5 + 0.45*f20 + 0.35*f60).clip(0,100).round(1)
+    x["FlowTrendScore"] = (0.20*f5 + 0.45*f20 + 0.35*f60).clip(5,95).round(1)
     x["FlowAcceleration"] = (f5 - f60).round(1)
-    x["FlowConsistency"] = (100 - (f5-f20).abs()*0.60 - (f20-f60).abs()*0.40).clip(0,100).round(1)
-    x["FlowProxyConfidence"] = np.where(
-        x[["FlowProxy5D","FlowProxy20D","FlowProxy60D"]].notna().all(axis=1), 85, 55
+
+    # Consistency is deliberately softer than the old formula so a strong
+    # short-term reversal is not automatically treated as bad flow.
+    dispersion = 0.50*(f5-f20).abs() + 0.30*(f20-f60).abs() + 0.20*(f5-f60).abs()
+    x["FlowConsistency"] = (100 - dispersion).clip(0,100).round(1)
+
+    # Relative volume and price-flow alignment.
+    rvol = _safe_num_series(x, "Volume", 1)
+    if "VolumeRatio" in x.columns:
+        rvol = pd.to_numeric(x["VolumeRatio"], errors="coerce").fillna(1.0)
+    elif "Volume_Ratio" in x.columns:
+        rvol = pd.to_numeric(x["Volume_Ratio"], errors="coerce").fillna(1.0)
+    else:
+        rvol = pd.Series(1.0, index=x.index)
+    x["FlowRelativeVolume"] = rvol.clip(0.1, 5.0).round(2)
+
+    price_ret = pd.to_numeric(x.get("FocusReturn", pd.Series(0.0, index=x.index)), errors="coerce").fillna(0.0)
+    flow_trend = x["FlowTrendScore"]
+    alignment = np.select(
+        [
+            (price_ret > 3) & (flow_trend >= 60),
+            (price_ret < -3) & (flow_trend >= 60),
+            (price_ret > 3) & (flow_trend <= 42),
+            (price_ret < -3) & (flow_trend <= 42),
+        ],
+        ["CONFIRMED POSITIVE", "BULLISH DIVERGENCE", "BEARISH DIVERGENCE", "CONFIRMED NEGATIVE"],
+        default="NEUTRAL / MIXED"
     )
+    x["PriceFlowAlignment"] = alignment
+
+    divergence = np.select(
+        [(price_ret > 3) & (flow_trend <= 45), (price_ret < -3) & (flow_trend >= 60)],
+        ["BEARISH DIVERGENCE", "BULLISH DIVERGENCE"],
+        default="NONE / NORMAL"
+    )
+    x["FlowDivergence"] = divergence
 
     def label(r):
         score = float(r["FlowTrendScore"])
         accel = float(r["FlowAcceleration"])
         consistency = float(r["FlowConsistency"])
-        if score >= 72 and accel >= 5 and consistency >= 65:
-            return "STRONG ACCUMULATION PROXY"
-        if score >= 62 and accel >= 0:
-            return "ACCUMULATION PROXY"
-        if score <= 38 and accel <= -5 and consistency >= 65:
-            return "STRONG DISTRIBUTION PROXY"
-        if score <= 45:
-            return "DISTRIBUTION PROXY"
-        return "NEUTRAL / MIXED PROXY"
+        if score >= 75 and accel >= 5 and consistency >= 65:
+            return "STRONG ACCUMULATION"
+        if score >= 63 and accel >= 0:
+            return "ACCUMULATION"
+        if score >= 57 and accel >= 3:
+            return "EARLY ACCUMULATION"
+        if score <= 35 and accel <= -5 and consistency >= 65:
+            return "STRONG DISTRIBUTION"
+        if score <= 43 and accel <= 0:
+            return "DISTRIBUTION"
+        if score <= 48 and accel <= -3:
+            return "EARLY DISTRIBUTION"
+        return "NEUTRAL / MIXED"
 
     x["FlowRegime"] = x.apply(label, axis=1)
     x["FlowSignal"] = np.where(
@@ -1672,10 +1748,15 @@ def calculate_flow_intelligence(df):
         np.where(x["FlowRegime"].str.contains("DISTRIBUTION"), "NEGATIVE", "NEUTRAL")
     )
 
-    # Style-specific flow contribution.
-    x["DayFlowScore"] = (0.55*f5 + 0.30*f20 + 0.15*f60).round(1)
-    x["SwingFlowScore"] = (0.20*f5 + 0.50*f20 + 0.30*f60).round(1)
-    x["InvestorFlowScore"] = (0.10*f5 + 0.35*f20 + 0.55*f60).round(1)
+    # Style weights requested for V6.9.1.
+    x["DayFlowScore"] = (0.50*f5 + 0.30*f20 + 0.20*f60).clip(5,95).round(1)
+    x["SwingFlowScore"] = (0.25*f5 + 0.50*f20 + 0.25*f60).clip(5,95).round(1)
+    x["InvestorFlowScore"] = (0.15*f5 + 0.30*f20 + 0.55*f60).clip(5,95).round(1)
+
+    # Confidence is higher when all horizons exist and volume is meaningful.
+    complete = x[["FlowProxy5D","FlowProxy20D","FlowProxy60D"]].notna().all(axis=1)
+    x["FlowProxyConfidence"] = np.where(complete, 85, 55)
+    x["FlowProxyConfidence"] = np.where(x["FlowRelativeVolume"] < 0.5, np.maximum(x["FlowProxyConfidence"]-10, 40), x["FlowProxyConfidence"])
     return x
 
 
@@ -1923,9 +2004,9 @@ if menu == "🏠 Full IDX Scanner":
             st.info("Flow Intelligence adalah PROXY berbasis harga-volume dari data harian. Ini BUKAN data resmi foreign net buy/sell BEI. Gunakan sebagai konfirmasi, bukan sebagai bukti transaksi investor asing.")
             flow_int = calculate_flow_intelligence(v6_result[v6_result["V6Enriched"]].copy())
             flow_int = flow_int.sort_values(["FlowTrendScore","FlowConsistency"], ascending=[False,False]).head(20)
-            flow_cols = ["Kode","Nama","Sektor","Price","Flow5DScore","Flow20DScore","Flow60DScore","FlowTrendScore","FlowAcceleration","FlowConsistency","FlowRegime","FlowSignal","DayFlowScore","SwingFlowScore","InvestorFlowScore"]
+            flow_cols = ["Kode","Nama","Sektor","Price","Flow5DScore","Flow20DScore","Flow60DScore","FlowTrendScore","FlowAcceleration","FlowConsistency","FlowRelativeVolume","FlowRegime","FlowSignal","FlowDivergence","PriceFlowAlignment","DayFlowScore","SwingFlowScore","InvestorFlowScore"]
             st.dataframe(safe_display_columns(flow_int, flow_cols), width="stretch", hide_index=True)
-            st.caption("5D = tekanan jangka pendek; 20D = konfirmasi swing; 60D = tren akumulasi/distribusi menengah. Skor flow tidak boleh dibaca sebagai foreign flow resmi.")
+            st.caption("V6.9.1: 5D = tactical, 20D = swing, 60D = investor. Flow kini memakai transformasi kontinu agar tidak jenuh di 100, ditambah relative volume dan price-flow divergence. Tetap PROXY price-volume, bukan foreign flow resmi.")
 
             st.subheader("💰 Fundamental & Sector-Relative Valuation")
             st.caption("V6.8 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
