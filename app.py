@@ -1158,9 +1158,14 @@ def apply_style_scores(df, style):
 def apply_action_engine(df, style):
     """Convert style quality into an actionable score with timing discipline."""
     w = df.copy()
-    score = pd.to_numeric(w.get("StyleScore", 50), errors="coerce").fillna(50.0)
-    rr = pd.to_numeric(w.get("R:R", 0), errors="coerce").fillna(0.0)
-    rsi = pd.to_numeric(w.get("RSI", 50), errors="coerce").fillna(50.0)
+    def _series(name, default):
+        if name in w.columns:
+            return pd.to_numeric(w[name], errors="coerce").fillna(default)
+        return pd.Series(float(default), index=w.index)
+
+    score = _series("StyleScore", 50.0)
+    rr = _series("R:R", 0.0)
+    rsi = _series("RSI", 50.0)
     entry = w.get("EntryStatus", pd.Series("WAIT", index=w.index)).astype(str)
     decision = w.get("Decision", pd.Series("WAIT", index=w.index)).astype(str)
 
@@ -1176,8 +1181,8 @@ def apply_action_engine(df, style):
         action += np.where(rsi >= 80, -12, np.where(rsi >= 72, -6, 0))
         action += np.where(rr >= 3, 7, np.where(rr >= 2, 4, np.where(rr < 1.2, -8, 0)))
     else:
-        fund = pd.to_numeric(w.get("FundamentalScore", 50), errors="coerce").fillna(50.0)
-        val = pd.to_numeric(w.get("ValuationScore", 50), errors="coerce").fillna(50.0)
+        fund = _series("FundamentalScore", 50.0)
+        val = _series("ValuationScore", 50.0)
         action += (fund - 50) * 0.18
         action += (val - 50) * 0.18
         action += np.where(fund >= 70, 5, 0)
@@ -1284,7 +1289,13 @@ def calculate_investor_metrics(w):
     x["CashFlowScore"] = cf_quality.clip(0,100).round(1)
 
     # Investor valuation uses the already sector-relative valuation score.
-    x["InvestorValuationScore"] = pd.to_numeric(x.get("ValuationScore",50), errors="coerce").fillna(50).clip(0,100).round(1)
+    # IMPORTANT: DataFrame.get() returns a scalar when the fallback is scalar;
+    # therefore always construct a Series aligned to the DataFrame index.
+    if "ValuationScore" in x.columns:
+        valuation_series = pd.to_numeric(x["ValuationScore"], errors="coerce")
+    else:
+        valuation_series = pd.Series(50.0, index=x.index)
+    x["InvestorValuationScore"] = valuation_series.fillna(50.0).clip(0,100).round(1)
     x["InvestorFundamentalScore"] = (
         0.35*x["QualityScore"] +
         0.25*x["GrowthScore"] +
