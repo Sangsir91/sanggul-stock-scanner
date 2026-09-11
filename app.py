@@ -1701,6 +1701,28 @@ if menu == "🏠 Full IDX Scanner":
         v6_result = st.session_state.get("v6_scan", pd.DataFrame())
         if st.session_state.get("v6_style") != style:
             v6_result = pd.DataFrame()
+
+        # V6.7.2 safety repair: older session_state data may come from V6.6/V6.7
+        # and therefore not contain the new Conviction columns. Recalculate them
+        # before any Conviction sorting so a stale cloud session can never crash.
+        if not v6_result.empty:
+            missing_conv = [
+                "ConvictionScore", "ConvictionGrade", "ConvictionConfidence",
+                "ConvictionRaw", "ConvictionDecision"
+            ]
+            if any(c not in v6_result.columns for c in missing_conv):
+                try:
+                    v6_result = apply_style_scores(v6_result.copy(), style)
+                    v6_result = apply_action_engine(v6_result, style)
+                    st.session_state["v6_scan"] = v6_result
+                except Exception:
+                    pass
+            # Guarantee display/sort columns exist even when optional enrichment
+            # fields are unavailable. Missing values are shown as NA.
+            for c in missing_conv:
+                if c not in v6_result.columns:
+                    v6_result[c] = np.nan
+
         if not v6_result.empty:
             st.subheader(f"⭐ Top 10 — {style}")
             v6top = v6_result[v6_result["V6Enriched"]].head(10)
