@@ -198,6 +198,32 @@ def fast_analysis(df, focus_days=126):
     down_volume20 = volume.where(close < close.shift(1), 0).rolling(20).sum()
     up_down_volume_ratio = up_volume20 / down_volume20.replace(0, np.nan)
 
+    # V6.9 Flow Intelligence: multi-horizon price-volume pressure proxy.
+    # This is NOT official BEI foreign net buy/sell data. It is derived from
+    # daily OHLCV available from Yahoo Finance and is explicitly labeled proxy.
+    def flow_components(n):
+        mfm_n = (mfm * volume).rolling(n).sum() / volume.rolling(n).sum()
+        obv_n = obv.diff(n) / volume.rolling(n).mean()
+        up_n = volume.where(close >= close.shift(1), 0).rolling(n).sum()
+        down_n = volume.where(close < close.shift(1), 0).rolling(n).sum()
+        ud_n = up_n / down_n.replace(0, np.nan)
+        return mfm_n, obv_n, ud_n
+
+    cmf5, obv5, ud5 = flow_components(5)
+    cmf20, obv20, ud20 = flow_components(20)
+    cmf60, obv60, ud60 = flow_components(60)
+
+    def proxy_score(cmf_n, obv_n, ud_n):
+        score = 50.0
+        score += np.select([cmf_n > 0.12, cmf_n > 0.05, cmf_n >= 0, cmf_n >= -0.05], [22, 14, 5, -6], default=-14)
+        score += np.select([obv_n > 0.60, obv_n > 0.20, obv_n >= 0, obv_n >= -0.20], [18, 12, 5, -6], default=-12)
+        score += np.select([ud_n > 1.40, ud_n > 1.10, ud_n >= 0.90], [10, 6, 2], default=-8)
+        return pd.Series(score, index=cmf_n.index).clip(0,100)
+
+    flow5 = proxy_score(cmf5, obv5, ud5)
+    flow20 = proxy_score(cmf20, obv20, ud20)
+    flow60 = proxy_score(cmf60, obv60, ud60)
+
     w = pd.DataFrame({
         "Close": close,
         "MA20": ma20,
@@ -216,9 +242,18 @@ def fast_analysis(df, focus_days=126):
         "ROC20": roc20,
         "ROC60": roc60,
         "ROC120": roc120,
+        "CMF5": cmf5,
         "CMF20": cmf20,
+        "CMF60": cmf60,
+        "OBVChange5": obv5,
         "OBVChange20": obv_change20,
+        "OBVChange60": obv60,
+        "UpDownVolume5": ud5,
         "UpDownVolume": up_down_volume_ratio,
+        "UpDownVolume60": ud60,
+        "FlowProxy5D": flow5,
+        "FlowProxy20D": flow20,
+        "FlowProxy60D": flow60,
     }).dropna()
 
     if w.empty:
@@ -622,9 +657,18 @@ def fast_analysis(df, focus_days=126):
         "Breakout": "YA" if breakout else "TIDAK",
         "FlowProxyScore": flow_score,
         "FlowProxy": flow_label,
+        "FlowProxy5D": float(x["FlowProxy5D"]),
+        "FlowProxy20D": float(x["FlowProxy20D"]),
+        "FlowProxy60D": float(x["FlowProxy60D"]),
+        "CMF5": float(x["CMF5"]),
         "CMF20": cmf,
+        "CMF60": float(x["CMF60"]),
+        "OBVChange5": float(x["OBVChange5"]),
         "OBVChange20": obv_change,
+        "OBVChange60": float(x["OBVChange60"]),
+        "UpDownVolume5": float(x["UpDownVolume5"]),
         "UpDownVolume": up_down_vol,
+        "UpDownVolume60": float(x["UpDownVolume60"]),
         "Date": w.index[-1]
     }
 
@@ -1238,6 +1282,60 @@ def apply_action_engine(df, style):
     return w
 
 
+# ============================================================
+# V6.9 FLOW INTELLIGENCE — MULTI-HORIZON PRICE/VOLUME PROXY
+# ============================================================
+def calculate_flow_intelligence(df):
+    """Build a transparent multi-horizon flow proxy.
+
+    IMPORTANT: these values are price-volume proxies, not official BEI
+    foreign net buy/sell. They are useful for accumulation/distribution
+    context, but must never be presented as broker/foreign transaction data.
+    """
+    x = df.copy()
+    f5 = _safe_num_series(x, "FlowProxy5D", 50)
+    f20 = _safe_num_series(x, "FlowProxy20D", 50)
+    f60 = _safe_num_series(x, "FlowProxy60D", 50)
+    base = _safe_num_series(x, "FlowProxyScore", 50)
+
+    # 5D = tactical pressure, 20D = swing accumulation, 60D = medium-term flow.
+    x["Flow5DScore"] = f5.round(1)
+    x["Flow20DScore"] = f20.round(1)
+    x["Flow60DScore"] = f60.round(1)
+    x["FlowTrendScore"] = (0.20*f5 + 0.45*f20 + 0.35*f60).clip(0,100).round(1)
+    x["FlowAcceleration"] = (f5 - f60).round(1)
+    x["FlowConsistency"] = (100 - (f5-f20).abs()*0.60 - (f20-f60).abs()*0.40).clip(0,100).round(1)
+    x["FlowProxyConfidence"] = np.where(
+        x[["FlowProxy5D","FlowProxy20D","FlowProxy60D"]].notna().all(axis=1), 85, 55
+    )
+
+    def label(r):
+        score = float(r["FlowTrendScore"])
+        accel = float(r["FlowAcceleration"])
+        consistency = float(r["FlowConsistency"])
+        if score >= 72 and accel >= 5 and consistency >= 65:
+            return "STRONG ACCUMULATION PROXY"
+        if score >= 62 and accel >= 0:
+            return "ACCUMULATION PROXY"
+        if score <= 38 and accel <= -5 and consistency >= 65:
+            return "STRONG DISTRIBUTION PROXY"
+        if score <= 45:
+            return "DISTRIBUTION PROXY"
+        return "NEUTRAL / MIXED PROXY"
+
+    x["FlowRegime"] = x.apply(label, axis=1)
+    x["FlowSignal"] = np.where(
+        x["FlowRegime"].str.contains("ACCUMULATION"), "POSITIVE",
+        np.where(x["FlowRegime"].str.contains("DISTRIBUTION"), "NEGATIVE", "NEUTRAL")
+    )
+
+    # Style-specific flow contribution.
+    x["DayFlowScore"] = (0.55*f5 + 0.30*f20 + 0.15*f60).round(1)
+    x["SwingFlowScore"] = (0.20*f5 + 0.50*f20 + 0.30*f60).round(1)
+    x["InvestorFlowScore"] = (0.10*f5 + 0.35*f20 + 0.55*f60).round(1)
+    return x
+
+
 def style_board(result, style):
     w = apply_style_scores(result.copy(), style)
     if "V6Enriched" not in w.columns:
@@ -1426,7 +1524,7 @@ def _safe_num_series(df, name, default=50.0):
 
 
 def calculate_conviction(df, style):
-    """V6.8 Decision Intelligence.
+    """V6.9 Decision Intelligence.
     Separates QUALITY, TIMING and DATA CONFIDENCE. Confidence informs the
     interpretation of a score instead of heavily penalising a fundamentally
     strong setup when some optional fields are unavailable.
@@ -1435,7 +1533,13 @@ def calculate_conviction(df, style):
     tech = _safe_num_series(x, "Score", 50)
     readiness = _safe_num_series(x, "TradeReadiness", 50)
     rr = x.get("R:R", pd.Series(np.nan, index=x.index)).apply(rr_score)
-    flow = _safe_num_series(x, "FlowProxyScore", 50)
+    x = calculate_flow_intelligence(x)
+    if style == "⚡ Trading Harian":
+        flow = _safe_num_series(x, "DayFlowScore", 50)
+    elif style == "📈 Swing Trading Mingguan":
+        flow = _safe_num_series(x, "SwingFlowScore", 50)
+    else:
+        flow = _safe_num_series(x, "InvestorFlowScore", 50)
     fund = _safe_num_series(x, "FundamentalScore", 50)
     val = _safe_num_series(x, "ValuationScore", 50)
     inv_conf = _safe_num_series(x, "InvestorDataConfidence", 50)
@@ -1521,6 +1625,60 @@ def apply_style_scores(df, style):
     return w
 
 
+# ============================================================
+# V6.9 FLOW INTELLIGENCE — MULTI-HORIZON PRICE/VOLUME PROXY
+# ============================================================
+def calculate_flow_intelligence(df):
+    """Build a transparent multi-horizon flow proxy.
+
+    IMPORTANT: these values are price-volume proxies, not official BEI
+    foreign net buy/sell. They are useful for accumulation/distribution
+    context, but must never be presented as broker/foreign transaction data.
+    """
+    x = df.copy()
+    f5 = _safe_num_series(x, "FlowProxy5D", 50)
+    f20 = _safe_num_series(x, "FlowProxy20D", 50)
+    f60 = _safe_num_series(x, "FlowProxy60D", 50)
+    base = _safe_num_series(x, "FlowProxyScore", 50)
+
+    # 5D = tactical pressure, 20D = swing accumulation, 60D = medium-term flow.
+    x["Flow5DScore"] = f5.round(1)
+    x["Flow20DScore"] = f20.round(1)
+    x["Flow60DScore"] = f60.round(1)
+    x["FlowTrendScore"] = (0.20*f5 + 0.45*f20 + 0.35*f60).clip(0,100).round(1)
+    x["FlowAcceleration"] = (f5 - f60).round(1)
+    x["FlowConsistency"] = (100 - (f5-f20).abs()*0.60 - (f20-f60).abs()*0.40).clip(0,100).round(1)
+    x["FlowProxyConfidence"] = np.where(
+        x[["FlowProxy5D","FlowProxy20D","FlowProxy60D"]].notna().all(axis=1), 85, 55
+    )
+
+    def label(r):
+        score = float(r["FlowTrendScore"])
+        accel = float(r["FlowAcceleration"])
+        consistency = float(r["FlowConsistency"])
+        if score >= 72 and accel >= 5 and consistency >= 65:
+            return "STRONG ACCUMULATION PROXY"
+        if score >= 62 and accel >= 0:
+            return "ACCUMULATION PROXY"
+        if score <= 38 and accel <= -5 and consistency >= 65:
+            return "STRONG DISTRIBUTION PROXY"
+        if score <= 45:
+            return "DISTRIBUTION PROXY"
+        return "NEUTRAL / MIXED PROXY"
+
+    x["FlowRegime"] = x.apply(label, axis=1)
+    x["FlowSignal"] = np.where(
+        x["FlowRegime"].str.contains("ACCUMULATION"), "POSITIVE",
+        np.where(x["FlowRegime"].str.contains("DISTRIBUTION"), "NEGATIVE", "NEUTRAL")
+    )
+
+    # Style-specific flow contribution.
+    x["DayFlowScore"] = (0.55*f5 + 0.30*f20 + 0.15*f60).round(1)
+    x["SwingFlowScore"] = (0.20*f5 + 0.50*f20 + 0.30*f60).round(1)
+    x["InvestorFlowScore"] = (0.10*f5 + 0.35*f20 + 0.55*f60).round(1)
+    return x
+
+
 def style_board(result, style):
     w = apply_style_scores(result.copy(), style)
     if "V6Enriched" not in w.columns:
@@ -1533,7 +1691,7 @@ def style_board(result, style):
 # ============================================================
 
 st.title("📈 SANGGUL STOCK SCANNER IDX")
-st.caption("V6.8 — DECISION INTELLIGENCE + MULTI-STYLE + CONVICTION")
+st.caption("V6.9 — FLOW INTELLIGENCE + DECISION INTELLIGENCE + MULTI-STYLE")
 
 menu = st.radio(
     "Menu",
@@ -1680,7 +1838,7 @@ if menu == "🏠 Full IDX Scanner":
             f"{len(result)} saham memiliki data teknikal yang cukup "
             f"untuk dianalisis."
         )
-        st.caption("V6.8 memisahkan Day Trading, Swing Trading, dan Investor serta memisahkan Quality, Timing dan Data Confidence. Investor memakai fundamental, valuasi relatif sektor, Flow Proxy, serta Data Quality/Confidence. Flow Proxy BUKAN data resmi foreign net buy/sell.")
+        st.caption("V6.9 memisahkan Day Trading, Swing Trading, dan Investor serta memisahkan Quality, Timing dan Data Confidence. Investor memakai fundamental, valuasi relatif sektor, Flow Proxy, serta Data Quality/Confidence. Flow Proxy BUKAN data resmi foreign net buy/sell.")
 
         st.subheader("🎯 Multi-Style Action Board")
         st.info("Ranking dipisahkan untuk tiga gaya. Untuk Investor Jangka Panjang, ranking final membutuhkan enrichment fundamental & valuasi.")
@@ -1702,7 +1860,7 @@ if menu == "🏠 Full IDX Scanner":
             with st.spinner("Mengambil fundamental & valuation kandidat teratas..."):
                 v6_result = enrich_v6(result, limit=150, style=style, progress_callback=update_v6)
             p6.progress(1.0)
-            s6.success(f"V6.8 enrichment selesai untuk {int(v6_result['V6Enriched'].sum())} saham.")
+            s6.success(f"V6.9 enrichment selesai untuk {int(v6_result['V6Enriched'].sum())} saham.")
             st.session_state["v6_scan"] = v6_result
             st.session_state["v6_style"] = style
 
@@ -1744,7 +1902,7 @@ if menu == "🏠 Full IDX Scanner":
                 st.dataframe(safe_display_columns(invtop, invcols), width="stretch", hide_index=True)
                 st.caption("InvestorScore sudah disesuaikan dengan Data Confidence. Outlier valuasi tidak diperlakukan sebagai data valid. Flow Proxy hanya indikator price-volume, bukan foreign net buy/sell resmi.")
 
-            st.subheader("🧠 V6.8 Decision Intelligence — Quality + Timing + Confidence")
+            st.subheader("🧠 V6.9 Decision Intelligence — Quality + Timing + Confidence")
             convtop = v6_result[v6_result["V6Enriched"]].sort_values(["ConvictionScore","QualityScore","TimingScore"], ascending=[False,False,False]).head(20)
             convcols = ["Kode","Nama","Sektor","Price","ConvictionScore","ConvictionGrade","QualityScore","TimingScore","EntryQuality","ConvictionConfidence","DataConfidenceBand","ConvictionDecision","Score","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","R:R","EntryStatus"]
             st.dataframe(safe_display_columns(convtop, convcols), width="stretch", hide_index=True)
@@ -1760,6 +1918,14 @@ if menu == "🏠 Full IDX Scanner":
                 matrix = pd.concat(matrix_frames, ignore_index=True)
                 matrix_cols = ["Style","Kode","Price","ConvictionScore","ConvictionGrade","QualityScore","TimingScore","EntryQuality","ConvictionConfidence","ConvictionDecision"]
                 st.dataframe(safe_display_columns(matrix, matrix_cols), width="stretch", hide_index=True)
+
+            st.subheader("🌊 V6.9 Flow Intelligence — Multi-Horizon")
+            st.info("Flow Intelligence adalah PROXY berbasis harga-volume dari data harian. Ini BUKAN data resmi foreign net buy/sell BEI. Gunakan sebagai konfirmasi, bukan sebagai bukti transaksi investor asing.")
+            flow_int = calculate_flow_intelligence(v6_result[v6_result["V6Enriched"]].copy())
+            flow_int = flow_int.sort_values(["FlowTrendScore","FlowConsistency"], ascending=[False,False]).head(20)
+            flow_cols = ["Kode","Nama","Sektor","Price","Flow5DScore","Flow20DScore","Flow60DScore","FlowTrendScore","FlowAcceleration","FlowConsistency","FlowRegime","FlowSignal","DayFlowScore","SwingFlowScore","InvestorFlowScore"]
+            st.dataframe(safe_display_columns(flow_int, flow_cols), width="stretch", hide_index=True)
+            st.caption("5D = tekanan jangka pendek; 20D = konfirmasi swing; 60D = tren akumulasi/distribusi menengah. Skor flow tidak boleh dibaca sebagai foreign flow resmi.")
 
             st.subheader("💰 Fundamental & Sector-Relative Valuation")
             st.caption("V6.8 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
