@@ -8,13 +8,13 @@ import time
 from io import StringIO
 
 # ============================================================
-# SANGGUL STOCK SCANNER IDX V7.0
+# SANGGUL STOCK SCANNER IDX V7.1
 # FULL IDX SCANNER
 # IHSG -> SECTOR -> ALL IDX -> TECHNICAL -> OPPORTUNITY
 # ============================================================
 
 st.set_page_config(
-    page_title="Sanggul Stock Scanner IDX V7.0",
+    page_title="Sanggul Stock Scanner IDX V7.1",
     page_icon="📈",
     layout="wide"
 )
@@ -1521,6 +1521,67 @@ def calculate_top10_readiness(df, style):
     return x
 
 
+
+def calculate_position_sizing(plan_df, capital, risk_pct, max_position_pct=25.0):
+    """Calculate risk-based position sizing in IDX lots.
+    Uses midpoint of Buy Zone/EntryLow-EntryHigh as planned entry.
+    This is a scenario calculator, not an execution recommendation.
+    """
+    x = plan_df.copy()
+    capital = float(capital or 0)
+    risk_pct = float(risk_pct or 0)
+    max_position_pct = float(max_position_pct or 0)
+    risk_budget = capital * risk_pct / 100.0
+    rows = []
+    for _, r in x.iterrows():
+        entry_low = pd.to_numeric(r.get("EntryLow", np.nan), errors="coerce")
+        entry_high = pd.to_numeric(r.get("EntryHigh", np.nan), errors="coerce")
+        stop = pd.to_numeric(r.get("StopLoss", np.nan), errors="coerce")
+        if pd.isna(entry_low) or pd.isna(entry_high):
+            entry = pd.to_numeric(r.get("Price", np.nan), errors="coerce")
+        else:
+            entry = (float(entry_low) + float(entry_high)) / 2.0
+        if pd.isna(entry) or pd.isna(stop) or entry <= 0 or stop <= 0 or entry <= stop:
+            rows.append({"Kode": r.get("Kode", "-"), "PlannedEntry": np.nan,
+                         "StopLoss": stop, "RiskPerShare": np.nan, "RiskBudget": risk_budget,
+                         "Lots": 0, "Shares": 0, "PositionValue": 0.0,
+                         "PositionPct": 0.0, "MaxLoss": 0.0, "SizingStatus": "INVALID PRICE/SL"})
+            continue
+        risk_per_share = entry - float(stop)
+        raw_shares = risk_budget / risk_per_share if risk_per_share > 0 else 0
+        # IDX lot = 100 shares
+        lots_by_risk = int(np.floor(raw_shares / 100.0))
+        max_value = capital * max_position_pct / 100.0
+        lots_by_value = int(np.floor(max_value / (entry * 100.0))) if entry > 0 else 0
+        lots = max(0, min(lots_by_risk, lots_by_value))
+        shares = lots * 100
+        position_value = shares * entry
+        max_loss = shares * risk_per_share
+        position_pct = (position_value / capital * 100.0) if capital > 0 else 0.0
+        status = "OK" if lots > 0 else "MODAL/RISIKO TERLALU KECIL"
+        rows.append({"Kode": r.get("Kode", "-"), "Nama": r.get("Nama", ""),
+                     "Setup": r.get("Setup", ""), "PlannedEntry": entry,
+                     "StopLoss": float(stop), "RiskPerShare": risk_per_share,
+                     "RiskBudget": risk_budget, "Lots": lots, "Shares": shares,
+                     "PositionValue": position_value, "PositionPct": position_pct,
+                     "MaxLoss": max_loss, "SizingStatus": status,
+                     "TP1": pd.to_numeric(r.get("TP1", np.nan), errors="coerce"),
+                     "TP2": pd.to_numeric(r.get("TP2", np.nan), errors="coerce"),
+                     "FlowRegime": r.get("FlowRegime", "")})
+    return pd.DataFrame(rows)
+
+
+def format_sizing_table(sizing):
+    if sizing.empty:
+        return sizing
+    x = sizing.copy()
+    for c in ["PlannedEntry", "StopLoss", "RiskPerShare", "RiskBudget", "PositionValue", "MaxLoss", "TP1", "TP2"]:
+        if c in x.columns:
+            x[c] = pd.to_numeric(x[c], errors="coerce").map(lambda v: f"{v:,.0f}" if pd.notna(v) else "NA")
+    if "PositionPct" in x.columns:
+        x["PositionPct"] = pd.to_numeric(x["PositionPct"], errors="coerce").map(lambda v: f"{v:.2f}%" if pd.notna(v) else "NA")
+    return x
+
 def style_board(result, style):
     w = apply_style_scores(result.copy(), style)
     if "V7Enriched" not in w.columns:
@@ -1984,7 +2045,7 @@ if menu == "🏠 Full IDX Scanner":
             f"{len(result)} saham memiliki data teknikal yang cukup "
             f"untuk dianalisis."
         )
-        st.caption("V6.9.4 memisahkan Day Trading, Swing Trading, dan Investor serta memisahkan Quality, Timing dan Data Confidence. Investor memakai fundamental, valuasi relatif sektor, Flow Proxy, serta Data Quality/Confidence. Flow Proxy BUKAN data resmi foreign net buy/sell.")
+        st.caption("V7.1 memisahkan Day Trading, Swing Trading, dan Investor serta memisahkan Quality, Timing dan Data Confidence. Investor memakai fundamental, valuasi relatif sektor, Flow Proxy, serta Data Quality/Confidence. Flow Proxy BUKAN data resmi foreign net buy/sell.")
 
         st.subheader("🎯 Multi-Style Action Board")
         st.info("Ranking dipisahkan untuk tiga gaya. Untuk Investor Jangka Panjang, ranking final membutuhkan enrichment fundamental & valuasi.")
@@ -1995,7 +2056,7 @@ if menu == "🏠 Full IDX Scanner":
                 st.markdown(f"**{board_style}**")
                 st.dataframe(safe_display_columns(board, ["Kode","ActionScore","Action","Setup","Trend","R:R"]), width="stretch", hide_index=True)
 
-        st.subheader("🧠 V6.7 Conviction Engine — Technical + Fundamental + Valuation + Flow")
+        st.subheader("🧠 V7.1 Conviction Engine — Technical + Fundamental + Valuation + Flow")
         st.info("Agar Full IDX tetap ringan di cloud, fundamental diperiksa untuk 150 kandidat teratas. V6.6 memvalidasi outlier, menghitung data completeness dan confidence, lalu menurunkan bobot saham yang datanya kurang dapat dipercaya.")
         if st.button("🧠 ENRICH TOP 150 — FUNDAMENTAL, VALUATION & INVESTOR QUALITY", width="stretch"):
             p6 = st.progress(0)
@@ -2006,7 +2067,7 @@ if menu == "🏠 Full IDX Scanner":
             with st.spinner("Mengambil fundamental & valuation kandidat teratas..."):
                 v7_result = enrich_v6(result, limit=150, style=style, progress_callback=update_v6)
             p6.progress(1.0)
-            s6.success(f"V6.9 enrichment selesai untuk {int(v7_result['V7Enriched'].sum())} saham.")
+            s6.success(f"V7.1 enrichment selesai untuk {int(v7_result['V7Enriched'].sum())} saham.")
             st.session_state["v7_scan"] = v7_result
             st.session_state["v7_style"] = style
 
@@ -2054,7 +2115,7 @@ if menu == "🏠 Full IDX Scanner":
                 st.success("Top 3 di atas sudah melewati risk gate dasar. Tetap lakukan validasi chart, likuiditas, berita material dan kondisi pasar sebelum transaksi.")
 
                 # V7.0: actionable trade plan generated from the same risk-gated picks.
-                st.subheader("🧭 V7.0 Actionable Trade Plan — Top 3")
+                st.subheader("🧭 V7.1 Actionable Trade Plan — Top 3")
                 plan7 = eligible.copy()
                 plan7["Buy Zone"] = plan7.apply(
                     lambda r: f"{float(r.get('EntryLow', np.nan)):,.0f}–{float(r.get('EntryHigh', np.nan)):,.0f}"
@@ -2072,7 +2133,55 @@ if menu == "🏠 Full IDX Scanner":
                 )
                 plan7_cols = ["TopPickRank", "Kode", "Setup", "ConvictionDecision", "EntryStatus", "Buy Zone", "StopLoss", "TP1", "TP2", "R:R", "FlowRegime", "Risk Note"]
                 st.dataframe(safe_display_columns(plan7, plan7_cols), width="stretch", hide_index=True)
-                st.caption("V7.0: zona entry, stop loss dan target berasal dari kalkulasi teknikal/ATR yang sama dengan mesin R:R. Ini adalah rencana skenario, bukan instruksi transaksi otomatis.")
+                st.caption("V7.1: zona entry, stop loss dan target berasal dari kalkulasi teknikal/ATR yang sama dengan mesin R:R. Ini adalah rencana skenario, bukan instruksi transaksi otomatis.")
+
+
+                st.subheader("💰 V7.1 Position Sizing — Risk-Based Calculator")
+                st.info("Kalkulator ini menghitung jumlah lot berdasarkan modal, risiko per transaksi, dan batas maksimum alokasi per saham. Hasilnya adalah simulasi manajemen risiko, bukan instruksi transaksi otomatis.")
+                sz1, sz2, sz3 = st.columns(3)
+                with sz1:
+                    capital_input = st.number_input("Modal trading (Rp)", min_value=0.0, value=100_000_000.0, step=5_000_000.0, format="%.0f", key="v71_capital")
+                with sz2:
+                    risk_pct_input = st.number_input("Risiko per transaksi (%)", min_value=0.1, max_value=5.0, value=1.0, step=0.1, format="%.1f", key="v71_risk_pct")
+                with sz3:
+                    max_alloc_input = st.number_input("Maks. alokasi per saham (%)", min_value=1.0, max_value=100.0, value=25.0, step=1.0, format="%.1f", key="v71_max_alloc")
+
+                sizing = calculate_position_sizing(plan7, capital_input, risk_pct_input, max_alloc_input)
+                if not sizing.empty:
+                    sizing_display = format_sizing_table(sizing)
+                    sizing_cols = ["Kode", "Nama", "Setup", "PlannedEntry", "StopLoss", "RiskPerShare", "Lots", "Shares", "PositionValue", "PositionPct", "MaxLoss", "SizingStatus"]
+                    st.dataframe(safe_display_columns(sizing_display, sizing_cols), width="stretch", hide_index=True)
+                    total_value = pd.to_numeric(sizing["PositionValue"], errors="coerce").fillna(0).sum()
+                    total_loss = pd.to_numeric(sizing["MaxLoss"], errors="coerce").fillna(0).sum()
+                    total_pct = (total_value / capital_input * 100.0) if capital_input else 0.0
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric("Total nilai posisi", f"Rp {total_value:,.0f}".replace(",", "."))
+                    m2.metric("Estimasi risiko maksimum", f"Rp {total_loss:,.0f}".replace(",", "."))
+                    m3.metric("Total alokasi", f"{total_pct:.2f}%")
+                    st.caption(f"Risiko teoritis maksimum berdasarkan stop loss: {risk_pct_input:.2f}% dari modal. Pembulatan dilakukan ke lot IDX (100 saham).")
+
+                    st.subheader("🧾 V7.1 Entry Confirmation Checklist")
+                    for _, rr in plan7.iterrows():
+                        code = str(rr.get("Kode", "-"))
+                        setup = str(rr.get("Setup", "")).upper()
+                        regime = str(rr.get("FlowRegime", "")).upper()
+                        with st.expander(f"{code} — {setup} — Checklist sebelum entry"):
+                            st.markdown("- [ ] Harga berada di dalam Buy Zone")
+                            st.markdown("- [ ] Stop loss masih berada pada level yang logis")
+                            if "BREAKOUT" in setup:
+                                st.markdown("- [ ] Resistance ditembus dengan volume yang meningkat")
+                                st.markdown("- [ ] Closing price bertahan di atas area breakout")
+                            elif "PULLBACK" in setup:
+                                st.markdown("- [ ] Terjadi rejection/reversal positif di area pullback")
+                                st.markdown("- [ ] Harga tidak menembus support utama")
+                            else:
+                                st.markdown("- [ ] Ada konfirmasi candle dan volume")
+                            if "DISTRIBUTION" in regime:
+                                st.warning("Flow menunjukkan distribusi. Jangan menganggap setup siap tanpa konfirmasi tambahan.")
+                            elif "ACCUMULATION" in regime:
+                                st.success("Flow proxy menunjukkan kecenderungan akumulasi; tetap validasi dengan chart dan likuiditas.")
+                            else:
+                                st.info("Flow masih netral/mixed; gunakan ukuran posisi konservatif dan tunggu konfirmasi.")
             else:
                 st.warning("Belum ada saham yang memenuhi seluruh Top Pick Risk Gate. Ini lebih baik daripada memaksakan rekomendasi BUY.")
 
@@ -2083,11 +2192,11 @@ if menu == "🏠 Full IDX Scanner":
                 st.dataframe(safe_display_columns(invtop, invcols), width="stretch", hide_index=True)
                 st.caption("InvestorScore sudah disesuaikan dengan Data Confidence. Outlier valuasi tidak diperlakukan sebagai data valid. Flow Proxy hanya indikator price-volume, bukan foreign net buy/sell resmi.")
 
-            st.subheader("🧠 V7.0 Decision Intelligence — Quality + Timing + Confidence + Flow")
+            st.subheader("🧠 V7.1 Decision Intelligence — Quality + Timing + Confidence + Flow")
             convtop = v7_result[v7_result["V7Enriched"]].sort_values(["ConvictionScore","QualityScore","TimingScore"], ascending=[False,False,False]).head(20)
             convcols = ["Kode","Nama","Sektor","Price","ConvictionScore","ConvictionGrade","QualityScore","TimingScore","EntryQuality","ConvictionConfidence","DataConfidenceBand","ConvictionDecision","Top10Readiness","Top10ReadinessGrade","Score","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","R:R","EntryStatus"]
             st.dataframe(safe_display_columns(convtop, convcols), width="stretch", hide_index=True)
-            st.caption("V6.8 memisahkan kualitas saham, kualitas timing entry dan confidence data. Confidence adalah indikator kelengkapan data, bukan ukuran kualitas bisnis.")
+            st.caption("V7.1 memisahkan kualitas saham, kualitas timing entry dan confidence data. Confidence adalah indikator kelengkapan data, bukan ukuran kualitas bisnis.")
 
             st.subheader("🎯 Decision Matrix — 3 Gaya")
             matrix_frames = []
@@ -2100,7 +2209,7 @@ if menu == "🏠 Full IDX Scanner":
                 matrix_cols = ["Style","Kode","Price","ConvictionScore","ConvictionGrade","QualityScore","TimingScore","EntryQuality","ConvictionConfidence","ConvictionDecision"]
                 st.dataframe(safe_display_columns(matrix, matrix_cols), width="stretch", hide_index=True)
 
-            st.subheader("🌊 V7.0 Flow Intelligence — Multi-Horizon + Quality")
+            st.subheader("🌊 V7.1 Flow Intelligence — Multi-Horizon + Quality")
             st.info("Flow Intelligence adalah PROXY berbasis harga-volume dari data harian. Ini BUKAN data resmi foreign net buy/sell BEI. Gunakan sebagai konfirmasi, bukan sebagai bukti transaksi investor asing.")
             flow_int = calculate_flow_intelligence(v7_result[v7_result["V7Enriched"]].copy())
             flow_int = flow_int.sort_values(["FlowTrendScore","FlowConsistency"], ascending=[False,False]).head(20)
