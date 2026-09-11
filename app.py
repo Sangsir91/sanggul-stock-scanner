@@ -14,7 +14,7 @@ from io import StringIO
 # ============================================================
 
 st.set_page_config(
-    page_title="Sanggul Stock Scanner IDX V6.3",
+    page_title="Sanggul Stock Scanner IDX V6.4",
     page_icon="📈",
     layout="wide"
 )
@@ -1071,7 +1071,8 @@ def enrich_v6(result, limit=150, style="📈 Swing Trading Mingguan", progress_c
     work["V6Decision"] = work.apply(v6_decision, axis=1)
     work["V6Status"] = np.where(work["V6Enriched"], "ENRICHED", "TECHNICAL ONLY")
     work = apply_style_scores(work, style)
-    return work.sort_values(["StyleScore", "FinalScore", "TradeReadiness"], ascending=[False, False, False]).reset_index(drop=True)
+    work = apply_action_engine(work, style)
+    return work.sort_values(["ActionScore", "StyleScore", "FinalScore", "TradeReadiness"], ascending=[False, False, False, False]).reset_index(drop=True)
 
 
 # ============================================================
@@ -1142,11 +1143,82 @@ def apply_style_scores(df, style):
     return w
 
 # ============================================================
+# V6.4 MULTI-STYLE ACTION ENGINE
+# ============================================================
+def apply_action_engine(df, style):
+    """Convert style quality into an actionable score with timing discipline."""
+    w = df.copy()
+    score = pd.to_numeric(w.get("StyleScore", 50), errors="coerce").fillna(50.0)
+    rr = pd.to_numeric(w.get("R:R", 0), errors="coerce").fillna(0.0)
+    rsi = pd.to_numeric(w.get("RSI", 50), errors="coerce").fillna(50.0)
+    entry = w.get("EntryStatus", pd.Series("WAIT", index=w.index)).astype(str)
+    decision = w.get("Decision", pd.Series("WAIT", index=w.index)).astype(str)
+
+    action = score.copy()
+    if style in ["⚡ Trading Harian", "📈 Swing Trading Mingguan"]:
+        action += np.where(entry.eq("READY"), 8, 0)
+        action += np.where(entry.eq("WAIT FOR PULLBACK"), -5, 0)
+        action += np.where(entry.eq("WAIT FOR BREAKOUT"), -4, 0)
+        action += np.where(entry.eq("WAIT FOR BETTER ENTRY"), -5, 0)
+        action += np.where(entry.eq("EXTENDED"), -12, 0)
+        action += np.where(decision.str.startswith("BUY"), 6, 0)
+        action += np.where(decision.eq("AVOID"), -25, 0)
+        action += np.where(rsi >= 80, -12, np.where(rsi >= 72, -6, 0))
+        action += np.where(rr >= 3, 7, np.where(rr >= 2, 4, np.where(rr < 1.2, -8, 0)))
+    else:
+        fund = pd.to_numeric(w.get("FundamentalScore", 50), errors="coerce").fillna(50.0)
+        val = pd.to_numeric(w.get("ValuationScore", 50), errors="coerce").fillna(50.0)
+        action += (fund - 50) * 0.18
+        action += (val - 50) * 0.18
+        action += np.where(fund >= 70, 5, 0)
+        action += np.where(val >= 60, 4, 0)
+        action += np.where(fund < 40, -12, 0)
+        action += np.where(val < 35, -10, 0)
+        action += np.where(decision.eq("AVOID"), -20, 0)
+
+    w["ActionScore"] = action.clip(0, 100).round(1)
+
+    def action_label(r):
+        if style == "🏦 Investor Jangka Panjang":
+            if not bool(r.get("V6Enriched", False)):
+                return "FUNDAMENTAL CHECK"
+            if r["FundamentalScore"] >= 70 and r["ValuationScore"] >= 60 and r["ActionScore"] >= 70:
+                return "ACCUMULATE / HOLD"
+            if r["FundamentalScore"] >= 60 and r["ValuationScore"] >= 50 and r["ActionScore"] >= 60:
+                return "WATCH / ACCUMULATE"
+            if r["FundamentalScore"] < 40 or r["ValuationScore"] < 35:
+                return "AVOID / REVIEW"
+            return "WATCH"
+        if r["Decision"] == "AVOID": return "AVOID"
+        if r["EntryStatus"] == "EXTENDED": return "WAIT — DO NOT CHASE"
+        if r["Decision"] == "BUY NOW": return "BUY NOW"
+        if r["Decision"] == "BUY ON PULLBACK": return "BUY ON PULLBACK"
+        if r["Decision"] == "BUY ON BREAKOUT": return "BUY ON BREAKOUT"
+        if r["Decision"] == "BUY / MANAGE RISK": return "BUY / MANAGE RISK"
+        if r["EntryStatus"] == "WAIT FOR PULLBACK": return "WAIT FOR PULLBACK"
+        if r["EntryStatus"] == "WAIT FOR BREAKOUT": return "WAIT FOR BREAKOUT"
+        if r["EntryStatus"] == "WAIT FOR BETTER ENTRY": return "WAIT FOR BETTER ENTRY"
+        return "WAIT"
+
+    w["Action"] = w.apply(action_label, axis=1)
+    return w
+
+
+def style_board(result, style):
+    w = apply_style_scores(result.copy(), style)
+    if "V6Enriched" not in w.columns:
+        w["V6Enriched"] = False
+        w["FundamentalScore"] = 50.0
+        w["ValuationScore"] = 50.0
+    w = apply_action_engine(w, style)
+    return w.sort_values(["ActionScore", "StyleScore", "TradeReadiness"], ascending=[False, False, False]).reset_index(drop=True)
+
+# ============================================================
 # UI
 # ============================================================
 
 st.title("📈 SANGGUL STOCK SCANNER IDX")
-st.caption("V6.3 — MULTI-STYLE: HARIAN → SWING MINGGUAN → INVESTOR JANGKA PANJANG")
+st.caption("V6.4 — MULTI-STYLE ACTION: HARIAN → SWING MINGGUAN → INVESTOR")
 
 menu = st.radio(
     "Menu",
@@ -1293,9 +1365,18 @@ if menu == "🏠 Full IDX Scanner":
             f"{len(result)} saham memiliki data teknikal yang cukup "
             f"untuk dianalisis."
         )
-        st.caption("V6.3 menambahkan Fundamental + Valuation relatif sektor dan Flow Proxy berbasis price-volume. Flow Proxy BUKAN data resmi foreign net buy/sell.")
+        st.caption("V6.4 memisahkan ranking Day Trading, Swing Trading, dan Investor serta menambahkan Action Engine dan Flow Proxy berbasis price-volume. Flow Proxy BUKAN data resmi foreign net buy/sell.")
 
-        st.subheader("🧠 V6.3 Fundamental + Valuation + Flow")
+        st.subheader("🎯 Multi-Style Action Board")
+        st.info("Ranking dipisahkan untuk tiga gaya. Untuk Investor Jangka Panjang, ranking final membutuhkan enrichment fundamental & valuasi.")
+        bcols = st.columns(3)
+        for col, board_style in zip(bcols, STYLE_CONFIG.keys()):
+            board = style_board(result, board_style).head(5)
+            with col:
+                st.markdown(f"**{board_style}**")
+                st.dataframe(board[["Kode","ActionScore","Action","Setup","Trend","R:R"]], width="stretch", hide_index=True)
+
+        st.subheader("🧠 V6.4 Fundamental + Valuation + Flow")
         st.info("Agar Full IDX tetap ringan di cloud, fundamental diperiksa untuk 150 kandidat teknikal/trading teratas. Flow Proxy tersedia dari data harga-volume untuk seluruh saham yang berhasil dianalisis.")
         if st.button("🧠 ENRICH TOP 150 DENGAN FUNDAMENTAL & VALUATION", width="stretch"):
             p6 = st.progress(0)
@@ -1316,7 +1397,7 @@ if menu == "🏠 Full IDX Scanner":
         if not v6_result.empty:
             st.subheader(f"⭐ Top 10 — {style}")
             v6top = v6_result[v6_result["V6Enriched"]].head(10)
-            cols6 = ["Kode","Nama","Sektor","Price","StyleScore","FinalScore","Score","TradeReadiness","FundamentalScore","ValuationScore","ValuationMethod","FlowProxyScore","StyleDecision"]
+            cols6 = ["Kode","Nama","Sektor","Price","ActionScore","Action","StyleScore","FinalScore","Score","TradeReadiness","FundamentalScore","ValuationScore","ValuationMethod","FlowProxyScore","StyleDecision"]
             st.dataframe(v6top[cols6], width="stretch", hide_index=True)
 
             st.subheader("💰 Fundamental & Sector-Relative Valuation")
@@ -1492,7 +1573,7 @@ if menu == "🏠 Full IDX Scanner":
             if v6_filtered.empty:
                 st.info("Belum ada saham V6 yang memenuhi filter.")
             else:
-                st.dataframe(v6_filtered[["Kode","Nama","Sektor","Price","StyleScore","FinalScore","StyleDecision","Setup","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","R:R"]], width="stretch", hide_index=True)
+                st.dataframe(v6_filtered[["Kode","Nama","Sektor","Price","ActionScore","Action","StyleScore","FinalScore","StyleDecision","Setup","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","R:R"]], width="stretch", hide_index=True)
 
         # ----------------------------------------------------
         # SECTOR STRENGTH
@@ -1605,9 +1686,9 @@ if menu == "🏠 Full IDX Scanner":
         if not v6_result.empty:
             csv6 = v6_result.to_csv(index=False).encode("utf-8")
             st.download_button(
-                "⬇️ Download V6.3 Final Ranking CSV",
+                "⬇️ Download V6.4 Final Ranking CSV",
                 data=csv6,
-                file_name="sanggul_v6_3_style_ranking.csv",
+                file_name="sanggul_v6_4_multi_style_ranking.csv",
                 mime="text/csv",
                 width="stretch"
             )
