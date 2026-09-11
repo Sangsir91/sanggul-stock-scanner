@@ -878,6 +878,13 @@ def get_fundamental(kode):
     debt_equity = _num(info, "debtToEquity")
     current_ratio = _num(info, "currentRatio")
     market_cap = _num(info, "marketCap")
+    roa = _num(info, "returnOnAssets") * 100 if not pd.isna(_num(info, "returnOnAssets")) else np.nan
+    dividend_yield = _num(info, "dividendYield") * 100 if not pd.isna(_num(info, "dividendYield")) else np.nan
+    payout_ratio = _num(info, "payoutRatio") * 100 if not pd.isna(_num(info, "payoutRatio")) else np.nan
+    operating_cashflow = _num(info, "operatingCashflow")
+    free_cashflow = _num(info, "freeCashflow")
+    total_cash = _num(info, "totalCash")
+    total_debt = _num(info, "totalDebt")
 
     # Absolute valuation score is retained as a fallback. V6.3 later
     # replaces it with a sector-relative score when enough peer data exists.
@@ -912,6 +919,9 @@ def get_fundamental(kode):
         "OperatingMargin": op_margin, "RevenueGrowth": revenue_growth,
         "EarningsGrowth": earnings_growth, "DebtEquity": debt_equity,
         "CurrentRatio": current_ratio, "MarketCap": market_cap,
+        "ROA": roa, "DividendYield": dividend_yield, "PayoutRatio": payout_ratio,
+        "OperatingCashFlow": operating_cashflow, "FreeCashFlow": free_cashflow,
+        "TotalCash": total_cash, "TotalDebt": total_debt,
         "BusinessSector": info.get("sector", ""),
     }
 
@@ -1031,7 +1041,7 @@ def enrich_v6(result, limit=150, style="📈 Swing Trading Mingguan", progress_c
     for field in [
         "FundamentalScore","ValuationScore","PE","ForwardPE","PB","PS",
         "EV_EBITDA","ROE","ProfitMargin","OperatingMargin","RevenueGrowth",
-        "EarningsGrowth","DebtEquity","CurrentRatio","MarketCap","BusinessSector"
+        "EarningsGrowth","DebtEquity","CurrentRatio","MarketCap","ROA","DividendYield","PayoutRatio","OperatingCashFlow","FreeCashFlow","TotalCash","TotalDebt","BusinessSector"
     ]:
         work[field] = work["Kode"].map(lambda k: getv(k, field))
 
@@ -1214,11 +1224,130 @@ def style_board(result, style):
     return w.sort_values(["ActionScore", "StyleScore", "TradeReadiness"], ascending=[False, False, False]).reset_index(drop=True)
 
 # ============================================================
+# V6.5 INVESTOR INTELLIGENCE ENGINE
+# ============================================================
+def _band_score(v, bands):
+    if pd.isna(v):
+        return 50.0
+    for threshold, score in bands:
+        if v <= threshold:
+            return float(score)
+    return float(bands[-1][1])
+
+
+def calculate_investor_metrics(w):
+    """Build investor-quality sub-scores from enriched fundamentals.
+    Missing data stays neutral and is flagged rather than treated as excellent.
+    """
+    x = w.copy()
+    def col(name, default):
+        if name in x.columns:
+            return pd.to_numeric(x[name], errors="coerce")
+        return pd.Series(default, index=x.index, dtype=float)
+    roe = col("ROE", 50)
+    roa = col("ROA", 50)
+    margin = col("ProfitMargin", 50)
+    rev = col("RevenueGrowth", 0)
+    earn = col("EarningsGrowth", 0)
+    de = col("DebtEquity", 100)
+    cr = col("CurrentRatio", 1)
+    pe = col("PE", np.nan)
+    pb = col("PB", np.nan)
+    fcf = col("FreeCashFlow", np.nan)
+    ocf = col("OperatingCashFlow", np.nan)
+    dy = col("DividendYield", np.nan)
+
+    x["QualityScore"] = (
+        0.35 * roe.clip(0, 30).fillna(15).mul(100/30) +
+        0.20 * roa.clip(0, 15).fillna(7.5).mul(100/15) +
+        0.25 * margin.clip(-10, 30).fillna(10).add(10).mul(100/40) +
+        0.20 * (100 - de.clip(0, 300).fillna(150).mul(100/300))
+    ).clip(0,100).round(1)
+
+    x["GrowthScore"] = (
+        0.45 * (50 + rev.clip(-20, 30).fillna(0) * (50/30)) +
+        0.45 * (50 + earn.clip(-30, 50).fillna(0) * (50/50)) +
+        0.10 * cr.clip(0, 3).fillna(1.5).mul(100/3)
+    ).clip(0,100).round(1)
+
+    x["BalanceSheetScore"] = (
+        0.60 * (100 - de.clip(0, 300).fillna(150).mul(100/300)) +
+        0.40 * cr.clip(0, 3).fillna(1.5).mul(100/3)
+    ).clip(0,100).round(1)
+
+    # Cash-flow quality: positive FCF/OCF gets rewarded; missing data is neutral.
+    cf_quality = pd.Series(50.0, index=x.index)
+    cf_quality.loc[ocf > 0] += 20
+    cf_quality.loc[fcf > 0] += 20
+    cf_quality.loc[(ocf > 0) & (fcf > 0)] += 10
+    cf_quality.loc[(ocf < 0) | (fcf < 0)] -= 20
+    x["CashFlowScore"] = cf_quality.clip(0,100).round(1)
+
+    # Investor valuation uses the already sector-relative valuation score.
+    x["InvestorValuationScore"] = pd.to_numeric(x.get("ValuationScore",50), errors="coerce").fillna(50).clip(0,100).round(1)
+    x["InvestorFundamentalScore"] = (
+        0.35*x["QualityScore"] +
+        0.25*x["GrowthScore"] +
+        0.20*x["BalanceSheetScore"] +
+        0.20*x["CashFlowScore"]
+    ).round(1)
+
+    x["InvestorScore"] = (
+        0.45*x["InvestorFundamentalScore"] +
+        0.25*x["InvestorValuationScore"] +
+        0.15*x["FlowProxyScore"].fillna(50) +
+        0.15*x["TradeReadiness"].fillna(50)
+    ).clip(0,100).round(1)
+
+    x["InvestorDataCompleteness"] = (
+        x[["ROE","RevenueGrowth","EarningsGrowth","DebtEquity","PE","PB"]].notna().mean(axis=1)*100
+    ).round(0)
+
+    def grade(r):
+        score=r["InvestorScore"]
+        completeness=r["InvestorDataCompleteness"]
+        if completeness < 50: return "C — DATA LIMITED"
+        if score >= 85: return "A+ — HIGH QUALITY"
+        if score >= 78: return "A — QUALITY"
+        if score >= 70: return "B — GOOD"
+        if score >= 60: return "C — SPECULATIVE"
+        return "D — REVIEW"
+    x["InvestmentGrade"] = x.apply(grade, axis=1)
+
+    def inv_action(r):
+        if r["InvestorDataCompleteness"] < 50:
+            return "FUNDAMENTAL CHECK"
+        if r["InvestorScore"] >= 80 and r["InvestorValuationScore"] >= 60 and r["QualityScore"] >= 65:
+            return "ACCUMULATE / HOLD"
+        if r["InvestorScore"] >= 70 and r["InvestorValuationScore"] >= 50:
+            return "WATCH / ACCUMULATE ON WEAKNESS"
+        if r["InvestorScore"] < 55 or r["QualityScore"] < 40:
+            return "AVOID / REVIEW"
+        return "WATCH"
+    x["InvestorAction"] = x.apply(inv_action, axis=1)
+    return x
+
+
+def investor_board_v65(result):
+    x = calculate_investor_metrics(result.copy())
+    return x.sort_values(["InvestorScore","QualityScore","InvestorValuationScore"], ascending=False).reset_index(drop=True)
+
+# Override investor branch with V6.5 intelligence while preserving Day/Swing engine.
+_old_apply_style_scores = apply_style_scores
+def apply_style_scores(df, style):
+    w = _old_apply_style_scores(df, style)
+    if style == "🏦 Investor Jangka Panjang":
+        w = calculate_investor_metrics(w)
+        w["StyleScore"] = w["InvestorScore"]
+        w["StyleDecision"] = w["InvestorAction"]
+    return w
+
+# ============================================================
 # UI
 # ============================================================
 
 st.title("📈 SANGGUL STOCK SCANNER IDX")
-st.caption("V6.4 — MULTI-STYLE ACTION: HARIAN → SWING MINGGUAN → INVESTOR")
+st.caption("V6.5 — MULTI-STYLE + INVESTOR INTELLIGENCE")
 
 menu = st.radio(
     "Menu",
@@ -1365,7 +1494,7 @@ if menu == "🏠 Full IDX Scanner":
             f"{len(result)} saham memiliki data teknikal yang cukup "
             f"untuk dianalisis."
         )
-        st.caption("V6.4 memisahkan ranking Day Trading, Swing Trading, dan Investor serta menambahkan Action Engine dan Flow Proxy berbasis price-volume. Flow Proxy BUKAN data resmi foreign net buy/sell.")
+        st.caption("V6.5 memisahkan Day Trading, Swing Trading, dan Investor; Investor memakai Fundamental Quality, Growth, Balance Sheet, Cash Flow, dan Sector-Relative Valuation. Flow Proxy BUKAN data resmi foreign net buy/sell.")
 
         st.subheader("🎯 Multi-Style Action Board")
         st.info("Ranking dipisahkan untuk tiga gaya. Untuk Investor Jangka Panjang, ranking final membutuhkan enrichment fundamental & valuasi.")
@@ -1376,9 +1505,9 @@ if menu == "🏠 Full IDX Scanner":
                 st.markdown(f"**{board_style}**")
                 st.dataframe(board[["Kode","ActionScore","Action","Setup","Trend","R:R"]], width="stretch", hide_index=True)
 
-        st.subheader("🧠 V6.4 Fundamental + Valuation + Flow")
-        st.info("Agar Full IDX tetap ringan di cloud, fundamental diperiksa untuk 150 kandidat teknikal/trading teratas. Flow Proxy tersedia dari data harga-volume untuk seluruh saham yang berhasil dianalisis.")
-        if st.button("🧠 ENRICH TOP 150 DENGAN FUNDAMENTAL & VALUATION", width="stretch"):
+        st.subheader("🧠 V6.5 Investor Intelligence — Fundamental + Valuation + Flow")
+        st.info("Agar Full IDX tetap ringan di cloud, fundamental diperiksa untuk 150 kandidat teknikal/trading teratas. Investor ranking memakai quality, growth, balance sheet, cash flow, sector-relative valuation, dan Flow Proxy.")
+        if st.button("🧠 ENRICH TOP 150 — FUNDAMENTAL, VALUATION & INVESTOR QUALITY", width="stretch"):
             p6 = st.progress(0)
             s6 = st.empty()
             def update_v6(v):
@@ -1387,7 +1516,7 @@ if menu == "🏠 Full IDX Scanner":
             with st.spinner("Mengambil fundamental & valuation kandidat teratas..."):
                 v6_result = enrich_v6(result, limit=150, style=style, progress_callback=update_v6)
             p6.progress(1.0)
-            s6.success(f"V6.3 enrichment selesai untuk {int(v6_result['V6Enriched'].sum())} saham.")
+            s6.success(f"V6.5 enrichment selesai untuk {int(v6_result['V6Enriched'].sum())} saham.")
             st.session_state["v6_scan"] = v6_result
             st.session_state["v6_style"] = style
 
@@ -1400,8 +1529,15 @@ if menu == "🏠 Full IDX Scanner":
             cols6 = ["Kode","Nama","Sektor","Price","ActionScore","Action","StyleScore","FinalScore","Score","TradeReadiness","FundamentalScore","ValuationScore","ValuationMethod","FlowProxyScore","StyleDecision"]
             st.dataframe(v6top[cols6], width="stretch", hide_index=True)
 
+            if style == "🏦 Investor Jangka Panjang":
+                st.subheader("🏦 Investor Intelligence — Investment Grade")
+                invtop = investor_board_v65(v6_result[v6_result["V6Enriched"]].copy()).head(15)
+                invcols = ["Kode","Nama","Sektor","Price","InvestorScore","InvestmentGrade","InvestorAction","QualityScore","GrowthScore","BalanceSheetScore","CashFlowScore","InvestorValuationScore","InvestorDataCompleteness"]
+                st.dataframe(invtop[invcols], width="stretch", hide_index=True)
+                st.caption("InvestorScore memprioritaskan kualitas bisnis, pertumbuhan, neraca, cash flow, valuasi relatif sektor, Flow Proxy, dan kesiapan harga. Ini alat bantu analisis, bukan rekomendasi investasi.")
+
             st.subheader("💰 Fundamental & Sector-Relative Valuation")
-            st.caption("V6.3 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
+            st.caption("V6.5 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
             ftop = v6_result[v6_result["V6Enriched"]].head(20).copy()
             fcols = ["Kode","Price","Sektor","SectorGroup","FundamentalScore","ValuationScore","ValuationMethod","PE","PB","PS","ROE","RevenueGrowth","EarningsGrowth","DebtEquity"]
             st.dataframe(ftop[fcols], width="stretch", hide_index=True)
