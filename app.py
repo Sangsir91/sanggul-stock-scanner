@@ -8,13 +8,13 @@ import time
 from io import StringIO
 
 # ============================================================
-# SANGGUL STOCK SCANNER IDX V6.9.5
+# SANGGUL STOCK SCANNER IDX V7.0
 # FULL IDX SCANNER
 # IHSG -> SECTOR -> ALL IDX -> TECHNICAL -> OPPORTUNITY
 # ============================================================
 
 st.set_page_config(
-    page_title="Sanggul Stock Scanner IDX V6.9.5",
+    page_title="Sanggul Stock Scanner IDX V7.0",
     page_icon="📈",
     layout="wide"
 )
@@ -1111,7 +1111,7 @@ def enrich_v6(result, limit=150, style="📈 Swing Trading Mingguan", progress_c
     ]:
         work[field] = work["Kode"].map(lambda k: getv(k, field))
 
-    work["V6Enriched"] = work["Kode"].isin(candidates) & work["FundamentalScore"].notna()
+    work["V7Enriched"] = work["Kode"].isin(candidates) & work["FundamentalScore"].notna()
 
     # V6.7 calibration: keep raw scores for auditability, but compress extreme 100s
     # so a perfect-looking score is reserved for genuinely exceptional cases.
@@ -1151,7 +1151,7 @@ def enrich_v6(result, limit=150, style="📈 Swing Trading Mingguan", progress_c
         base = r["Decision"]
         if base == "AVOID":
             return "AVOID"
-        if not bool(r["V6Enriched"]):
+        if not bool(r["V7Enriched"]):
             return base
         if r["FundamentalScore"] < 35 or r["ValuationScore"] < 35:
             return "WAIT — FUNDAMENTAL CHECK" if base != "AVOID" else "AVOID"
@@ -1162,7 +1162,7 @@ def enrich_v6(result, limit=150, style="📈 Swing Trading Mingguan", progress_c
         return "WAIT"
 
     work["V6Decision"] = work.apply(v6_decision, axis=1)
-    work["V6Status"] = np.where(work["V6Enriched"], "ENRICHED", "TECHNICAL ONLY")
+    work["V6Status"] = np.where(work["V7Enriched"], "ENRICHED", "TECHNICAL ONLY")
     work = apply_style_scores(work, style)
     work = apply_action_engine(work, style)
     work = calculate_top10_readiness(work, style)
@@ -1224,7 +1224,7 @@ def apply_style_scores(df, style):
     else:
         w["StyleScore"]=(0.15*tech + 0.10*ready + 0.10*flow + 0.35*fund + 0.30*val).round(1)
         def inv_decision(r):
-            if not bool(r.get("V6Enriched",False)):
+            if not bool(r.get("V7Enriched",False)):
                 return "FUNDAMENTAL CHECK"
             if r["FundamentalScore"] >= 70 and r["ValuationScore"] >= 60 and r["StyleScore"] >= 70:
                 return "ACCUMULATE / HOLD"
@@ -1279,7 +1279,7 @@ def apply_action_engine(df, style):
 
     def action_label(r):
         if style == "🏦 Investor Jangka Panjang":
-            if not bool(r.get("V6Enriched", False)):
+            if not bool(r.get("V7Enriched", False)):
                 return "FUNDAMENTAL CHECK"
             if r["FundamentalScore"] >= 70 and r["ValuationScore"] >= 60 and r["ActionScore"] >= 70:
                 return "ACCUMULATE / HOLD"
@@ -1424,7 +1424,7 @@ def calculate_top10_readiness(df, style):
     and data confidence. It is deliberately independent from ActionScore so
     the Top 10 answers: 'which names are most ready to act on now?'
     """
-    # V6.9.5: always materialize the flow fields before calculating
+    # V7.0: always materialize the flow fields before calculating
     # readiness. Older session-state data may contain FlowRegime but miss
     # FlowQualityScore, which previously appeared as None in the Top 10 table.
     x = calculate_flow_intelligence(df.copy())
@@ -1523,8 +1523,8 @@ def calculate_top10_readiness(df, style):
 
 def style_board(result, style):
     w = apply_style_scores(result.copy(), style)
-    if "V6Enriched" not in w.columns:
-        w["V6Enriched"] = False
+    if "V7Enriched" not in w.columns:
+        w["V7Enriched"] = False
         w["FundamentalScore"] = 50.0
         w["ValuationScore"] = 50.0
     w = apply_action_engine(w, style)
@@ -1821,11 +1821,16 @@ def apply_style_scores(df, style):
 
 
 def style_board(result, style):
+    """V7.0 style board with readiness and flow materialization."""
     w = apply_style_scores(result.copy(), style)
-    if "V6Enriched" not in w.columns:
-        w["V6Enriched"] = False
+    if "V7Enriched" not in w.columns:
+        w["V7Enriched"] = False
     w = apply_action_engine(w, style)
-    return w.sort_values(["ConvictionScore", "ActionScore", "TradeReadiness"], ascending=[False, False, False]).reset_index(drop=True)
+    w = calculate_top10_readiness(w, style)
+    return w.sort_values(
+        ["Top10Readiness", "ConvictionScore", "TradeReadiness"],
+        ascending=[False, False, False]
+    ).reset_index(drop=True)
 
 # ============================================================
 # UI
@@ -1962,7 +1967,7 @@ if menu == "🏠 Full IDX Scanner":
 
         st.session_state["full_scan"] = result
         st.session_state["scan_style"] = style
-        st.session_state.pop("v6_scan", None)
+        st.session_state.pop("v7_scan", None)
 
     result = st.session_state.get(
         "full_scan",
@@ -1970,7 +1975,7 @@ if menu == "🏠 Full IDX Scanner":
     )
     if st.session_state.get("scan_style") != style:
         st.session_state.pop("full_scan", None)
-        st.session_state.pop("v6_scan", None)
+        st.session_state.pop("v7_scan", None)
         result = pd.DataFrame()
 
     if not result.empty:
@@ -1999,45 +2004,45 @@ if menu == "🏠 Full IDX Scanner":
                 p6.progress(v)
                 s6.info(f"Enrichment fundamental: {v*100:.0f}%")
             with st.spinner("Mengambil fundamental & valuation kandidat teratas..."):
-                v6_result = enrich_v6(result, limit=150, style=style, progress_callback=update_v6)
+                v7_result = enrich_v6(result, limit=150, style=style, progress_callback=update_v6)
             p6.progress(1.0)
-            s6.success(f"V6.9 enrichment selesai untuk {int(v6_result['V6Enriched'].sum())} saham.")
-            st.session_state["v6_scan"] = v6_result
-            st.session_state["v6_style"] = style
+            s6.success(f"V6.9 enrichment selesai untuk {int(v7_result['V7Enriched'].sum())} saham.")
+            st.session_state["v7_scan"] = v7_result
+            st.session_state["v7_style"] = style
 
-        v6_result = st.session_state.get("v6_scan", pd.DataFrame())
-        if st.session_state.get("v6_style") != style:
-            v6_result = pd.DataFrame()
+        v7_result = st.session_state.get("v7_scan", pd.DataFrame())
+        if st.session_state.get("v7_style") != style:
+            v7_result = pd.DataFrame()
 
         # V6.7.2 safety repair: older session_state data may come from V6.6/V6.7
         # and therefore not contain the new Conviction columns. Recalculate them
         # before any Conviction sorting so a stale cloud session can never crash.
-        if not v6_result.empty:
+        if not v7_result.empty:
             missing_conv = [
                 "ConvictionScore", "ConvictionGrade", "ConvictionConfidence",
                 "ConvictionRaw", "ConvictionDecision"
             ]
-            if any(c not in v6_result.columns for c in missing_conv):
+            if any(c not in v7_result.columns for c in missing_conv):
                 try:
-                    v6_result = apply_style_scores(v6_result.copy(), style)
-                    v6_result = apply_action_engine(v6_result, style)
-                    st.session_state["v6_scan"] = v6_result
+                    v7_result = apply_style_scores(v7_result.copy(), style)
+                    v7_result = apply_action_engine(v7_result, style)
+                    st.session_state["v7_scan"] = v7_result
                 except Exception:
                     pass
             # Guarantee display/sort columns exist even when optional enrichment
             # fields are unavailable. Missing values are shown as NA.
             for c in missing_conv:
-                if c not in v6_result.columns:
-                    v6_result[c] = np.nan
+                if c not in v7_result.columns:
+                    v7_result[c] = np.nan
 
-        if not v6_result.empty:
+        if not v7_result.empty:
             st.subheader(f"⭐ Top 10 Readiness — {style}")
-            v6top = calculate_top10_readiness(v6_result[v6_result["V6Enriched"]].copy(), style)
+            v6top = calculate_top10_readiness(v7_result[v7_result["V7Enriched"]].copy(), style)
             v6top = v6top.sort_values(["Top10Readiness","ConvictionScore","TimingScore"], ascending=[False,False,False]).head(10).copy()
             v6top["Top10Rank"] = range(1, len(v6top) + 1)
             cols6 = ["Top10Rank","Kode","Nama","Sektor","Price","Top10Readiness","Top10ReadinessGrade","ConvictionScore","TimingScore","EntryQuality","EntryStatus","R:R","FlowQualityScore","FlowRegime","FundamentalScore","ValuationScore","ConvictionConfidence","ConvictionDecision","Top10Reason"]
             st.dataframe(safe_display_columns(v6top, cols6), width="stretch", hide_index=True)
-            st.caption("V6.9.5 Top 10 Readiness memakai Risk Gate + Flow Quality. Ranking tidak hanya mencari saham bagus, tetapi juga menyaring R:R rendah, entry terlalu extended, conviction rendah dan confidence rendah.")
+            st.caption("V7.0 Top 10 Readiness memakai Risk Gate + Flow Quality. Ranking tidak hanya mencari saham bagus, tetapi juga menyaring R:R rendah, entry terlalu extended, conviction rendah dan confidence rendah.")
 
             st.subheader("🏆 Top 3 Actionable Picks — Risk-Gated")
             eligible = v6top[v6top["TopPickEligible"]].copy() if "TopPickEligible" in v6top.columns else pd.DataFrame()
@@ -2047,18 +2052,39 @@ if menu == "🏠 Full IDX Scanner":
                 pick_cols = ["TopPickRank","Kode","Nama","Sektor","Price","Top10Readiness","Top10ReadinessGrade","ConvictionScore","TimingScore","EntryQuality","EntryStatus","R:R","FlowQualityScore","FlowRegime","ConvictionDecision","TopPickStatus","TopPickReason"]
                 st.dataframe(safe_display_columns(eligible, pick_cols), width="stretch", hide_index=True)
                 st.success("Top 3 di atas sudah melewati risk gate dasar. Tetap lakukan validasi chart, likuiditas, berita material dan kondisi pasar sebelum transaksi.")
+
+                # V7.0: actionable trade plan generated from the same risk-gated picks.
+                st.subheader("🧭 V7.0 Actionable Trade Plan — Top 3")
+                plan7 = eligible.copy()
+                plan7["Buy Zone"] = plan7.apply(
+                    lambda r: f"{float(r.get('EntryLow', np.nan)):,.0f}–{float(r.get('EntryHigh', np.nan)):,.0f}"
+                    if pd.notna(r.get('EntryLow', np.nan)) and pd.notna(r.get('EntryHigh', np.nan)) else "NA", axis=1
+                )
+                for col in ["StopLoss", "TP1", "TP2", "TP3"]:
+                    if col in plan7.columns:
+                        plan7[col] = pd.to_numeric(plan7[col], errors="coerce").map(lambda v: f"{v:,.0f}" if pd.notna(v) else "NA")
+                plan7["Risk Note"] = plan7.apply(
+                    lambda r: (
+                        "Flow positif/akumulasi" if "ACCUMULATION" in str(r.get("FlowRegime", ""))
+                        else "Flow netral; tunggu konfirmasi" if "NEUTRAL" in str(r.get("FlowRegime", ""))
+                        else "Waspada distribusi"
+                    ), axis=1
+                )
+                plan7_cols = ["TopPickRank", "Kode", "Setup", "ConvictionDecision", "EntryStatus", "Buy Zone", "StopLoss", "TP1", "TP2", "R:R", "FlowRegime", "Risk Note"]
+                st.dataframe(safe_display_columns(plan7, plan7_cols), width="stretch", hide_index=True)
+                st.caption("V7.0: zona entry, stop loss dan target berasal dari kalkulasi teknikal/ATR yang sama dengan mesin R:R. Ini adalah rencana skenario, bukan instruksi transaksi otomatis.")
             else:
                 st.warning("Belum ada saham yang memenuhi seluruh Top Pick Risk Gate. Ini lebih baik daripada memaksakan rekomendasi BUY.")
 
             if style == "🏦 Investor Jangka Panjang":
                 st.subheader("🏦 Investor Intelligence — Investment Grade")
-                invtop = investor_board_v65(v6_result[v6_result["V6Enriched"]].copy()).head(15)
+                invtop = investor_board_v65(v7_result[v7_result["V7Enriched"]].copy()).head(15)
                 invcols = ["Kode","Nama","Sektor","Price","InvestorScore","InvestorScoreRaw","InvestmentGrade","InvestorAction","QualityScore","GrowthScore","BalanceSheetScore","CashFlowScore","InvestorValuationScore","ValuationConfidence","InvestorDataCompleteness","InvestorDataConfidence"]
                 st.dataframe(safe_display_columns(invtop, invcols), width="stretch", hide_index=True)
                 st.caption("InvestorScore sudah disesuaikan dengan Data Confidence. Outlier valuasi tidak diperlakukan sebagai data valid. Flow Proxy hanya indikator price-volume, bukan foreign net buy/sell resmi.")
 
-            st.subheader("🧠 V6.9.5 Decision Intelligence — Quality + Timing + Confidence + Flow")
-            convtop = v6_result[v6_result["V6Enriched"]].sort_values(["ConvictionScore","QualityScore","TimingScore"], ascending=[False,False,False]).head(20)
+            st.subheader("🧠 V7.0 Decision Intelligence — Quality + Timing + Confidence + Flow")
+            convtop = v7_result[v7_result["V7Enriched"]].sort_values(["ConvictionScore","QualityScore","TimingScore"], ascending=[False,False,False]).head(20)
             convcols = ["Kode","Nama","Sektor","Price","ConvictionScore","ConvictionGrade","QualityScore","TimingScore","EntryQuality","ConvictionConfidence","DataConfidenceBand","ConvictionDecision","Top10Readiness","Top10ReadinessGrade","Score","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","R:R","EntryStatus"]
             st.dataframe(safe_display_columns(convtop, convcols), width="stretch", hide_index=True)
             st.caption("V6.8 memisahkan kualitas saham, kualitas timing entry dan confidence data. Confidence adalah indikator kelengkapan data, bukan ukuran kualitas bisnis.")
@@ -2066,7 +2092,7 @@ if menu == "🏠 Full IDX Scanner":
             st.subheader("🎯 Decision Matrix — 3 Gaya")
             matrix_frames = []
             for st_style in STYLE_CONFIG.keys():
-                m = style_board(v6_result[v6_result["V6Enriched"]].copy(), st_style).head(5).copy()
+                m = style_board(v7_result[v7_result["V7Enriched"]].copy(), st_style).head(5).copy()
                 m["Style"] = st_style
                 matrix_frames.append(m)
             if matrix_frames:
@@ -2074,22 +2100,22 @@ if menu == "🏠 Full IDX Scanner":
                 matrix_cols = ["Style","Kode","Price","ConvictionScore","ConvictionGrade","QualityScore","TimingScore","EntryQuality","ConvictionConfidence","ConvictionDecision"]
                 st.dataframe(safe_display_columns(matrix, matrix_cols), width="stretch", hide_index=True)
 
-            st.subheader("🌊 V6.9.5 Flow Intelligence — Multi-Horizon + Quality")
+            st.subheader("🌊 V7.0 Flow Intelligence — Multi-Horizon + Quality")
             st.info("Flow Intelligence adalah PROXY berbasis harga-volume dari data harian. Ini BUKAN data resmi foreign net buy/sell BEI. Gunakan sebagai konfirmasi, bukan sebagai bukti transaksi investor asing.")
-            flow_int = calculate_flow_intelligence(v6_result[v6_result["V6Enriched"]].copy())
+            flow_int = calculate_flow_intelligence(v7_result[v7_result["V7Enriched"]].copy())
             flow_int = flow_int.sort_values(["FlowTrendScore","FlowConsistency"], ascending=[False,False]).head(20)
             flow_cols = ["Kode","Nama","Sektor","Price","Flow5DScore","Flow20DScore","Flow60DScore","FlowTrendScore","FlowAcceleration","FlowConsistency","FlowRelativeVolume","FlowQualityScore","FlowDecisionImpact","FlowRegime","FlowSignal","FlowDivergence","PriceFlowAlignment","DayFlowScore","SwingFlowScore","InvestorFlowScore"]
             st.dataframe(safe_display_columns(flow_int, flow_cols), width="stretch", hide_index=True)
-            st.caption("V6.9.5: 5D = tactical, 20D = swing, 60D = investor. Flow kini memakai transformasi kontinu agar tidak jenuh di 100, ditambah relative volume dan price-flow divergence. Tetap PROXY price-volume, bukan foreign flow resmi.")
+            st.caption("V7.0: 5D = tactical, 20D = swing, 60D = investor. Flow kini memakai transformasi kontinu agar tidak jenuh di 100, ditambah relative volume dan price-flow divergence. Tetap PROXY price-volume, bukan foreign flow resmi.")
 
             st.subheader("💰 Fundamental & Sector-Relative Valuation")
             st.caption("V6.8 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
-            ftop = v6_result[v6_result["V6Enriched"]].head(20).copy()
+            ftop = v7_result[v7_result["V7Enriched"]].head(20).copy()
             fcols = ["Kode","Price","Sektor","SectorGroup","FundamentalScore","ValuationScore","ValuationMethod","PE","PB","PS","ROE","RevenueGrowth","EarningsGrowth","DebtEquity","ValuationConfidence","ValuationDataCompleteness","InvestorDataConfidence"]
             st.dataframe(safe_display_columns(ftop, fcols), width="stretch", hide_index=True)
 
             st.subheader("💧 Flow Proxy — Price & Volume")
-            flowtop = v6_result.sort_values("FlowProxyScore", ascending=False).head(20)
+            flowtop = v7_result.sort_values("FlowProxyScore", ascending=False).head(20)
             flowcols = ["Kode","Price","FlowProxyScore","FlowProxy","CMF20","OBVChange20","UpDownVolume"]
             st.dataframe(safe_display_columns(flowtop, flowcols), width="stretch", hide_index=True)
 
@@ -2236,15 +2262,15 @@ if menu == "🏠 Full IDX Scanner":
         # ----------------------------------------------------
         # V6 FINAL RANKING
         # ----------------------------------------------------
-        if not v6_result.empty:
+        if not v7_result.empty:
             st.subheader(f"🏆 Final Ranking — {style}")
-            v6_filtered = v6_result.copy()
+            v6_filtered = v7_result.copy()
             if selected_sector != "Semua":
                 v6_filtered = v6_filtered[v6_filtered["Sektor"] == selected_sector]
             v6_filtered = v6_filtered[v6_filtered["Score"] >= min_score]
             if breakout != "Semua":
                 v6_filtered = v6_filtered[v6_filtered["Breakout"] == breakout]
-            v6_filtered = v6_filtered[v6_filtered["V6Enriched"]]
+            v6_filtered = v6_filtered[v6_filtered["V7Enriched"]]
             if signal == "BUY":
                 v6_filtered = v6_filtered[v6_filtered["V6Decision"].str.contains("BUY", na=False)]
             elif signal == "WAIT":
@@ -2365,8 +2391,8 @@ if menu == "🏠 Full IDX Scanner":
 
         st.subheader("💾 Export Hasil Scanner")
 
-        if not v6_result.empty:
-            csv6 = v6_result.to_csv(index=False).encode("utf-8")
+        if not v7_result.empty:
+            csv6 = v7_result.to_csv(index=False).encode("utf-8")
             st.download_button(
                 "⬇️ Download V6.7.1 Final Ranking CSV",
                 data=csv6,
