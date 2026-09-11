@@ -1426,8 +1426,10 @@ def _safe_num_series(df, name, default=50.0):
 
 
 def calculate_conviction(df, style):
-    """Final conviction score: technical + timing + fundamentals + valuation + flow.
-    Missing enrichment never becomes an artificial 100; confidence acts as a brake.
+    """V6.8 Decision Intelligence.
+    Separates QUALITY, TIMING and DATA CONFIDENCE. Confidence informs the
+    interpretation of a score instead of heavily penalising a fundamentally
+    strong setup when some optional fields are unavailable.
     """
     x = df.copy()
     tech = _safe_num_series(x, "Score", 50)
@@ -1436,34 +1438,43 @@ def calculate_conviction(df, style):
     flow = _safe_num_series(x, "FlowProxyScore", 50)
     fund = _safe_num_series(x, "FundamentalScore", 50)
     val = _safe_num_series(x, "ValuationScore", 50)
-    confidence = _safe_num_series(x, "InvestorDataConfidence", 50)
+    inv_conf = _safe_num_series(x, "InvestorDataConfidence", 50)
     val_conf = _safe_num_series(x, "ValuationConfidence", 50)
     val_complete = _safe_num_series(x, "ValuationDataCompleteness", 50)
-
-    # Timing score: READY best, EXTENDED penalized.
     entry = x.get("EntryStatus", pd.Series("WAIT", index=x.index)).astype(str)
-    timing = pd.Series(60.0, index=x.index)
-    timing += np.where(entry.eq("READY"), 25, 0)
-    timing += np.where(entry.eq("WAIT FOR PULLBACK"), 10, 0)
-    timing += np.where(entry.eq("WAIT FOR BREAKOUT"), 8, 0)
-    timing += np.where(entry.eq("WAIT FOR BETTER ENTRY"), 5, 0)
-    timing += np.where(entry.eq("EXTENDED"), -25, 0)
-    timing = timing.clip(0, 100)
+    rsi = _safe_num_series(x, "RSI", 50)
 
-    # Different weights by style. Investor requires actual fundamental evidence.
+    # TIMING: setup quality + entry state + RSI discipline.
+    timing = 55.0 + 0.35*(readiness-50) + 0.20*(rr-50)
+    timing += np.where(entry.eq("READY"), 15, 0)
+    timing += np.where(entry.eq("WAIT FOR PULLBACK"), 8, 0)
+    timing += np.where(entry.eq("WAIT FOR BREAKOUT"), 6, 0)
+    timing += np.where(entry.eq("WAIT FOR BETTER ENTRY"), 3, 0)
+    timing += np.where(entry.eq("EXTENDED"), -22, 0)
+    timing += np.where(rsi >= 85, -18, np.where(rsi >= 75, -8, 0))
+    x["TimingScore"] = timing.clip(0,100).round(1)
+
+    # QUALITY is independent from data confidence.
     if style == "⚡ Trading Harian":
-        raw = 0.38*tech + 0.25*readiness + 0.15*timing + 0.10*rr + 0.12*flow
+        quality = 0.48*tech + 0.25*readiness + 0.15*flow + 0.12*rr
+        raw = 0.55*quality + 0.45*x["TimingScore"]
     elif style == "📈 Swing Trading Mingguan":
-        raw = 0.30*tech + 0.25*readiness + 0.18*timing + 0.17*rr + 0.10*flow
+        quality = 0.38*tech + 0.25*readiness + 0.15*flow + 0.22*rr
+        raw = 0.62*quality + 0.38*x["TimingScore"]
     else:
-        raw = 0.20*tech + 0.15*readiness + 0.25*fund + 0.22*val + 0.10*flow + 0.08*timing
+        quality = 0.35*fund + 0.25*val + 0.15*flow + 0.15*tech + 0.10*readiness
+        raw = 0.82*quality + 0.18*x["TimingScore"]
 
-    # Confidence brake: 65%–100% of raw score.
-    conf = (0.50*confidence + 0.30*val_conf + 0.20*val_complete).clip(0,100)
-    factor = 0.65 + 0.35*(conf/100.0)
+    # Data confidence is a separate diagnostic. It is intentionally a soft
+    # modifier (90%-100%) so incomplete optional data does not erase a strong setup.
+    conf = (0.50*inv_conf + 0.30*val_conf + 0.20*val_complete).clip(0,100)
+    soft_factor = 0.90 + 0.10*(conf/100.0)
+    x["QualityScore"] = quality.clip(0,100).round(1)
+    x["DecisionRawScore"] = raw.clip(0,100).round(1)
     x["ConvictionRaw"] = raw.clip(0,100).round(1)
-    x["ConvictionScore"] = (raw*factor).clip(0,100).round(1)
+    x["ConvictionScore"] = (raw*soft_factor).clip(0,100).round(1)
     x["ConvictionConfidence"] = conf.round(0)
+    x["DataConfidenceBand"] = pd.cut(conf, [-1,49,69,84,100], labels=["LOW","MODERATE","GOOD","HIGH"]).astype(str)
 
     def grade(v):
         if v >= 85: return "A — HIGH CONVICTION"
@@ -1474,29 +1485,26 @@ def calculate_conviction(df, style):
     x["ConvictionGrade"] = x["ConvictionScore"].apply(grade)
 
     def decision(r):
-        c = r["ConvictionScore"]
-        conf = r["ConvictionConfidence"]
-        entry = str(r.get("EntryStatus", "WAIT"))
+        c = float(r["ConvictionScore"])
+        q = float(r["QualityScore"])
+        t = float(r["TimingScore"])
         base = str(r.get("Decision", "WAIT"))
-        if c < 55:
+        es = str(r.get("EntryStatus", "WAIT"))
+        if c < 55 or q < 45:
             return "AVOID / LOW CONVICTION"
-        if entry == "EXTENDED" and c >= 70:
+        if es == "EXTENDED":
             return "WAIT — DO NOT CHASE"
         if style == "🏦 Investor Jangka Panjang":
-            if c >= 85 and conf >= 75:
-                return "ACCUMULATE / HOLD"
-            if c >= 75 and conf >= 60:
-                return "ACCUMULATE ON WEAKNESS"
+            if c >= 85 and q >= 80: return "ACCUMULATE / HOLD"
+            if c >= 75 and q >= 70: return "ACCUMULATE ON WEAKNESS"
             return "WATCH"
-        if c >= 85 and base.startswith("BUY"):
-            return base
-        if c >= 75 and base.startswith("BUY"):
-            return base
-        if c >= 70:
-            return "WATCH FOR CONFIRMATION"
+        if c >= 85 and base.startswith("BUY") and t >= 65: return base
+        if c >= 75 and base.startswith("BUY") and t >= 60: return base
+        if c >= 70: return "WATCH FOR CONFIRMATION"
         return "WAIT"
 
     x["ConvictionDecision"] = x.apply(decision, axis=1)
+    x["EntryQuality"] = pd.cut(x["TimingScore"], [-1,54,69,84,100], labels=["POOR","FAIR","GOOD","EXCELLENT"]).astype(str)
     return x
 
 
@@ -1525,7 +1533,7 @@ def style_board(result, style):
 # ============================================================
 
 st.title("📈 SANGGUL STOCK SCANNER IDX")
-st.caption("V6.7.1 — MULTI-STYLE + CONVICTION ENGINE + CALIBRATED VALUATION")
+st.caption("V6.8 — DECISION INTELLIGENCE + MULTI-STYLE + CONVICTION")
 
 menu = st.radio(
     "Menu",
@@ -1672,7 +1680,7 @@ if menu == "🏠 Full IDX Scanner":
             f"{len(result)} saham memiliki data teknikal yang cukup "
             f"untuk dianalisis."
         )
-        st.caption("V6.7.1 memisahkan Day Trading, Swing Trading, dan Investor. Investor memakai fundamental, valuasi relatif sektor, Flow Proxy, serta Data Quality/Confidence. Flow Proxy BUKAN data resmi foreign net buy/sell.")
+        st.caption("V6.8 memisahkan Day Trading, Swing Trading, dan Investor serta memisahkan Quality, Timing dan Data Confidence. Investor memakai fundamental, valuasi relatif sektor, Flow Proxy, serta Data Quality/Confidence. Flow Proxy BUKAN data resmi foreign net buy/sell.")
 
         st.subheader("🎯 Multi-Style Action Board")
         st.info("Ranking dipisahkan untuk tiga gaya. Untuk Investor Jangka Panjang, ranking final membutuhkan enrichment fundamental & valuasi.")
@@ -1694,7 +1702,7 @@ if menu == "🏠 Full IDX Scanner":
             with st.spinner("Mengambil fundamental & valuation kandidat teratas..."):
                 v6_result = enrich_v6(result, limit=150, style=style, progress_callback=update_v6)
             p6.progress(1.0)
-            s6.success(f"V6.7.1 enrichment selesai untuk {int(v6_result['V6Enriched'].sum())} saham.")
+            s6.success(f"V6.8 enrichment selesai untuk {int(v6_result['V6Enriched'].sum())} saham.")
             st.session_state["v6_scan"] = v6_result
             st.session_state["v6_style"] = style
 
@@ -1736,14 +1744,25 @@ if menu == "🏠 Full IDX Scanner":
                 st.dataframe(safe_display_columns(invtop, invcols), width="stretch", hide_index=True)
                 st.caption("InvestorScore sudah disesuaikan dengan Data Confidence. Outlier valuasi tidak diperlakukan sebagai data valid. Flow Proxy hanya indikator price-volume, bukan foreign net buy/sell resmi.")
 
-            st.subheader("🧠 V6.7 Conviction Ranking")
-            convtop = v6_result[v6_result["V6Enriched"]].sort_values(["ConvictionScore","ConvictionConfidence"], ascending=[False,False]).head(20)
-            convcols = ["Kode","Nama","Sektor","Price","ConvictionScore","ConvictionGrade","ConvictionConfidence","ConvictionRaw","ConvictionDecision","Score","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","R:R","EntryStatus"]
+            st.subheader("🧠 V6.8 Decision Intelligence — Quality + Timing + Confidence")
+            convtop = v6_result[v6_result["V6Enriched"]].sort_values(["ConvictionScore","QualityScore","TimingScore"], ascending=[False,False,False]).head(20)
+            convcols = ["Kode","Nama","Sektor","Price","ConvictionScore","ConvictionGrade","QualityScore","TimingScore","EntryQuality","ConvictionConfidence","DataConfidenceBand","ConvictionDecision","Score","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","R:R","EntryStatus"]
             st.dataframe(safe_display_columns(convtop, convcols), width="stretch", hide_index=True)
-            st.caption("Conviction bukan jaminan return. Skor ini menggabungkan kualitas teknikal, timing entry, fundamental, valuasi relatif, flow proxy dan confidence data.")
+            st.caption("V6.8 memisahkan kualitas saham, kualitas timing entry dan confidence data. Confidence adalah indikator kelengkapan data, bukan ukuran kualitas bisnis.")
+
+            st.subheader("🎯 Decision Matrix — 3 Gaya")
+            matrix_frames = []
+            for st_style in STYLE_CONFIG.keys():
+                m = style_board(v6_result[v6_result["V6Enriched"]].copy(), st_style).head(5).copy()
+                m["Style"] = st_style
+                matrix_frames.append(m)
+            if matrix_frames:
+                matrix = pd.concat(matrix_frames, ignore_index=True)
+                matrix_cols = ["Style","Kode","Price","ConvictionScore","ConvictionGrade","QualityScore","TimingScore","EntryQuality","ConvictionConfidence","ConvictionDecision"]
+                st.dataframe(safe_display_columns(matrix, matrix_cols), width="stretch", hide_index=True)
 
             st.subheader("💰 Fundamental & Sector-Relative Valuation")
-            st.caption("V6.7.1 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
+            st.caption("V6.8 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
             ftop = v6_result[v6_result["V6Enriched"]].head(20).copy()
             fcols = ["Kode","Price","Sektor","SectorGroup","FundamentalScore","ValuationScore","ValuationMethod","PE","PB","PS","ROE","RevenueGrowth","EarningsGrowth","DebtEquity","ValuationConfidence","ValuationDataCompleteness","InvestorDataConfidence"]
             st.dataframe(safe_display_columns(ftop, fcols), width="stretch", hide_index=True)
