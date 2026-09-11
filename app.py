@@ -8,13 +8,13 @@ import time
 from io import StringIO
 
 # ============================================================
-# SANGGUL STOCK SCANNER IDX V6.2
+# SANGGUL STOCK SCANNER IDX V6.3
 # FULL IDX SCANNER
 # IHSG -> SECTOR -> ALL IDX -> TECHNICAL -> OPPORTUNITY
 # ============================================================
 
 st.set_page_config(
-    page_title="Sanggul Stock Scanner IDX V6.2",
+    page_title="Sanggul Stock Scanner IDX V6.3",
     page_icon="📈",
     layout="wide"
 )
@@ -509,7 +509,7 @@ def fast_analysis(df, focus_days=126):
     trade_readiness = round(max(0.0, min(100.0, readiness)), 1)
 
     # ---------------------------
-    # DECISION ENGINE V6.2
+    # DECISION ENGINE V6.3
     # ---------------------------
     if rr < 1.0 or technical_score < 45:
         signal = "SELL / AVOID"
@@ -879,7 +879,7 @@ def get_fundamental(kode):
     current_ratio = _num(info, "currentRatio")
     market_cap = _num(info, "marketCap")
 
-    # Absolute valuation score is retained as a fallback. V6.2 later
+    # Absolute valuation score is retained as a fallback. V6.3 later
     # replaces it with a sector-relative score when enough peer data exists.
     val_parts = [
         _score_band(pe, [(12,20),(18,16),(25,12),(35,8),(1e9,3)]),
@@ -951,7 +951,7 @@ def _lower_is_better_percentile(series):
 
 def apply_sector_relative_valuation(work):
     """
-    V6.2 valuation engine.
+    V6.3 valuation engine.
     Uses peer-relative percentiles within broad sector groups.
     Financials emphasize PE/PB; non-financials emphasize PE/EV/EBITDA/PS.
     Falls back to 50 when a metric or peer group is insufficient.
@@ -1005,7 +1005,7 @@ def apply_sector_relative_valuation(work):
     return w
 
 
-def enrich_v6(result, limit=120, progress_callback=None):
+def enrich_v6(result, limit=150, style="📈 Swing Trading Mingguan", progress_callback=None):
     """Enrich top technical candidates with fundamentals; flow proxy is already available for all rows."""
     if result.empty:
         return result
@@ -1037,7 +1037,7 @@ def enrich_v6(result, limit=120, progress_callback=None):
 
     work["V6Enriched"] = work["Kode"].isin(candidates) & work["FundamentalScore"].notna()
 
-    # V6.2: normalize valuation relative to sector peers among enriched candidates.
+    # V6.3: normalize valuation relative to sector peers among enriched candidates.
     work = apply_sector_relative_valuation(work)
 
     # Neutral fallback for missing fundamentals, while keeping a flag so users know.
@@ -1070,15 +1070,83 @@ def enrich_v6(result, limit=120, progress_callback=None):
 
     work["V6Decision"] = work.apply(v6_decision, axis=1)
     work["V6Status"] = np.where(work["V6Enriched"], "ENRICHED", "TECHNICAL ONLY")
-    return work.sort_values(["FinalScore", "TradeReadiness", "Opportunity"], ascending=[False, False, False]).reset_index(drop=True)
+    work = apply_style_scores(work, style)
+    return work.sort_values(["StyleScore", "FinalScore", "TradeReadiness"], ascending=[False, False, False]).reset_index(drop=True)
 
+
+# ============================================================
+# V6.3 MULTI-STYLE ENGINE
+# ============================================================
+STYLE_CONFIG = {
+    "⚡ Trading Harian": {
+        "focus_days": 63,
+        "description": "Fokus timing pendek, momentum, volume, breakout/pullback dan R:R.",
+        "note": "Data yang tersedia adalah candle Daily; mode ini adalah tactical daily/same-day screening, bukan sinyal intraday real-time.",
+    },
+    "📈 Swing Trading Mingguan": {
+        "focus_days": 126,
+        "description": "Fokus trend 3–6 bulan, setup pullback/breakout, readiness dan R:R.",
+        "note": "Cocok untuk posisi beberapa hari sampai beberapa minggu dengan konfirmasi Daily.",
+    },
+    "🏦 Investor Jangka Panjang": {
+        "focus_days": 252,
+        "description": "Fokus kualitas bisnis, fundamental, valuasi relatif sektor dan trend jangka menengah.",
+        "note": "Fundamental/valuasi harus menjadi konfirmasi utama; harga tetap diperhatikan untuk timing akumulasi.",
+    },
+}
+
+def rr_score(rr):
+    if pd.isna(rr):
+        return 50.0
+    if rr >= 3: return 100.0
+    if rr >= 2.5: return 90.0
+    if rr >= 2: return 80.0
+    if rr >= 1.5: return 65.0
+    if rr >= 1: return 45.0
+    return 20.0
+
+def apply_style_scores(df, style):
+    w=df.copy()
+    rrn=w["R:R"].apply(rr_score)
+    tech=w["Score"].fillna(50)
+    ready=w["TradeReadiness"].fillna(50)
+    flow=w["FlowProxyScore"].fillna(50)
+    focus=w["FocusReturn"].fillna(0)
+    focus_score=(50 + focus.clip(-30,30) * (50/30)).clip(0,100)
+    fund=w.get("FundamentalScore", pd.Series(50.0,index=w.index)).fillna(50)
+    val=w.get("ValuationScore", pd.Series(50.0,index=w.index)).fillna(50)
+
+    if style == "⚡ Trading Harian":
+        w["StyleScore"]=(0.40*tech + 0.30*ready + 0.15*flow + 0.10*rrn + 0.05*focus_score).round(1)
+        w["StyleDecision"]=np.where(
+            w["Decision"].isin(["BUY NOW","BUY ON BREAKOUT","BUY ON PULLBACK","BUY / MANAGE RISK"]),
+            w["Decision"],
+            w["Decision"]
+        )
+    elif style == "📈 Swing Trading Mingguan":
+        w["StyleScore"]=(0.35*tech + 0.30*ready + 0.20*rrn + 0.10*flow + 0.05*focus_score).round(1)
+        w["StyleDecision"]=w["Decision"]
+    else:
+        w["StyleScore"]=(0.15*tech + 0.10*ready + 0.10*flow + 0.35*fund + 0.30*val).round(1)
+        def inv_decision(r):
+            if not bool(r.get("V6Enriched",False)):
+                return "FUNDAMENTAL CHECK"
+            if r["FundamentalScore"] >= 70 and r["ValuationScore"] >= 60 and r["StyleScore"] >= 70:
+                return "ACCUMULATE / HOLD"
+            if r["FundamentalScore"] >= 60 and r["ValuationScore"] >= 50:
+                return "WATCH / ACCUMULATE ON WEAKNESS"
+            if r["FundamentalScore"] < 40 or r["ValuationScore"] < 35:
+                return "AVOID / REVIEW"
+            return "WATCH"
+        w["StyleDecision"]=w.apply(inv_decision,axis=1)
+    return w
 
 # ============================================================
 # UI
 # ============================================================
 
 st.title("📈 SANGGUL STOCK SCANNER IDX")
-st.caption("V6.2 — 2Y HISTORY → 3/6M FOCUS → TECHNICAL → SETUP → R:R → TRADE READINESS → FUNDAMENTAL → SECTOR-RELATIVE VALUATION → FLOW PROXY → FINAL SCORE")
+st.caption("V6.3 — MULTI-STYLE: HARIAN → SWING MINGGUAN → INVESTOR JANGKA PANJANG")
 
 menu = st.radio(
     "Menu",
@@ -1127,6 +1195,16 @@ if menu == "🏠 Full IDX Scanner":
 
     st.header("🚀 Full IDX Scanner")
 
+    st.subheader("🎯 Pilih Gaya Investasi / Trading")
+    style = st.selectbox(
+        "Mode analisis",
+        list(STYLE_CONFIG.keys()),
+        index=1,
+        help="Mode mengubah bobot ranking dan fokus analisis. Data saham tetap Daily."
+    )
+    style_cfg = STYLE_CONFIG[style]
+    st.info(f"**{style}** — {style_cfg['description']} {style_cfg['note']}")
+
     if universe.empty:
         st.error(
             "Universe IDX gagal dimuat. Periksa koneksi internet."
@@ -1151,7 +1229,7 @@ if menu == "🏠 Full IDX Scanner":
         focus_choice = st.selectbox(
             "Fokus Analisis",
             ["3 Bulan", "6 Bulan"],
-            index=1,
+            index=0 if style == "⚡ Trading Harian" else 1,
             help="MA200 tetap dihitung dari 2 tahun data; scoring momentum dan struktur diberi fokus pada periode ini."
         )
 
@@ -1164,7 +1242,7 @@ if menu == "🏠 Full IDX Scanner":
         )
 
     st.info(
-        "V6.2 mengambil 2 tahun data historis untuk menjaga kestabilan MA200, "
+        "V6.3 mengambil 2 tahun data historis untuk menjaga kestabilan MA200, "
         f"sementara analisis utama berfokus pada {focus_choice.lower()}. "
         "Saham yang tidak memiliki data historis cukup atau tidak tersedia di Yahoo Finance otomatis dilewati."
     )
@@ -1197,11 +1275,17 @@ if menu == "🏠 Full IDX Scanner":
         )
 
         st.session_state["full_scan"] = result
+        st.session_state["scan_style"] = style
+        st.session_state.pop("v6_scan", None)
 
     result = st.session_state.get(
         "full_scan",
         pd.DataFrame()
     )
+    if st.session_state.get("scan_style") != style:
+        st.session_state.pop("full_scan", None)
+        st.session_state.pop("v6_scan", None)
+        result = pd.DataFrame()
 
     if not result.empty:
 
@@ -1209,31 +1293,34 @@ if menu == "🏠 Full IDX Scanner":
             f"{len(result)} saham memiliki data teknikal yang cukup "
             f"untuk dianalisis."
         )
-        st.caption("V6.2 menambahkan Fundamental + Valuation relatif sektor dan Flow Proxy berbasis price-volume. Flow Proxy BUKAN data resmi foreign net buy/sell.")
+        st.caption("V6.3 menambahkan Fundamental + Valuation relatif sektor dan Flow Proxy berbasis price-volume. Flow Proxy BUKAN data resmi foreign net buy/sell.")
 
-        st.subheader("🧠 V6.2 Fundamental + Valuation + Flow")
-        st.info("Agar Full IDX tetap ringan di cloud, fundamental diperiksa untuk 120 kandidat teknikal/trading teratas. Flow Proxy tersedia dari data harga-volume untuk seluruh saham yang berhasil dianalisis.")
-        if st.button("🧠 ENRICH TOP 120 DENGAN FUNDAMENTAL & VALUATION", width="stretch"):
+        st.subheader("🧠 V6.3 Fundamental + Valuation + Flow")
+        st.info("Agar Full IDX tetap ringan di cloud, fundamental diperiksa untuk 150 kandidat teknikal/trading teratas. Flow Proxy tersedia dari data harga-volume untuk seluruh saham yang berhasil dianalisis.")
+        if st.button("🧠 ENRICH TOP 150 DENGAN FUNDAMENTAL & VALUATION", width="stretch"):
             p6 = st.progress(0)
             s6 = st.empty()
             def update_v6(v):
                 p6.progress(v)
                 s6.info(f"Enrichment fundamental: {v*100:.0f}%")
             with st.spinner("Mengambil fundamental & valuation kandidat teratas..."):
-                v6_result = enrich_v6(result, limit=120, progress_callback=update_v6)
+                v6_result = enrich_v6(result, limit=150, style=style, progress_callback=update_v6)
             p6.progress(1.0)
-            s6.success(f"V6.2 enrichment selesai untuk {int(v6_result['V6Enriched'].sum())} saham.")
+            s6.success(f"V6.3 enrichment selesai untuk {int(v6_result['V6Enriched'].sum())} saham.")
             st.session_state["v6_scan"] = v6_result
+            st.session_state["v6_style"] = style
 
         v6_result = st.session_state.get("v6_scan", pd.DataFrame())
+        if st.session_state.get("v6_style") != style:
+            v6_result = pd.DataFrame()
         if not v6_result.empty:
-            st.subheader("⭐ Top 10 V6.2 Final Score")
+            st.subheader(f"⭐ Top 10 — {style}")
             v6top = v6_result[v6_result["V6Enriched"]].head(10)
-            cols6 = ["Kode","Nama","Sektor","Price","FinalScore","Score","TradeReadiness","FundamentalScore","ValuationScore","ValuationMethod","FlowProxyScore","V6Decision"]
+            cols6 = ["Kode","Nama","Sektor","Price","StyleScore","FinalScore","Score","TradeReadiness","FundamentalScore","ValuationScore","ValuationMethod","FlowProxyScore","StyleDecision"]
             st.dataframe(v6top[cols6], width="stretch", hide_index=True)
 
             st.subheader("💰 Fundamental & Sector-Relative Valuation")
-            st.caption("V6.2 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
+            st.caption("V6.3 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
             ftop = v6_result[v6_result["V6Enriched"]].head(20).copy()
             fcols = ["Kode","Price","Sektor","SectorGroup","FundamentalScore","ValuationScore","ValuationMethod","PE","PB","PS","ROE","RevenueGrowth","EarningsGrowth","DebtEquity"]
             st.dataframe(ftop[fcols], width="stretch", hide_index=True)
@@ -1387,7 +1474,7 @@ if menu == "🏠 Full IDX Scanner":
         # V6 FINAL RANKING
         # ----------------------------------------------------
         if not v6_result.empty:
-            st.subheader("🏆 V6.2 Final Ranking — Technical + Fundamental + Sector-Relative Valuation + Flow Proxy")
+            st.subheader(f"🏆 Final Ranking — {style}")
             v6_filtered = v6_result.copy()
             if selected_sector != "Semua":
                 v6_filtered = v6_filtered[v6_filtered["Sektor"] == selected_sector]
@@ -1401,11 +1488,11 @@ if menu == "🏠 Full IDX Scanner":
                 v6_filtered = v6_filtered[v6_filtered["V6Decision"].str.contains("WAIT|WATCH", na=False, regex=True)]
             elif signal == "SELL":
                 v6_filtered = v6_filtered[v6_filtered["V6Decision"].str.contains("AVOID", na=False)]
-            v6_filtered = v6_filtered.sort_values(["FinalScore","TradeReadiness","R:R"], ascending=[False,False,False]).head(50)
+            v6_filtered = v6_filtered.sort_values(["StyleScore","FinalScore","TradeReadiness"], ascending=[False,False,False]).head(50)
             if v6_filtered.empty:
                 st.info("Belum ada saham V6 yang memenuhi filter.")
             else:
-                st.dataframe(v6_filtered[["Kode","Nama","Sektor","Price","FinalScore","V6Decision","Setup","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","R:R"]], width="stretch", hide_index=True)
+                st.dataframe(v6_filtered[["Kode","Nama","Sektor","Price","StyleScore","FinalScore","StyleDecision","Setup","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","R:R"]], width="stretch", hide_index=True)
 
         # ----------------------------------------------------
         # SECTOR STRENGTH
@@ -1518,9 +1605,9 @@ if menu == "🏠 Full IDX Scanner":
         if not v6_result.empty:
             csv6 = v6_result.to_csv(index=False).encode("utf-8")
             st.download_button(
-                "⬇️ Download V6.2 Final Ranking CSV",
+                "⬇️ Download V6.3 Final Ranking CSV",
                 data=csv6,
-                file_name="sanggul_v6_final_ranking.csv",
+                file_name="sanggul_v6_3_style_ranking.csv",
                 mime="text/csv",
                 width="stretch"
             )
