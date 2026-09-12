@@ -1161,4 +1161,3 @@ else:
             "dari metadata saham IDX yang diperbarui berkala. "
             "Signal adalah alat bantu analisis, bukan jaminan keuntungan."
         )
-
