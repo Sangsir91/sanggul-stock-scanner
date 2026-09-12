@@ -6,18 +6,99 @@ import yfinance as yf
 import plotly.graph_objects as go
 import time
 from io import StringIO
+from html import escape
 
 # ============================================================
-# SANGGUL STOCK SCANNER IDX V7.1
+# SANGGUL STOCK SCANNER IDX V7.2.2
 # FULL IDX SCANNER
 # IHSG -> SECTOR -> ALL IDX -> TECHNICAL -> OPPORTUNITY
 # ============================================================
 
 st.set_page_config(
-    page_title="Sanggul Stock Scanner IDX V7.1",
+    page_title="Sanggul Stock Scanner IDX V7.2.2",
     page_icon="📈",
     layout="wide"
 )
+
+st.markdown("""
+<style>
+    .block-container {padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1500px;}
+    h1, h2, h3 {letter-spacing: -0.02em;}
+    h2 {margin-top: 1.1rem;}
+    [data-testid="stMetric"] {
+        background: #f7f9fc;
+        border: 1px solid #e8edf3;
+        border-radius: 12px;
+        padding: 12px 14px;
+    }
+    [data-testid="stDataFrame"] {
+        border: 1px solid #e8edf3;
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    div[data-testid="stExpander"] {
+        border: 1px solid #e8edf3;
+        border-radius: 10px;
+    }
+    .section-note {
+        color: #6b7280;
+        font-size: 0.85rem;
+        margin-top: -0.35rem;
+        margin-bottom: 0.6rem;
+    }
+    .pick-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        padding: 18px;
+        background: #ffffff;
+        min-height: 430px;
+        box-shadow: 0 4px 14px rgba(15,23,42,.045);
+    }
+    .pick-head {display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:4px;}
+    .pick-title {font-size: 1.42rem; font-weight: 750; color: #172033; letter-spacing:-.02em;}
+    .pick-rank {font-size:.72rem; color:#64748b; text-transform:uppercase; letter-spacing:.08em;}
+    .pick-subtitle {font-size: .78rem; color: #64748b; margin-bottom: .85rem; line-height:1.35;}
+    .pick-badge {font-size:.68rem; font-weight:750; border-radius:999px; padding:4px 8px; background:#f1f5f9; color:#475569; white-space:nowrap;}
+    .pick-badge.ready {background:#dcfce7; color:#166534;}
+    .pick-badge.wait {background:#fef3c7; color:#92400e;}
+    .pick-badge.risk {background:#fee2e2; color:#991b1b;}
+    .pick-grid {display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:10px 0 14px;}
+    .pick-stat {background:#f8fafc; border-radius:10px; padding:9px 10px;}
+    .pick-stat-label {font-size:.7rem; color:#64748b;}
+    .pick-stat-value {font-size:1rem; font-weight:750; color:#172033; margin-top:2px;}
+    .pick-section {font-size:.7rem; color:#64748b; text-transform:uppercase; letter-spacing:.08em; font-weight:750; margin:10px 0 5px;}
+    .pick-row {display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #eef2f7; font-size:.82rem;}
+    .pick-label {color:#64748b;}
+    .pick-value {font-weight:650; color:#172033; text-align:right; max-width:70%;}
+    .status-ready {color:#15803d; font-weight:750;}
+    .status-wait {color:#a16207; font-weight:750;}
+    .status-risk {color:#b91c1c; font-weight:750;}
+    .pick-note {margin-top:12px; padding:9px 10px; border-radius:9px; background:#f8fafc; color:#64748b; font-size:.75rem; line-height:1.4;}
+
+    .plan-card {border:1px solid #e2e8f0; border-radius:14px; padding:14px 16px; background:#ffffff; box-shadow:0 3px 12px rgba(15,23,42,.035); margin-bottom:10px;}
+    .plan-card-head {display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;}
+    .plan-code {font-size:1.05rem; font-weight:800; color:#172033;}
+    .plan-setup {font-size:.72rem; color:#64748b; text-transform:uppercase; letter-spacing:.06em;}
+    .plan-badge {font-size:.68rem; font-weight:750; border-radius:999px; padding:4px 8px; background:#f1f5f9; color:#475569;}
+    .plan-badge.ready {background:#dcfce7; color:#166534;}
+    .plan-badge.wait {background:#fef3c7; color:#92400e;}
+    .plan-badge.risk {background:#fee2e2; color:#991b1b;}
+    .plan-grid {display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin:8px 0;}
+    .plan-cell {background:#f8fafc; border-radius:9px; padding:8px;}
+    .plan-label {font-size:.68rem; color:#64748b;}
+    .plan-value {font-size:.88rem; font-weight:750; color:#172033; margin-top:2px;}
+    .plan-foot {font-size:.75rem; color:#64748b; line-height:1.35; margin-top:8px;}
+    @media (max-width:900px) {.plan-grid {grid-template-columns:repeat(2,minmax(0,1fr));}}
+    @media (max-width: 900px) {
+      .pick-card {min-height:0;}
+    }
+    @media (prefers-color-scheme: dark) {
+      .pick-card {background: #151a22; border-color:#303846;}
+      .pick-title,.pick-value {color:#f3f4f6;}
+      [data-testid="stMetric"] {background:#151a22; border-color:#303846;}
+    }
+</style>
+""", unsafe_allow_html=True)
 
 IDX_UNIVERSE_URL = (
     "https://huggingface.co/datasets/"
@@ -2056,7 +2137,7 @@ if menu == "🏠 Full IDX Scanner":
                 st.markdown(f"**{board_style}**")
                 st.dataframe(safe_display_columns(board, ["Kode","ActionScore","Action","Setup","Trend","R:R"]), width="stretch", hide_index=True)
 
-        st.subheader("🧠 V7.1 Conviction Engine — Technical + Fundamental + Valuation + Flow")
+        st.subheader("🧠 Conviction Engine")
         st.info("Agar Full IDX tetap ringan di cloud, fundamental diperiksa untuk 150 kandidat teratas. V6.6 memvalidasi outlier, menghitung data completeness dan confidence, lalu menurunkan bobot saham yang datanya kurang dapat dipercaya.")
         if st.button("🧠 ENRICH TOP 150 — FUNDAMENTAL, VALUATION & INVESTOR QUALITY", width="stretch"):
             p6 = st.progress(0)
@@ -2101,42 +2182,122 @@ if menu == "🏠 Full IDX Scanner":
             v6top = calculate_top10_readiness(v7_result[v7_result["V7Enriched"]].copy(), style)
             v6top = v6top.sort_values(["Top10Readiness","ConvictionScore","TimingScore"], ascending=[False,False,False]).head(10).copy()
             v6top["Top10Rank"] = range(1, len(v6top) + 1)
-            cols6 = ["Top10Rank","Kode","Nama","Sektor","Price","Top10Readiness","Top10ReadinessGrade","ConvictionScore","TimingScore","EntryQuality","EntryStatus","R:R","FlowQualityScore","FlowRegime","FundamentalScore","ValuationScore","ConvictionConfidence","ConvictionDecision","Top10Reason"]
-            st.dataframe(safe_display_columns(v6top, cols6), width="stretch", hide_index=True)
-            st.caption("V7.0 Top 10 Readiness memakai Risk Gate + Flow Quality. Ranking tidak hanya mencari saham bagus, tetapi juga menyaring R:R rendah, entry terlalu extended, conviction rendah dan confidence rendah.")
+            cols6 = ["Top10Rank","Kode","Nama","Sektor","Price","Top10Readiness","ConvictionScore","TimingScore","EntryQuality","EntryStatus","R:R","FlowRegime","ConvictionDecision"]
+            top10_view = safe_display_columns(v6top, cols6).rename(columns={
+                "Top10Rank":"Rank", "Price":"Harga", "Top10Readiness":"Readiness",
+                "ConvictionScore":"Conviction", "TimingScore":"Timing",
+                "EntryQuality":"Entry", "EntryStatus":"Status",
+                "FlowRegime":"Flow", "ConvictionDecision":"Keputusan"
+            })
+            st.dataframe(top10_view, width="stretch", hide_index=True)
+            st.caption("Tabel diringkas agar fokus pada kesiapan, risiko, flow, dan keputusan. Detail fundamental serta data confidence tersedia di bagian lanjutan.")
 
             st.subheader("🏆 Top 3 Actionable Picks — Risk-Gated")
             eligible = v6top[v6top["TopPickEligible"]].copy() if "TopPickEligible" in v6top.columns else pd.DataFrame()
             if not eligible.empty:
                 eligible = eligible.sort_values(["Top10Readiness","ConvictionScore","R:R"], ascending=[False,False,False]).head(3).copy()
                 eligible["TopPickRank"] = range(1, len(eligible) + 1)
-                pick_cols = ["TopPickRank","Kode","Nama","Sektor","Price","Top10Readiness","Top10ReadinessGrade","ConvictionScore","TimingScore","EntryQuality","EntryStatus","R:R","FlowQualityScore","FlowRegime","ConvictionDecision","TopPickStatus","TopPickReason"]
-                st.dataframe(safe_display_columns(eligible, pick_cols), width="stretch", hide_index=True)
-                st.success("Top 3 di atas sudah melewati risk gate dasar. Tetap lakukan validasi chart, likuiditas, berita material dan kondisi pasar sebelum transaksi.")
+                st.markdown('<div class="section-note">Tiga kandidat teratas ditampilkan sebagai kartu agar keputusan utama lebih mudah dibaca.</div>', unsafe_allow_html=True)
+                card_cols = st.columns(min(3, len(eligible)))
+                for card_col, (_, pick) in zip(card_cols, eligible.iterrows()):
+                    code = escape(str(pick.get("Kode", "-")))
+                    name = escape(str(pick.get("Nama", "-")))
+                    decision = escape(str(pick.get("ConvictionDecision", "-")))
+                    entry_status = str(pick.get("EntryStatus", "-"))
+                    entry_status_safe = escape(entry_status)
+                    setup = escape(str(pick.get("Setup", "-")))
+                    regime = escape(str(pick.get("FlowRegime", "-")))
+                    confirmation = escape(str(pick.get("ConfirmationStatus", "WATCH FOR CONFIRMATION")))
+                    rr = pick.get("R:R", np.nan)
+                    rr_txt = f"{float(rr):.2f}" if pd.notna(rr) else "-"
+                    def card_num(field, decimals=0):
+                        value = pick.get(field, np.nan)
+                        return f"{float(value):,.{decimals}f}" if pd.notna(value) else "NA"
+                    buy_low, buy_high = pick.get("EntryLow", np.nan), pick.get("EntryHigh", np.nan)
+                    buy_zone = f"{float(buy_low):,.0f}–{float(buy_high):,.0f}" if pd.notna(buy_low) and pd.notna(buy_high) else "NA"
+                    sl = card_num("StopLoss")
+                    tp1 = card_num("TP1")
+                    tp2 = card_num("TP2")
+                    status_upper = entry_status.upper()
+                    badge_cls = "ready" if "READY" in status_upper else ("risk" if "INVALID" in status_upper or "EXTENDED" in status_upper else "wait")
+                    status_cls = "status-ready" if "READY" in status_upper else ("status-risk" if "INVALID" in status_upper else "status-wait")
+                    if "PULLBACK" in setup.upper():
+                        note = "Tunggu harga masuk zona pullback; jangan mengejar harga."
+                    elif "BREAKOUT" in setup.upper():
+                        note = "Tunggu candle close di atas resistance dan volume yang mendukung."
+                    else:
+                        note = "Validasi chart, volume, likuiditas, dan kondisi pasar sebelum entry."
+                    with card_col:
+                        st.markdown(f"""
+                        <div class="pick-card">
+                          <div class="pick-head">
+                            <div>
+                              <div class="pick-rank">Top actionable pick</div>
+                              <div class="pick-title">#{int(pick.get("TopPickRank", 0))} {code}</div>
+                            </div>
+                            <span class="pick-badge {badge_cls}">{entry_status_safe}</span>
+                          </div>
+                          <div class="pick-subtitle">{name}</div>
+                          <div class="pick-grid">
+                            <div class="pick-stat"><div class="pick-stat-label">Readiness</div><div class="pick-stat-value">{float(pick.get("Top10Readiness", 0)):.1f}</div></div>
+                            <div class="pick-stat"><div class="pick-stat-label">Conviction</div><div class="pick-stat-value">{float(pick.get("ConvictionScore", 0)):.1f}</div></div>
+                          </div>
+                          <div class="pick-row"><span class="pick-label">Setup</span><span class="pick-value">{setup}</span></div>
+                          <div class="pick-row"><span class="pick-label">Buy Zone</span><span class="pick-value">{buy_zone}</span></div>
+                          <div class="pick-row"><span class="pick-label">Stop Loss</span><span class="pick-value status-risk">{sl}</span></div>
+                          <div class="pick-row"><span class="pick-label">TP1 / TP2</span><span class="pick-value status-ready">{tp1} / {tp2}</span></div>
+                          <div class="pick-row"><span class="pick-label">R:R</span><span class="pick-value">{rr_txt}</span></div>
+                          <div class="pick-row"><span class="pick-label">Flow</span><span class="pick-value">{regime}</span></div>
+                          <div class="pick-section">Konfirmasi</div>
+                          <div class="pick-row"><span class="pick-label">Status</span><span class="pick-value status-wait">{confirmation}</span></div>
+                          <div class="pick-note"><b>{decision}</b><br>{note}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                st.success("Top 3 sudah melewati risk gate dasar. Validasi chart, likuiditas, berita material, dan kondisi pasar sebelum transaksi.")
 
-                # V7.0: actionable trade plan generated from the same risk-gated picks.
-                st.subheader("🧭 V7.1 Actionable Trade Plan — Top 3")
+                # V7.2.2: compact trade plan cards.
+                st.subheader("🧭 Actionable Trade Plan — Top 3")
+                st.caption("Rencana entry, stop loss, target, dan R:R ditampilkan ringkas agar mudah dibaca.")
                 plan7 = eligible.copy()
-                plan7["Buy Zone"] = plan7.apply(
-                    lambda r: f"{float(r.get('EntryLow', np.nan)):,.0f}–{float(r.get('EntryHigh', np.nan)):,.0f}"
-                    if pd.notna(r.get('EntryLow', np.nan)) and pd.notna(r.get('EntryHigh', np.nan)) else "NA", axis=1
-                )
-                for col in ["StopLoss", "TP1", "TP2", "TP3"]:
-                    if col in plan7.columns:
-                        plan7[col] = pd.to_numeric(plan7[col], errors="coerce").map(lambda v: f"{v:,.0f}" if pd.notna(v) else "NA")
-                plan7["Risk Note"] = plan7.apply(
-                    lambda r: (
-                        "Flow positif/akumulasi" if "ACCUMULATION" in str(r.get("FlowRegime", ""))
-                        else "Flow netral; tunggu konfirmasi" if "NEUTRAL" in str(r.get("FlowRegime", ""))
-                        else "Waspada distribusi"
-                    ), axis=1
-                )
-                plan7_cols = ["TopPickRank", "Kode", "Setup", "ConvictionDecision", "EntryStatus", "Buy Zone", "StopLoss", "TP1", "TP2", "R:R", "FlowRegime", "Risk Note"]
-                st.dataframe(safe_display_columns(plan7, plan7_cols), width="stretch", hide_index=True)
-                st.caption("V7.1: zona entry, stop loss dan target berasal dari kalkulasi teknikal/ATR yang sama dengan mesin R:R. Ini adalah rencana skenario, bukan instruksi transaksi otomatis.")
+                plan_cols = st.columns(min(3, len(plan7)))
+                for plan_col, (_, rowp) in zip(plan_cols, plan7.iterrows()):
+                    codep = escape(str(rowp.get("Kode", "-")))
+                    setup_p = escape(str(rowp.get("Setup", "-")))
+                    decision_p = escape(str(rowp.get("ConvictionDecision", "-")))
+                    entry_p = str(rowp.get("EntryStatus", "-"))
+                    flow_p = escape(str(rowp.get("FlowRegime", "-")))
+                    conf_p = escape(str(rowp.get("ConfirmationStatus", "WATCH FOR CONFIRMATION")))
+                    low_p, high_p = rowp.get("EntryLow", np.nan), rowp.get("EntryHigh", np.nan)
+                    buy_p = f"{float(low_p):,.0f}–{float(high_p):,.0f}" if pd.notna(low_p) and pd.notna(high_p) else "NA"
+                    def fmt_plan(field):
+                        val = rowp.get(field, np.nan)
+                        return f"{float(val):,.0f}" if pd.notna(val) else "NA"
+                    rr_p = rowp.get("R:R", np.nan)
+                    rr_p = f"{float(rr_p):.2f}" if pd.notna(rr_p) else "NA"
+                    sl_p, tp1_p, tp2_p = fmt_plan("StopLoss"), fmt_plan("TP1"), fmt_plan("TP2")
+                    upper_p = entry_p.upper()
+                    badge_p = "ready" if "READY" in upper_p else ("risk" if "INVALID" in upper_p or "EXTENDED" in upper_p else "wait")
+                    with plan_col:
+                        st.markdown(f"""
+                        <div class="plan-card">
+                          <div class="plan-card-head">
+                            <div><div class="plan-code">{codep}</div><div class="plan-setup">{setup_p}</div></div>
+                            <span class="plan-badge {badge_p}">{escape(entry_p)}</span>
+                          </div>
+                          <div class="plan-grid">
+                            <div class="plan-cell"><div class="plan-label">Buy Zone</div><div class="plan-value">{buy_p}</div></div>
+                            <div class="plan-cell"><div class="plan-label">Stop Loss</div><div class="plan-value status-risk">{sl_p}</div></div>
+                            <div class="plan-cell"><div class="plan-label">TP1</div><div class="plan-value status-ready">{tp1_p}</div></div>
+                            <div class="plan-cell"><div class="plan-label">TP2</div><div class="plan-value status-ready">{tp2_p}</div></div>
+                          </div>
+                          <div class="pick-row"><span class="pick-label">R:R</span><span class="pick-value">{rr_p}</span></div>
+                          <div class="pick-row"><span class="pick-label">Flow</span><span class="pick-value">{flow_p}</span></div>
+                          <div class="plan-foot"><b>{decision_p}</b><br>Konfirmasi: {conf_p}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                st.caption("Zona entry, stop loss, dan target berasal dari kalkulasi teknikal/ATR. Ini adalah skenario, bukan instruksi transaksi otomatis.")
 
-
-                st.subheader("💰 V7.1 Position Sizing — Risk-Based Calculator")
+                st.subheader("💰 Position Sizing — Risk-Based Calculator")
                 st.info("Kalkulator ini menghitung jumlah lot berdasarkan modal, risiko per transaksi, dan batas maksimum alokasi per saham. Hasilnya adalah simulasi manajemen risiko, bukan instruksi transaksi otomatis.")
                 sz1, sz2, sz3 = st.columns(3)
                 with sz1:
@@ -2160,7 +2321,7 @@ if menu == "🏠 Full IDX Scanner":
                     m3.metric("Total alokasi", f"{total_pct:.2f}%")
                     st.caption(f"Risiko teoritis maksimum berdasarkan stop loss: {risk_pct_input:.2f}% dari modal. Pembulatan dilakukan ke lot IDX (100 saham).")
 
-                    st.subheader("🧾 V7.1 Entry Confirmation Checklist")
+                    st.subheader("🧾 Entry Confirmation Checklist")
                     for _, rr in plan7.iterrows():
                         code = str(rr.get("Kode", "-"))
                         setup = str(rr.get("Setup", "")).upper()
@@ -2192,13 +2353,13 @@ if menu == "🏠 Full IDX Scanner":
                 st.dataframe(safe_display_columns(invtop, invcols), width="stretch", hide_index=True)
                 st.caption("InvestorScore sudah disesuaikan dengan Data Confidence. Outlier valuasi tidak diperlakukan sebagai data valid. Flow Proxy hanya indikator price-volume, bukan foreign net buy/sell resmi.")
 
-            st.subheader("🧠 V7.1 Decision Intelligence — Quality + Timing + Confidence + Flow")
+            st.subheader("🧠 Decision Intelligence")
             convtop = v7_result[v7_result["V7Enriched"]].sort_values(["ConvictionScore","QualityScore","TimingScore"], ascending=[False,False,False]).head(20)
             convcols = ["Kode","Nama","Sektor","Price","ConvictionScore","ConvictionGrade","QualityScore","TimingScore","EntryQuality","ConvictionConfidence","DataConfidenceBand","ConvictionDecision","Top10Readiness","Top10ReadinessGrade","Score","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","R:R","EntryStatus"]
             st.dataframe(safe_display_columns(convtop, convcols), width="stretch", hide_index=True)
             st.caption("V7.1 memisahkan kualitas saham, kualitas timing entry dan confidence data. Confidence adalah indikator kelengkapan data, bukan ukuran kualitas bisnis.")
 
-            st.subheader("🎯 Decision Matrix — 3 Gaya")
+            st.subheader("🎯 Perbandingan 3 Gaya Analisis")
             matrix_frames = []
             for st_style in STYLE_CONFIG.keys():
                 m = style_board(v7_result[v7_result["V7Enriched"]].copy(), st_style).head(5).copy()
@@ -2209,7 +2370,7 @@ if menu == "🏠 Full IDX Scanner":
                 matrix_cols = ["Style","Kode","Price","ConvictionScore","ConvictionGrade","QualityScore","TimingScore","EntryQuality","ConvictionConfidence","ConvictionDecision"]
                 st.dataframe(safe_display_columns(matrix, matrix_cols), width="stretch", hide_index=True)
 
-            st.subheader("🌊 V7.1 Flow Intelligence — Multi-Horizon + Quality")
+            st.subheader("🌊 Flow Intelligence")
             st.info("Flow Intelligence adalah PROXY berbasis harga-volume dari data harian. Ini BUKAN data resmi foreign net buy/sell BEI. Gunakan sebagai konfirmasi, bukan sebagai bukti transaksi investor asing.")
             flow_int = calculate_flow_intelligence(v7_result[v7_result["V7Enriched"]].copy())
             flow_int = flow_int.sort_values(["FlowTrendScore","FlowConsistency"], ascending=[False,False]).head(20)
@@ -2217,18 +2378,18 @@ if menu == "🏠 Full IDX Scanner":
             st.dataframe(safe_display_columns(flow_int, flow_cols), width="stretch", hide_index=True)
             st.caption("V7.0: 5D = tactical, 20D = swing, 60D = investor. Flow kini memakai transformasi kontinu agar tidak jenuh di 100, ditambah relative volume dan price-flow divergence. Tetap PROXY price-volume, bukan foreign flow resmi.")
 
-            st.subheader("💰 Fundamental & Sector-Relative Valuation")
+            st.subheader("📊 Fundamental & Valuation")
             st.caption("V6.8 membandingkan valuasi dengan peer sektor/bisnis yang sejenis; Financials memberi bobot lebih besar pada PE/PB. Jika peer kurang, skor memakai fallback yang lebih netral.")
             ftop = v7_result[v7_result["V7Enriched"]].head(20).copy()
             fcols = ["Kode","Price","Sektor","SectorGroup","FundamentalScore","ValuationScore","ValuationMethod","PE","PB","PS","ROE","RevenueGrowth","EarningsGrowth","DebtEquity","ValuationConfidence","ValuationDataCompleteness","InvestorDataConfidence"]
             st.dataframe(safe_display_columns(ftop, fcols), width="stretch", hide_index=True)
 
-            st.subheader("💧 Flow Proxy — Price & Volume")
+            st.subheader("💧 Detail Flow Proxy")
             flowtop = v7_result.sort_values("FlowProxyScore", ascending=False).head(20)
             flowcols = ["Kode","Price","FlowProxyScore","FlowProxy","CMF20","OBVChange20","UpDownVolume"]
             st.dataframe(safe_display_columns(flowtop, flowcols), width="stretch", hide_index=True)
 
-        st.subheader("🎛️ Filter Full IDX")
+        st.subheader("🔎 Filter Saham")
 
         f1, f2, f3, f4 = st.columns(4)
 
