@@ -9,13 +9,13 @@ from io import StringIO
 from html import escape
 
 # ============================================================
-# SANGGUL STOCK SCANNER IDX V7.2.2
+# SANGGUL STOCK SCANNER IDX V7.3 PROFESSIONAL EDITION
 # FULL IDX SCANNER
 # IHSG -> SECTOR -> ALL IDX -> TECHNICAL -> OPPORTUNITY
 # ============================================================
 
 st.set_page_config(
-    page_title="Sanggul Stock Scanner IDX V7.2.2",
+    page_title="Sanggul Stock Scanner IDX V7.3 Professional",
     page_icon="📈",
     layout="wide"
 )
@@ -2297,16 +2297,22 @@ if menu == "🏠 Full IDX Scanner":
                         """, unsafe_allow_html=True)
                 st.caption("Zona entry, stop loss, dan target berasal dari kalkulasi teknikal/ATR. Ini adalah skenario, bukan instruksi transaksi otomatis.")
 
-                st.subheader("💰 Position Sizing — Risk-Based Calculator")
-                st.info("Kalkulator ini menghitung jumlah lot berdasarkan modal, risiko per transaksi, dan batas maksimum alokasi per saham. Hasilnya adalah simulasi manajemen risiko, bukan instruksi transaksi otomatis.")
-                sz1, sz2, sz3 = st.columns(3)
+                st.subheader("💰 Portfolio & Risk Manager — Professional")
+                st.info("Modul ini menggabungkan position sizing berbasis risiko, batas alokasi, batas jumlah posisi, cadangan kas, dan kontrol risiko portofolio. Semua hasil adalah simulasi perencanaan, bukan instruksi transaksi otomatis.")
+                sz1, sz2, sz3, sz4, sz5 = st.columns(5)
                 with sz1:
-                    capital_input = st.number_input("Modal trading (Rp)", min_value=0.0, value=100_000_000.0, step=5_000_000.0, format="%.0f", key="v71_capital")
+                    capital_input = st.number_input("Modal trading (Rp)", min_value=0.0, value=100_000_000.0, step=5_000_000.0, format="%.0f", key="v73_capital")
                 with sz2:
-                    risk_pct_input = st.number_input("Risiko per transaksi (%)", min_value=0.1, max_value=5.0, value=1.0, step=0.1, format="%.1f", key="v71_risk_pct")
+                    risk_pct_input = st.number_input("Risiko/transaksi (%)", min_value=0.1, max_value=5.0, value=1.0, step=0.1, format="%.1f", key="v73_risk_pct")
                 with sz3:
-                    max_alloc_input = st.number_input("Maks. alokasi per saham (%)", min_value=1.0, max_value=100.0, value=25.0, step=1.0, format="%.1f", key="v71_max_alloc")
+                    max_alloc_input = st.number_input("Maks. alokasi/saham (%)", min_value=1.0, max_value=100.0, value=25.0, step=1.0, format="%.1f", key="v73_max_alloc")
+                with sz4:
+                    max_positions_input = st.number_input("Maks. jumlah posisi", min_value=1, max_value=20, value=3, step=1, key="v73_max_positions")
+                with sz5:
+                    max_portfolio_risk_input = st.number_input("Maks. risiko portofolio (%)", min_value=0.5, max_value=20.0, value=3.0, step=0.5, format="%.1f", key="v73_portfolio_risk")
 
+                # V7.3: enforce the user's maximum number of simultaneous positions.
+                plan7 = plan7.head(int(max_positions_input)).copy()
                 sizing = calculate_position_sizing(plan7, capital_input, risk_pct_input, max_alloc_input)
                 if not sizing.empty:
                     sizing_display = format_sizing_table(sizing)
@@ -2315,11 +2321,42 @@ if menu == "🏠 Full IDX Scanner":
                     total_value = pd.to_numeric(sizing["PositionValue"], errors="coerce").fillna(0).sum()
                     total_loss = pd.to_numeric(sizing["MaxLoss"], errors="coerce").fillna(0).sum()
                     total_pct = (total_value / capital_input * 100.0) if capital_input else 0.0
-                    m1, m2, m3 = st.columns(3)
-                    m1.metric("Total nilai posisi", f"Rp {total_value:,.0f}".replace(",", "."))
-                    m2.metric("Estimasi risiko maksimum", f"Rp {total_loss:,.0f}".replace(",", "."))
-                    m3.metric("Total alokasi", f"{total_pct:.2f}%")
-                    st.caption(f"Risiko teoritis maksimum berdasarkan stop loss: {risk_pct_input:.2f}% dari modal. Pembulatan dilakukan ke lot IDX (100 saham).")
+                    total_risk_pct = (total_loss / capital_input * 100.0) if capital_input else 0.0
+                    cash_remaining = max(0.0, float(capital_input) - float(total_value))
+                    risk_limit_value = float(capital_input) * float(max_portfolio_risk_input) / 100.0
+                    risk_status = "TERKENDALI" if total_loss <= risk_limit_value else "MELEBIHI BATAS"
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("Nilai posisi", f"Rp {total_value:,.0f}".replace(",", "."))
+                    m2.metric("Sisa kas", f"Rp {cash_remaining:,.0f}".replace(",", "."))
+                    m3.metric("Risiko maksimum", f"Rp {total_loss:,.0f}".replace(",", "."))
+                    m4.metric("Risiko portofolio", f"{total_risk_pct:.2f}%")
+                    if total_loss <= risk_limit_value:
+                        st.success(f"🟢 Risiko portofolio {risk_status}. Batas risiko: {max_portfolio_risk_input:.2f}% atau Rp {risk_limit_value:,.0f}.")
+                    else:
+                        st.error(f"🔴 Risiko portofolio {risk_status}. Kurangi lot atau jumlah posisi. Batas risiko: Rp {risk_limit_value:,.0f}.")
+                    st.caption(f"Maksimal {int(max_positions_input)} posisi aktif; alokasi per saham maksimal {max_alloc_input:.1f}%; pembulatan menggunakan lot IDX (100 saham).")
+
+                    st.subheader("🛡️ Portfolio Risk Control")
+                    risk_control = pd.DataFrame([{
+                        "Parameter": "Modal tersedia",
+                        "Nilai": f"Rp {capital_input:,.0f}".replace(",", ".")
+                    }, {
+                        "Parameter": "Modal teralokasi",
+                        "Nilai": f"Rp {total_value:,.0f}".replace(",", ".")
+                    }, {
+                        "Parameter": "Sisa kas",
+                        "Nilai": f"Rp {cash_remaining:,.0f}".replace(",", ".")
+                    }, {
+                        "Parameter": "Risiko aktual portofolio",
+                        "Nilai": f"{total_risk_pct:.2f}% / batas {max_portfolio_risk_input:.2f}%"
+                    }, {
+                        "Parameter": "Jumlah posisi",
+                        "Nilai": f"{len(sizing)} / {int(max_positions_input)}"
+                    }, {
+                        "Parameter": "Status kontrol",
+                        "Nilai": risk_status
+                    }])
+                    st.dataframe(risk_control, width="stretch", hide_index=True)
 
                     st.subheader("🧾 Entry Confirmation Checklist")
                     for _, rr in plan7.iterrows():
@@ -2357,7 +2394,7 @@ if menu == "🏠 Full IDX Scanner":
             convtop = v7_result[v7_result["V7Enriched"]].sort_values(["ConvictionScore","QualityScore","TimingScore"], ascending=[False,False,False]).head(20)
             convcols = ["Kode","Nama","Sektor","Price","ConvictionScore","ConvictionGrade","QualityScore","TimingScore","EntryQuality","ConvictionConfidence","DataConfidenceBand","ConvictionDecision","Top10Readiness","Top10ReadinessGrade","Score","TradeReadiness","FundamentalScore","ValuationScore","FlowProxyScore","R:R","EntryStatus"]
             st.dataframe(safe_display_columns(convtop, convcols), width="stretch", hide_index=True)
-            st.caption("V7.1 memisahkan kualitas saham, kualitas timing entry dan confidence data. Confidence adalah indikator kelengkapan data, bukan ukuran kualitas bisnis.")
+            st.caption("V7.3 memisahkan kualitas saham, kualitas timing entry, confidence data, readiness, flow dan kontrol risiko portofolio. Confidence adalah indikator kelengkapan data, bukan ukuran kualitas bisnis.")
 
             st.subheader("🎯 Perbandingan 3 Gaya Analisis")
             matrix_frames = []
