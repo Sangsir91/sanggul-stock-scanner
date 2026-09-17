@@ -334,163 +334,244 @@ def enrich_results(base_df, top_n=150):
     return pd.DataFrame(rows)
 
 # -----------------------------
+# Individual analysis helpers
+# -----------------------------
+def render_detail_metrics(a):
+    cols = st.columns(4)
+    metrics = [
+        ("Harga", rupiah(a.get("Price"))),
+        ("Technical Score", fmt_num(a.get("Score"), 1)),
+        ("Opportunity", fmt_num(a.get("Opportunity"), 1)),
+        ("Signal", a.get("Signal", "-")),
+    ]
+    for c, (label, value) in zip(cols, metrics):
+        with c:
+            st.metric(label, value)
+
+
+def render_individual_analysis(kode, meta, df, focus_days):
+    with st.spinner(f"Mengambil data dan menganalisis {kode}..."):
+        analysis = fast_analysis(df, focus_days=focus_days)
+    if analysis is None:
+        st.error(f"Data {kode} tidak cukup untuk analisis. Diperlukan sekitar 210 hari bursa atau lebih.")
+        return
+
+    row = {"Kode": kode, "Nama": meta.get("name", kode), "Sektor": meta.get("sector", "-"), **analysis}
+    st.markdown(f"### 📊 Analisis Individual — {kode}")
+    st.caption(f"{row['Nama']} · {row['Sektor']} · Data terakhir: {analysis.get('Date', '-')}")
+    render_detail_metrics(analysis)
+    render_stock_card(row)
+
+    st.markdown("#### 🎯 Action Plan")
+    price = safe_float(analysis.get("Price"))
+    support = safe_float(analysis.get("Support"), price * .95)
+    resistance = safe_float(analysis.get("Resistance"), price * 1.05)
+    atr = max(price * .005, abs(resistance-support) * .05)
+    stop = max(0, min(price - atr * 1.5, support * .98))
+    target1 = max(resistance, price * 1.04)
+    target2 = max(price * 1.08, target1 * 1.04)
+    risk = max(price-stop, 0)
+    reward = max(target1-price, 0)
+    rr = reward/risk if risk else 0
+    ac = st.columns(4)
+    for c, label, value in [
+        (ac[0], "Support", rupiah(support)),
+        (ac[1], "Resistance", rupiah(resistance)),
+        (ac[2], "Stop Loss", rupiah(stop)),
+        (ac[3], "Target 1", rupiah(target1)),
+    ]:
+        with c:
+            st.metric(label, value)
+    st.info(f"Target 2: **{rupiah(target2)}** · Estimasi Risk/Reward dari harga saat ini ke Target 1: **{fmt_num(rr, 2)}**. Gunakan sebagai referensi, bukan kepastian hasil.")
+
+    st.markdown("#### 📈 Grafik Harga & Moving Average")
+    x = indicators(df).tail(260).copy()
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(x=x.index, open=x["Open"], high=x["High"], low=x["Low"], close=x["Close"], name="Harga"))
+    for col, name in [("MA20", "MA20"), ("MA50", "MA50"), ("MA200", "MA200")]:
+        if col in x:
+            fig.add_trace(go.Scatter(x=x.index, y=x[col], mode="lines", name=name))
+    fig.update_layout(height=470, margin=dict(l=10,r=10,t=25,b=10), xaxis_rangeslider_visible=False, legend=dict(orientation="h"))
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("#### 🔬 Indikator Teknikal")
+    ind_cols = st.columns(3)
+    indicator_values = [
+        ("RSI", fmt_num(analysis.get("RSI"))),
+        ("MACD", fmt_num(x["MACD"].iloc[-1]) if "MACD" in x else "-"),
+        ("MACD Signal", fmt_num(x["MACDSignal"].iloc[-1]) if "MACDSignal" in x else "-"),
+        ("Volume Ratio", fmt_num(analysis.get("Volume"), 3)),
+        ("Return 20D", f"{fmt_num(analysis.get('Return20D'))}%"),
+        ("Return 60D", f"{fmt_num(analysis.get('Return60D'))}%"),
+        ("Breakout", analysis.get("Breakout", "-")),
+        ("Support 20D", rupiah(analysis.get("Support"))),
+        ("Resistance 20D", rupiah(analysis.get("Resistance"))),
+    ]
+    for i, (label, value) in enumerate(indicator_values):
+        with ind_cols[i % 3]:
+            st.markdown(f'<div class="metric-card"><div class="metric-label">{label}</div><div class="metric-value">{value}</div></div>', unsafe_allow_html=True)
+
+    with st.expander("Lihat data historis terakhir", expanded=False):
+        st.dataframe(df.tail(30).sort_index(ascending=False), use_container_width=True)
+
+
+# -----------------------------
 # UI
 # -----------------------------
 st.title("📈 Sanggul Stock Scanner IDX V8.2")
-st.caption("V8.2 • Full IDX • 2 Tahun Data Konteks • Focus-Aware Analysis • Enrich Multi-Style")
+st.caption("V8.2 • Analisis 1 Saham + Full IDX • 2 Tahun Data Konteks • Focus-Aware Analysis • Enrich Multi-Style")
 
 with st.sidebar:
     st.header("⚙️ Pengaturan Analisis")
+    mode = st.radio("Mode Analisis", ["🔎 1 Saham", "🌐 Full IDX"], index=0)
     focus_label = st.selectbox("Fokus Analisis", ["1 Bulan", "3 Bulan", "6 Bulan", "12 Bulan"], index=1)
     focus_map = {"1 Bulan":21, "3 Bulan":63, "6 Bulan":126, "12 Bulan":252}
     focus_days = focus_map[focus_label]
     st.info(f"Data historis 2 tahun digunakan sebagai konteks dan MA200. Analisis utama memakai {focus_label.lower()} terakhir ({focus_days} hari bursa).")
     st.caption("Sumber harga: Yahoo Finance melalui yfinance. Flow asing resmi/order book tidak tersedia di sumber ini.")
 
-st.markdown('<div class="section-card"><b>Mode kerja V8.2</b><br>Scan Full IDX → Filter → Top Opportunity → Enrich Top 150 → Action Board berdasarkan gaya trading.</div>', unsafe_allow_html=True)
-
 universe = load_idx_universe()
 if universe.empty:
     st.error("Universe IDX gagal dimuat. Periksa koneksi internet.")
     st.stop()
 
-m1, m2, m3, m4 = st.columns(4)
-with m1: st.metric("Universe IDX", f"{len(universe):,}".replace(",", "."))
-with m2: st.metric("Data Historis", "2 Tahun")
-with m3: st.metric("Fokus", focus_label)
-with m4: st.metric("Batch", "50 saham")
+if mode == "🔎 1 Saham":
+    st.markdown('<div class="info-card"><div class="card-title">🔎 Analisis Satu Saham</div><div>Pilih atau ketik kode saham IDX untuk melihat indikator teknikal, grafik, support/resistance, dan action plan.</div></div>', unsafe_allow_html=True)
+    options = universe["ticker"].tolist()
+    default_idx = options.index("BBRI") if "BBRI" in options else 0
+    selected = st.selectbox("Pilih Kode Saham", options, index=default_idx, format_func=lambda x: f"{x} — {universe.loc[universe['ticker'].eq(x), 'name'].iloc[0]}")
+    custom = st.text_input("Atau ketik kode saham", placeholder="Contoh: BBCA, BBRI, TLKM").strip().upper().replace(".JK", "")
+    kode = custom if custom else selected
+    meta_df = universe[universe["ticker"] == kode]
+    if meta_df.empty:
+        st.warning(f"Kode {kode} tidak ditemukan pada universe IDX. Pastikan kode terdiri dari 4 huruf dan tersedia di sumber data.")
+    else:
+        meta_row = meta_df.iloc[0]
+        if st.button("📊 ANALISIS SAHAM TERPILIH", type="primary", use_container_width=True):
+            symbol = yahoo_symbol(kode)
+            batch = download_batch((symbol,), period="2y")
+            df = extract_ticker_data(batch, symbol)
+            if df.empty:
+                st.error(f"Data Yahoo Finance untuk {kode} tidak tersedia atau gagal diambil.")
+            else:
+                st.session_state["individual_result"] = {"kode": kode, "meta": meta_row.to_dict(), "df": df}
+        saved = st.session_state.get("individual_result")
+        if saved and saved.get("kode") == kode:
+            render_individual_analysis(saved["kode"], saved["meta"], saved["df"], focus_days)
+        else:
+            st.info("Pilih saham lalu klik **ANALISIS SAHAM TERPILIH** untuk menampilkan hasil.")
 
-if st.button("🚀 SCAN SELURUH IDX SEKARANG", type="primary", use_container_width=True):
-    progress = st.progress(0)
-    status = st.empty()
-    def cb(v):
-        progress.progress(v)
-        status.info(f"Progress scanning: {v*100:.0f}%")
-    with st.spinner("Mengambil data Full IDX selama 2 tahun..."):
-        result = scan_full_idx(universe, batch_size=50, focus_days=focus_days, progress_callback=cb)
-    progress.progress(1.0)
-    status.success(f"Scanning selesai: {len(result)} saham berhasil dianalisis.")
-    st.session_state["full_scan"] = result
-    st.session_state.pop("enriched", None)
-
-result = st.session_state.get("full_scan", pd.DataFrame())
-if result.empty:
-    st.warning("Klik tombol SCAN SELURUH IDX SEKARANG untuk memulai.")
-    st.stop()
-
-st.success(f"{len(result)} saham memiliki data teknikal yang cukup untuk dianalisis.")
-
-st.subheader("🎛️ Filter Full IDX")
-f1, f2, f3, f4 = st.columns(4)
-with f1:
-    sectors = ["Semua"] + sorted(result["Sektor"].dropna().unique().tolist())
-    selected_sector = st.selectbox("Sektor", sectors)
-with f2:
-    min_score = st.slider("Minimum Technical Score", 0, 100, 60, 5)
-with f3:
-    signal_filter = st.selectbox("Signal", ["Semua", "BUY", "WAIT", "SELL"])
-with f4:
-    breakout_filter = st.selectbox("Breakout", ["Semua", "YA", "TIDAK"])
-
-filtered = result.copy()
-if selected_sector != "Semua": filtered = filtered[filtered["Sektor"] == selected_sector]
-filtered = filtered[filtered["Score"] >= min_score]
-if signal_filter != "Semua": filtered = filtered[filtered["Signal"].str.contains(signal_filter, na=False)]
-if breakout_filter != "Semua": filtered = filtered[filtered["Breakout"] == breakout_filter]
-st.caption(f"Hasil setelah filter: {len(filtered)} saham")
-
-st.subheader("🏆 Top 10 Opportunity — Full IDX")
-top10 = result.sort_values(["Opportunity", "Score"], ascending=False).head(10)
-left, right = st.columns(2)
-for i, (_, row) in enumerate(top10.iterrows()):
-    with (left if i % 2 == 0 else right):
-        render_stock_card(row)
-
-st.subheader("🟢 Kandidat BUY")
-buys = filtered[filtered["Signal"].str.contains("BUY", na=False)].head(20)
-if buys.empty:
-    st.warning("Belum ada kandidat BUY sesuai filter.")
 else:
-    left, right = st.columns(2)
-    for i, (_, row) in enumerate(buys.iterrows()):
-        with (left if i % 2 == 0 else right):
-            render_compact_row(row, extra=[
-                ("Opportunity", fmt_num(row.get("Opportunity"))),
-                ("R:R", fmt_num(row.get("R:R"))),
-                ("Breakout", row.get("Breakout", "-")),
-            ])
+    st.markdown('<div class="info-card"><div class="card-title">🌐 Mode Full IDX</div><div>Scan seluruh universe IDX, lakukan filter, lalu perkaya hasilnya untuk tiga gaya trading.</div></div>', unsafe_allow_html=True)
+    m1, m2, m3, m4 = st.columns(4)
+    with m1: st.metric("Universe IDX", f"{len(universe):,}".replace(",", "."))
+    with m2: st.metric("Data Historis", "2 Tahun")
+    with m3: st.metric("Fokus", focus_label)
+    with m4: st.metric("Batch", "50 saham")
 
-# -----------------------------
-# ENRICH: always visible after scan
-# -----------------------------
-st.markdown("---")
-st.subheader("✨ Enrich Top 150 — Focus-Aware Multi-Style")
-st.write("Enrich memperkaya ranking hasil filter menjadi tiga perspektif: Trading Harian, Swing Trading Mingguan, dan Investor Jangka Panjang.")
+    if st.button("🚀 SCAN SELURUH IDX SEKARANG", type="primary", use_container_width=True):
+        progress = st.progress(0)
+        status = st.empty()
+        def cb(v):
+            progress.progress(v)
+            status.info(f"Progress scanning: {v*100:.0f}%")
+        with st.spinner("Mengambil data Full IDX selama 2 tahun..."):
+            result = scan_full_idx(universe, batch_size=50, focus_days=focus_days, progress_callback=cb)
+        progress.progress(1.0)
+        status.success(f"Scanning selesai: {len(result)} saham berhasil dianalisis.")
+        st.session_state["full_scan"] = result
+        st.session_state.pop("enriched", None)
 
-if filtered.empty:
-    st.warning("Tidak ada saham hasil filter untuk di-Enrich. Turunkan Minimum Technical Score atau ubah filter.")
-else:
-    enrich_source = filtered.sort_values(["Opportunity", "Score"], ascending=False).head(150)
-    st.caption(f"Sumber Enrich: {len(enrich_source)} saham dari hasil filter. Fokus aktif: {focus_label}.")
-    if st.button("✨ ENRICH TOP 150 SEKARANG", type="primary", use_container_width=True):
-        with st.spinner("Menghitung skor Enrich dan rencana aksi..."):
-            enriched = enrich_results(enrich_source, top_n=150)
-        st.session_state["enriched"] = enriched
-        st.success(f"Enrich selesai: {len(enriched)} saham diperkaya.")
+    result = st.session_state.get("full_scan", pd.DataFrame())
+    if result.empty:
+        st.warning("Klik tombol SCAN SELURUH IDX SEKARANG untuk memulai.")
+    else:
+        st.success(f"{len(result)} saham memiliki data teknikal yang cukup untuk dianalisis.")
+        st.subheader("🎛️ Filter Full IDX")
+        f1, f2, f3, f4 = st.columns(4)
+        with f1:
+            sectors = ["Semua"] + sorted(result["Sektor"].dropna().unique().tolist())
+            selected_sector = st.selectbox("Sektor", sectors)
+        with f2:
+            min_score = st.slider("Minimum Technical Score", 0, 100, 60, 5)
+        with f3:
+            signal_filter = st.selectbox("Signal", ["Semua", "BUY", "WAIT", "SELL"])
+        with f4:
+            breakout_filter = st.selectbox("Breakout", ["Semua", "YA", "TIDAK"])
 
-# Show output if enriched exists
-if "enriched" in st.session_state and not st.session_state["enriched"].empty:
-    enriched = st.session_state["enriched"]
-    st.subheader("🥇 Top 3 Actionable Picks — Risk-Gated")
-    top3 = enriched[enriched["RiskGate"] == "PASS"].sort_values(["SwingScore", "DayScore"], ascending=False).head(3)
-    if top3.empty:
-        top3 = enriched.sort_values(["SwingScore", "DayScore"], ascending=False).head(3)
-    a, b, c = st.columns(3)
-    for i, (_, row) in enumerate(top3.iterrows()):
-        with (a if i == 0 else b if i == 1 else c):
-            render_action_card(row, "SwingScore", "SwingSignal", "Swing Risk-Gated", extra=[
-                ("R:R", fmt_num(row.get("R:R"))),
-                ("Risk Gate", row.get("RiskGate", "-")),
-                ("Target 1", rupiah(row.get("Target1"))),
-                ("Stop Loss", rupiah(row.get("StopLoss"))),
-            ])
+        filtered = result.copy()
+        if selected_sector != "Semua": filtered = filtered[filtered["Sektor"] == selected_sector]
+        filtered = filtered[filtered["Score"] >= min_score]
+        if signal_filter != "Semua": filtered = filtered[filtered["Signal"].str.contains(signal_filter, na=False)]
+        if breakout_filter != "Semua": filtered = filtered[filtered["Breakout"] == breakout_filter]
+        st.caption(f"Hasil setelah filter: {len(filtered)} saham")
 
-    st.subheader("🎯 Multi-Style Action Board")
-    st.caption("Skor setiap gaya menggunakan formula berbeda. Skor tidak dipaksa menjadi 100; nilai dapat berbeda sesuai karakter saham.")
-    a, b, c = st.columns(3)
-    with a:
-        st.markdown("### ⚡ Trading Harian")
-        day = enriched.sort_values(["DayScore", "Volume"], ascending=False).head(5)
-        for _, row in day.iterrows():
-            render_action_card(row, "DayScore", "DaySignal", "Trading Harian", extra=[
-                ("Volume", fmt_num(row.get("Volume"))),
-                ("RSI", fmt_num(row.get("RSI"))),
-            ])
-    with b:
-        st.markdown("### 📈 Swing Trading Mingguan")
-        swing = enriched.sort_values(["SwingScore", "Opportunity"], ascending=False).head(5)
-        for _, row in swing.iterrows():
-            render_action_card(row, "SwingScore", "SwingSignal", "Swing Mingguan", extra=[
-                ("Return 20D", f'{fmt_num(row.get("Return20D"))}%'),
-                ("Return 60D", f'{fmt_num(row.get("Return60D"))}%'),
-            ])
-    with c:
-        st.markdown("### 🏛️ Investor Jangka Panjang")
-        inv = enriched.sort_values(["InvestorScore", "Return60D"], ascending=False).head(5)
-        for _, row in inv.iterrows():
-            render_action_card(row, "InvestorScore", "InvestorSignal", "Investor Jangka Panjang", extra=[
-                ("Return 60D", f'{fmt_num(row.get("Return60D"))}%'),
-                ("Risk Gate", row.get("RiskGate", "-")),
-            ])
+        st.subheader("🏆 Top 10 Opportunity — Full IDX")
+        top10 = result.sort_values(["Opportunity", "Score"], ascending=False).head(10)
+        left, right = st.columns(2)
+        for i, (_, row) in enumerate(top10.iterrows()):
+            with (left if i % 2 == 0 else right):
+                render_stock_card(row)
 
-    st.subheader("📋 Detail Hasil Enrich")
-    detail_cols = ["Kode","Nama","Sektor","Price","Score","Opportunity","DayScore","DaySignal","SwingScore","SwingSignal","InvestorScore","InvestorSignal","Setup","RiskGate","StopLoss","Target1","Target2"]
-    with st.expander("Buka tabel detail lengkap", expanded=False):
-        st.dataframe(enriched[detail_cols], use_container_width=True, hide_index=True)
-    csv = enriched.to_csv(index=False).encode("utf-8-sig")
-    st.download_button("⬇️ Download Hasil Enrich CSV", data=csv, file_name="enriched_top150_v82.csv", mime="text/csv", use_container_width=True)
-else:
-    st.info("ℹ️ Hasil Enrich belum tersedia. Klik tombol **ENRICH TOP 150 SEKARANG** di atas.")
+        st.subheader("🟢 Kandidat BUY")
+        buys = filtered[filtered["Signal"].str.contains("BUY", na=False)].head(20)
+        if buys.empty:
+            st.warning("Belum ada kandidat BUY sesuai filter.")
+        else:
+            left, right = st.columns(2)
+            for i, (_, row) in enumerate(buys.iterrows()):
+                with (left if i % 2 == 0 else right):
+                    render_compact_row(row, extra=[("Opportunity", fmt_num(row.get("Opportunity"))), ("R:R", fmt_num(row.get("R:R"))), ("Breakout", row.get("Breakout", "-"))])
+
+        st.markdown("---")
+        st.subheader("✨ Enrich Top 150 — Focus-Aware Multi-Style")
+        st.write("Enrich memperkaya ranking hasil filter menjadi tiga perspektif: Trading Harian, Swing Trading Mingguan, dan Investor Jangka Panjang.")
+        if filtered.empty:
+            st.warning("Tidak ada saham hasil filter untuk di-Enrich. Turunkan Minimum Technical Score atau ubah filter.")
+        else:
+            enrich_source = filtered.sort_values(["Opportunity", "Score"], ascending=False).head(150)
+            st.caption(f"Sumber Enrich: {len(enrich_source)} saham dari hasil filter. Fokus aktif: {focus_label}.")
+            if st.button("✨ ENRICH TOP 150 SEKARANG", type="primary", use_container_width=True):
+                with st.spinner("Menghitung skor Enrich dan rencana aksi..."):
+                    enriched = enrich_results(enrich_source, top_n=150)
+                st.session_state["enriched"] = enriched
+                st.success(f"Enrich selesai: {len(enriched)} saham diperkaya.")
+
+        if "enriched" in st.session_state and not st.session_state["enriched"].empty:
+            enriched = st.session_state["enriched"]
+            st.subheader("🥇 Top 3 Actionable Picks — Risk-Gated")
+            top3 = enriched[enriched["RiskGate"] == "PASS"].sort_values(["SwingScore", "DayScore"], ascending=False).head(3)
+            if top3.empty:
+                top3 = enriched.sort_values(["SwingScore", "DayScore"], ascending=False).head(3)
+            a, b, c = st.columns(3)
+            for i, (_, row) in enumerate(top3.iterrows()):
+                with (a if i == 0 else b if i == 1 else c):
+                    render_action_card(row, "SwingScore", "SwingSignal", "Swing Risk-Gated", extra=[("R:R", fmt_num(row.get("R:R"))), ("Risk Gate", row.get("RiskGate", "-")), ("Target 1", rupiah(row.get("Target1"))), ("Stop Loss", rupiah(row.get("StopLoss")))])
+
+            st.subheader("🎯 Multi-Style Action Board")
+            st.caption("Skor setiap gaya menggunakan formula berbeda. Skor tidak dipaksa menjadi 100; nilai dapat berbeda sesuai karakter saham.")
+            a, b, c = st.columns(3)
+            with a:
+                st.markdown("### ⚡ Trading Harian")
+                for _, row in enriched.sort_values(["DayScore", "Volume"], ascending=False).head(5).iterrows():
+                    render_action_card(row, "DayScore", "DaySignal", "Trading Harian", extra=[("Volume", fmt_num(row.get("Volume"))), ("RSI", fmt_num(row.get("RSI")))])
+            with b:
+                st.markdown("### 📈 Swing Trading Mingguan")
+                for _, row in enriched.sort_values(["SwingScore", "Opportunity"], ascending=False).head(5).iterrows():
+                    render_action_card(row, "SwingScore", "SwingSignal", "Swing Mingguan", extra=[("Return 20D", f'{fmt_num(row.get("Return20D"))}%'), ("Return 60D", f'{fmt_num(row.get("Return60D"))}%')])
+            with c:
+                st.markdown("### 🏛️ Investor Jangka Panjang")
+                for _, row in enriched.sort_values(["InvestorScore", "Return60D"], ascending=False).head(5).iterrows():
+                    render_action_card(row, "InvestorScore", "InvestorSignal", "Investor Jangka Panjang", extra=[("Return 60D", f'{fmt_num(row.get("Return60D"))}%'), ("Risk Gate", row.get("RiskGate", "-"))])
+
+            st.subheader("📋 Detail Hasil Enrich")
+            detail_cols = ["Kode","Nama","Sektor","Price","Score","Opportunity","DayScore","DaySignal","SwingScore","SwingSignal","InvestorScore","InvestorSignal","Setup","RiskGate","StopLoss","Target1","Target2"]
+            with st.expander("Buka tabel detail lengkap", expanded=False):
+                st.dataframe(enriched[detail_cols], use_container_width=True, hide_index=True)
+            csv = enriched.to_csv(index=False).encode("utf-8-sig")
+            st.download_button("⬇️ Download Hasil Enrich CSV", data=csv, file_name="enriched_top150_v82.csv", mime="text/csv", use_container_width=True)
+        else:
+            st.info("ℹ️ Hasil Enrich belum tersedia. Klik tombol ENRICH TOP 150 SEKARANG di atas.")
 
 st.markdown("---")
 st.caption("Catatan: data harga berasal dari Yahoo Finance melalui yfinance, bukan feed tick-by-tick resmi BEI. Signal dan skor adalah alat bantu analisis, bukan jaminan keuntungan. Saham yang tidak tersedia di Yahoo Finance dapat dilewati.")
