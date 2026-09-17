@@ -1,577 +1,490 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import yfinance as yf
-import plotly.graph_objects as go
-from datetime import datetime
+import warnings
+warnings.filterwarnings('ignore')
 
-# ============================================================
-# SANGGUL STOCK SCANNER IDX V8.2 — SIMPLE CARD UI
-# FOCUS-AWARE ENRICH + MULTI-STYLE ACTION BOARD
-# ============================================================
+from datetime import datetime
+import io
+import numpy as np
+import pandas as pd
+import streamlit as st
+
+try:
+    import yfinance as yf
+except Exception:
+    yf = None
+
+try:
+    import plotly.graph_objects as go
+except Exception:
+    go = None
 
 st.set_page_config(
-    page_title="Sanggul Stock Scanner IDX V8.2 | Simple Card UI",
-    page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-IDX_UNIVERSE_URL = (
-    "https://huggingface.co/datasets/"
-    "kjhq/Indonesia-Stock-Symbols-and-Metadata/"
-    "resolve/main/indonesia.csv"
+    page_title='Sanggul Stock Scanner Pro V10',
+    page_icon='📈',
+    layout='wide',
+    initial_sidebar_state='expanded'
 )
 
 # -----------------------------
-# Styling
+# UI styling
 # -----------------------------
-st.markdown("""
+st.markdown('''
 <style>
-.block-container {padding-top:1.2rem;padding-bottom:2.5rem;max-width:1500px}
-[data-testid="stMetric"] {background:#fff;border:1px solid #e5e7eb;padding:12px 14px;border-radius:14px}
-.info-card,.stock-card,.compact-card,.action-card,.metric-card,.empty-card,.success-card{border:1px solid #e5e7eb;border-radius:14px;background:#fff;box-shadow:0 2px 8px rgba(15,23,42,.04)}
-.info-card{padding:16px 18px;margin:8px 0 18px}.card-title{font-weight:700;margin-bottom:12px}.flow-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.flow-grid div{background:#f8fafc;border-radius:10px;padding:10px;text-align:center}.flow-grid b{display:block;font-size:18px;color:#2563eb}.flow-grid span{font-size:12px;color:#475569}
-.metric-card{padding:13px 15px}.metric-label{font-size:12px;color:#64748b}.metric-value{font-size:22px;font-weight:700}
-.stock-card,.action-card{padding:15px 17px;margin:9px 0}.stock-head{display:flex;justify-content:space-between;align-items:center;gap:10px}.ticker{font-weight:800;color:#1d4ed8;font-size:1.05rem}.stock-name{font-weight:650;margin-left:8px}.stock-meta{font-size:12px;color:#64748b;margin:6px 0 13px}.data-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}.compact-grid{flex:1;grid-template-columns:repeat(4,minmax(75px,1fr));min-width:0}.compact-grid div{padding:7px}.data-grid div{background:#f8fafc;border-radius:9px;padding:9px}.data-grid small{display:block;color:#64748b;font-size:11px}.data-grid b{display:block;margin-top:3px;font-size:13px;overflow-wrap:anywhere}.pill{border-radius:999px;padding:5px 9px;font-size:11px;font-weight:750;white-space:nowrap}.positive{background:#dcfce7;color:#166534}.negative{background:#fee2e2;color:#991b1b}.neutral{background:#e2e8f0;color:#334155}.warning{background:#fef3c7;color:#92400e}.compact-card{padding:11px 14px;margin:7px 0;display:flex;justify-content:space-between;align-items:center;gap:12px}.compact-card small{color:#64748b}.compact-values{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#64748b}.compact-values b{color:#0f172a}.style-title{font-weight:750;margin-bottom:8px}.empty-card,.success-card{padding:13px 16px;margin:10px 0}.success-card{background:#f0fdf4;border-color:#bbf7d0;color:#166534}@media(max-width:900px){.data-grid{grid-template-columns:repeat(3,1fr)}.flow-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:600px){.data-grid{grid-template-columns:repeat(2,1fr)}.stock-head,.compact-card{align-items:flex-start;flex-direction:column}.compact-values{gap:8px}}
+:root { --line:#e5e7eb; --muted:#667085; --ink:#172033; }
+[data-testid="stAppViewContainer"] { background:#f7f9fc; }
+[data-testid="stHeader"] { background:transparent; }
+.block-container { max-width:1500px; padding-top:1rem; padding-bottom:2rem; }
+.card { background:#fff; border:1px solid var(--line); border-radius:16px; padding:16px 18px; margin-bottom:14px; box-shadow:0 2px 8px rgba(16,24,40,.025); }
+.card-title { color:var(--ink); font-size:1.05rem; font-weight:750; margin-bottom:3px; }
+.card-sub { color:var(--muted); font-size:.82rem; }
+.kpi { background:#fff; border:1px solid var(--line); border-radius:14px; padding:13px 15px; min-height:94px; }
+.kpi-label { color:var(--muted); font-size:.76rem; }
+.kpi-value { color:var(--ink); font-size:1.35rem; font-weight:800; margin-top:4px; }
+.kpi-note { color:var(--muted); font-size:.74rem; margin-top:3px; }
+.badge { display:inline-block; border-radius:999px; padding:4px 9px; font-size:.72rem; font-weight:750; }
+.buy { color:#087443; background:#e8f7ee; }
+.watch { color:#946200; background:#fff3cd; }
+.risk { color:#b42318; background:#fdecec; }
+.neutral { color:#475467; background:#eef1f5; }
+.section-space { margin-top:8px; }
 </style>
-""", unsafe_allow_html=True)
+''', unsafe_allow_html=True)
+
+DEFAULT_UNIVERSE = '''BBCA,BBRI,BMRI,BBNI,BRIS,BBTN,ADRO,ANTM,PTBA,ITMG,MEDC,PGAS,AKRA,INCO,MDKA,AMMN,TLKM,ISAT,EXCL,MTEL,TBIG,ASII,UNTR,INDF,ICBP,MYOR,SMGR,INTP,JPFA,CPIN,UNVR,KLBF,MIKA,HEAL,EMTK,BUKA,GOTO,ACES,ERAA,MAPA,MAPI,AMRT,BRPT,TPIA,ESSA,INKP,TKIM,SMRA,CTRA,BSDE,DMAS,PWON,SCMA,ELSA,PGEO,RAJA,DEWA,DOID,HRUM,MBMA,NCKL,PSAB,SMDR,TMAS,ASSA,WEHA,BBYB,BANK,ARTO,BBHI,AGRO,BNGA,BDMN,MEGA,PNBN,BNLI,PNBS,LPKR,LPCK,KIJA,PPRO,WIKA,WSKT,PTPP,ADHI,WEGE,BUAH,ULTJ,ROTI,SIDO,TOWR'''
+
+PERIODS = {
+    '1 Bulan': 21,
+    '3 Bulan': 63,
+    '6 Bulan': 126,
+    '2 Tahun': 504,
+}
 
 # -----------------------------
 # Helpers
 # -----------------------------
-def rupiah(x):
-    if x is None or pd.isna(x):
-        return "-"
-    return f"Rp {x:,.0f}".replace(",", ".")
-
-
-def yahoo_symbol(kode):
-    kode = str(kode).upper().strip()
-    return kode if kode.endswith(".JK") else kode + ".JK"
-
-
-def safe_float(x, default=0.0):
-    try:
-        if pd.isna(x):
-            return default
-        return float(x)
-    except Exception:
-        return default
-
-
-def clamp(x, lo=0, hi=100):
-    return float(max(lo, min(hi, x)))
-
-
-def render_stock_card(r, mode="normal"):
-    signal = str(r.get("Signal", r.get("SwingSignal", "WAIT")))
-    cls = "positive" if "BUY" in signal or signal == "PASS" else "negative" if "SELL" in signal or signal == "AVOID" else "neutral"
-    st.markdown(f"""<div class=\"stock-card\"><div class=\"stock-head\"><div><span class=\"ticker\">{r.get('Kode','-')}</span><span class=\"stock-name\">{r.get('Nama','')}</span></div><span class=\"pill {cls}\">{signal}</span></div><div class=\"stock-meta\">{r.get('Sektor','-')} · Trend: <b>{r.get('Trend','-')}</b> · Setup: <b>{r.get('Setup','-')}</b></div><div class=\"data-grid\"><div><small>Harga</small><b>{rupiah(r.get('Price'))}</b></div><div><small>Score</small><b>{r.get('Score','-')}</b></div><div><small>Opportunity</small><b>{r.get('Opportunity','-')}</b></div><div><small>RSI</small><b>{r.get('RSI','-')}</b></div><div><small>Volume</small><b>{r.get('Volume','-')}</b></div><div><small>R:R</small><b>{r.get('R:R','-')}</b></div></div></div>""", unsafe_allow_html=True)
-
+def ticker_symbol(code):
+    return f"{str(code).strip().upper().replace('.JK','')}.JK"
 
 def fmt_num(x, digits=2):
-    if x is None:
-        return "-"
     try:
-        if pd.isna(x):
-            return "-"
-        return f"{float(x):,.{digits}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        if x is None or pd.isna(x) or np.isinf(x): return '-'
+        return f'{float(x):,.{digits}f}'
     except Exception:
-        return str(x)
+        return '-'
 
-def render_compact_row(r, score_key="Score", signal_key="Signal", extra=None):
-    signal = str(r.get(signal_key, "-"))
-    cls = "positive" if ("BUY" in signal or signal == "PASS") else "negative" if ("SELL" in signal or signal == "AVOID") else "neutral"
-    values = [("Score", r.get(score_key, "-")), ("Trend", r.get("Trend", "-")), ("Setup", r.get("Setup", "-"))] + (extra or [])
-    cells = "".join(f'<div><small>{label}</small><b>{value}</b></div>' for label, value in values)
-    st.markdown(
-        f"""<div class="compact-card">
-        <div style="min-width:180px"><div class="ticker">{r.get("Kode","-")}</div>
-        <div class="stock-meta">{r.get("Nama","")}<br>{r.get("Sektor","-")}</div></div>
-        <div class="data-grid compact-grid">{cells}</div>
-        <span class="pill {cls}">{signal}</span>
-        </div>""",
-        unsafe_allow_html=True
-    )
-
-def render_action_card(r, score_key, signal_key, title_label, extra=None):
-    signal = str(r.get(signal_key, "-"))
-    cls = "positive" if ("BUY" in signal or signal == "PASS") else "negative" if ("SELL" in signal or signal == "AVOID") else "neutral"
-    values = [("Score", r.get(score_key, "-")), ("Trend", r.get("Trend", "-")), ("Setup", r.get("Setup", "-"))] + (extra or [])
-    cells = "".join(f'<div><small>{label}</small><b>{value}</b></div>' for label, value in values)
-    st.markdown(
-        f"""<div class="action-card">
-        <div class="stock-head"><div><span class="ticker">{r.get("Kode","-")}</span>
-        <span class="stock-name">{r.get("Nama","")}</span></div>
-        <span class="pill {cls}">{signal}</span></div>
-        <div class="stock-meta">{title_label} · {r.get("Sektor","-")}</div>
-        <div class="data-grid compact-grid">{cells}</div>
-        </div>""",
-        unsafe_allow_html=True
-    )
-
-# -----------------------------
-# Universe
-# -----------------------------
-@st.cache_data(ttl=86400, show_spinner=False)
-def load_idx_universe():
+def fmt_price(x):
     try:
-        df = pd.read_csv(IDX_UNIVERSE_URL)
-        df.columns = [str(c).lower().strip() for c in df.columns]
-        required = {"ticker", "name", "sector"}
-        if not required.issubset(df.columns):
-            return pd.DataFrame()
-        if "market" in df.columns:
-            df = df[df["market"].astype(str).str.upper().eq("IDX")].copy()
-        df["ticker"] = (
-            df["ticker"].astype(str).str.upper().str.strip()
-            .str.replace(".JK", "", regex=False)
-        )
-        df = df[df["ticker"].str.fullmatch(r"[A-Z]{4}", na=False)].drop_duplicates("ticker")
-        df["Yahoo"] = df["ticker"] + ".JK"
-        return df.sort_values("ticker").reset_index(drop=True)
+        if x is None or pd.isna(x): return '-'
+        return f'Rp {float(x):,.0f}'
     except Exception:
-        return pd.DataFrame()
+        return '-'
 
-# -----------------------------
-# Yahoo data
-# -----------------------------
-@st.cache_data(ttl=900, show_spinner=False)
-def download_batch(tickers, period="2y"):
-    if not tickers:
-        return pd.DataFrame()
+def fmt_pct(x, digits=2):
     try:
-        return yf.download(
-            tickers=list(tickers), period=period, interval="1d",
-            auto_adjust=True, progress=False, threads=True,
-            group_by="ticker", multi_level_index=True,
-        )
+        if x is None or pd.isna(x) or np.isinf(x): return '-'
+        return f'{float(x):+,.{digits}f}%'
     except Exception:
-        return pd.DataFrame()
+        return '-'
 
-
-def extract_ticker_data(batch, ticker):
-    if batch is None or batch.empty:
-        return pd.DataFrame()
+def safe_float(x):
     try:
-        if isinstance(batch.columns, pd.MultiIndex):
-            lvl0 = batch.columns.get_level_values(0)
-            lvl1 = batch.columns.get_level_values(1)
-            if ticker in lvl0:
-                df = batch[ticker].copy()
-            elif ticker in lvl1:
-                df = batch.xs(ticker, axis=1, level=1).copy()
-            else:
-                return pd.DataFrame()
-        else:
-            df = batch.copy()
-        df.columns = [str(c).title() for c in df.columns]
-        for c in ["Open", "High", "Low", "Close", "Volume"]:
-            if c in df.columns:
-                df[c] = pd.to_numeric(df[c], errors="coerce")
-        needed = ["Open", "High", "Low", "Close"]
-        if not all(c in df.columns for c in needed):
-            return pd.DataFrame()
-        return df.dropna(subset=needed)
+        return float(x) if pd.notna(x) else np.nan
     except Exception:
-        return pd.DataFrame()
+        return np.nan
 
-# -----------------------------
-# Technical engine
-# -----------------------------
-def indicators(df):
-    x = df.copy()
-    close, high, low, vol = x["Close"], x["High"], x["Low"], x["Volume"]
-    x["MA20"] = close.rolling(20).mean()
-    x["MA50"] = close.rolling(50).mean()
-    x["MA200"] = close.rolling(200).mean()
-    delta = close.diff()
-    gain = delta.clip(lower=0).rolling(14).mean()
-    loss = (-delta.clip(upper=0)).rolling(14).mean()
-    rs = gain / loss.replace(0, np.nan)
-    x["RSI"] = 100 - 100 / (1 + rs)
-    ema12 = close.ewm(span=12, adjust=False).mean()
-    ema26 = close.ewm(span=26, adjust=False).mean()
-    x["MACD"] = ema12 - ema26
-    x["MACDSignal"] = x["MACD"].ewm(span=9, adjust=False).mean()
-    prev = close.shift(1)
-    tr = pd.concat([(high-low), (high-prev).abs(), (low-prev).abs()], axis=1).max(axis=1)
-    x["ATR"] = tr.rolling(14).mean()
-    x["VolumeMA20"] = vol.rolling(20).mean()
-    x["VolumeRatio"] = vol / x["VolumeMA20"].replace(0, np.nan)
-    x["Support20"] = low.rolling(20).min()
-    x["Resistance20"] = high.rolling(20).max()
-    x["Return20"] = close.pct_change(20) * 100
-    x["Return60"] = close.pct_change(60) * 100
-    x["Return120"] = close.pct_change(120) * 100
-    x["RangePosition20"] = (close - x["Support20"]) / (x["Resistance20"] - x["Support20"]).replace(0, np.nan)
-    return x
-
-
-def fast_analysis(df, focus_days=63):
-    if df.empty or len(df) < 210:
-        return None
-    x = indicators(df).dropna(subset=["MA20", "MA50", "MA200", "RSI", "MACD", "MACDSignal", "ATR", "VolumeRatio"])
-    if x.empty:
-        return None
-    recent = x.tail(max(21, min(focus_days, len(x))))
-    last = x.iloc[-1]
-    px = safe_float(last["Close"])
-    ma20, ma50, ma200 = safe_float(last["MA20"]), safe_float(last["MA50"]), safe_float(last["MA200"])
-    rsi, vr = safe_float(last["RSI"]), safe_float(last["VolumeRatio"])
-    atr = max(safe_float(last["ATR"]), px * 0.005)
-    support = safe_float(last["Support20"], px * .95)
-    resistance = safe_float(last["Resistance20"], px * 1.05)
-    # Components are deliberately fractional to avoid repeated 100 scores.
-    trend_component = np.mean([
-        100 if px > ma20 else 25,
-        100 if px > ma50 else 25,
-        100 if px > ma200 else 25,
-        100 if ma20 > ma50 else 35,
-        100 if ma50 > ma200 else 35,
-    ])
-    rsi_component = 100 - min(abs(rsi - 58) * 2.4, 100)
-    momentum20 = safe_float(recent["Return20"].iloc[-1])
-    momentum60 = safe_float(recent["Return60"].iloc[-1])
-    momentum_component = clamp(50 + momentum20 * 2.2 + momentum60 * 0.8)
-    volume_component = clamp(40 + (vr - 1) * 24)
-    macd_component = clamp(50 + (safe_float(last["MACD"]) - safe_float(last["MACDSignal"])) / max(abs(px), 1) * 1800)
-    score = clamp(0.34*trend_component + 0.18*rsi_component + 0.22*momentum_component + 0.14*volume_component + 0.12*macd_component)
-    # setup and risk/reward
-    prev_res = safe_float(x["Resistance20"].shift(1).iloc[-1], resistance)
-    breakout = px > prev_res and vr >= 1.15
-    distance_res = (resistance - px) / px if px else 0
-    risk = max(1.25 * atr, px * .02)
-    reward = max(resistance - px, atr)
-    rr = reward / risk if risk else 0
-    setup = 95 if breakout else (78 if score >= 65 and distance_res > .025 else 58 if distance_res <= .025 else 68)
-    opportunity = clamp(.62*score + .20*clamp(rr/3*100) + .18*setup)
-    if breakout and score >= 68:
-        signal = "STRONG BUY — BREAKOUT"
-    elif score >= 72 and rr >= 1.7:
-        signal = "STRONG BUY"
-    elif score >= 62 and rr >= 1.3:
-        signal = "BUY"
-    elif score < 42:
-        signal = "SELL / AVOID"
+def badge(text):
+    text = str(text)
+    if text in ('BUY','STRONG BUY','PASS','BULLISH'):
+        cls = 'buy'
+    elif text in ('WATCH','CAUTION','SIDEWAYS'):
+        cls = 'watch'
+    elif text in ('AVOID','BEARISH','FAIL'):
+        cls = 'risk'
     else:
-        signal = "WAIT"
-    trend = "BULLISH" if score >= 65 else "NEUTRAL" if score >= 48 else "BEARISH"
+        cls = 'neutral'
+    return f'<span class="badge {cls}">{text}</span>'
+
+def kpi(label, value, note=''):
+    return f'<div class="kpi"><div class="kpi-label">{label}</div><div class="kpi-value">{value}</div><div class="kpi-note">{note}</div></div>'
+
+def rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.ewm(alpha=1/period, adjust=False, min_periods=period).mean()
+    avg_loss = loss.ewm(alpha=1/period, adjust=False, min_periods=period).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    return 100 - (100 / (1 + rs))
+
+def atr(df, period=14):
+    prev = df['Close'].shift(1)
+    tr = pd.concat([
+        df['High'] - df['Low'],
+        (df['High'] - prev).abs(),
+        (df['Low'] - prev).abs()
+    ], axis=1).max(axis=1)
+    return tr.ewm(alpha=1/period, adjust=False, min_periods=period).mean()
+
+def add_indicators(raw):
+    d = raw.copy()
+    if isinstance(d.columns, pd.MultiIndex):
+        d.columns = d.columns.get_level_values(0)
+    d.columns = [str(c).title() for c in d.columns]
+    for c in ['Open','High','Low','Close','Volume']:
+        if c not in d.columns: d[c] = np.nan
+    d = d[~d.index.duplicated(keep='last')].sort_index()
+    d['MA20'] = d['Close'].rolling(20).mean()
+    d['MA50'] = d['Close'].rolling(50).mean()
+    d['MA200'] = d['Close'].rolling(200).mean()
+    d['EMA21'] = d['Close'].ewm(span=21, adjust=False).mean()
+    d['RSI14'] = rsi(d['Close'])
+    d['ATR14'] = atr(d)
+    d['VolMA20'] = d['Volume'].rolling(20).mean()
+    d['VolRatio'] = d['Volume'] / d['VolMA20'].replace(0, np.nan)
+    d['High20'] = d['High'].rolling(20).max().shift(1)
+    d['Low20'] = d['Low'].rolling(20).min().shift(1)
+    d['High55'] = d['High'].rolling(55).max().shift(1)
+    d['Low55'] = d['Low'].rolling(55).min().shift(1)
+    ema12 = d['Close'].ewm(span=12, adjust=False).mean()
+    ema26 = d['Close'].ewm(span=26, adjust=False).mean()
+    d['MACD'] = ema12 - ema26
+    d['MACDSignal'] = d['MACD'].ewm(span=9, adjust=False).mean()
+    d['MACDHist'] = d['MACD'] - d['MACDSignal']
+    d['ROC20'] = d['Close'].pct_change(20) * 100
+    d['ROC60'] = d['Close'].pct_change(60) * 100
+    return d.dropna(subset=['Close'])
+
+@st.cache_data(ttl=900, show_spinner=False)
+def download_history(code):
+    if yf is None: return pd.DataFrame()
+    try:
+        raw = yf.download(ticker_symbol(code), period='2y', interval='1d', auto_adjust=False, progress=False, threads=False)
+        if raw is None or raw.empty: return pd.DataFrame()
+        return add_indicators(raw)
+    except Exception:
+        return pd.DataFrame()
+
+@st.cache_data(ttl=900, show_spinner=False)
+def download_benchmark():
+    if yf is None: return pd.DataFrame()
+    try:
+        raw = yf.download('^JKSE', period='2y', interval='1d', auto_adjust=False, progress=False, threads=False)
+        if raw is None or raw.empty: return pd.DataFrame()
+        return add_indicators(raw)
+    except Exception:
+        return pd.DataFrame()
+
+def period_return(hist, bars):
+    if hist.empty or len(hist) <= bars: return np.nan
+    return (hist['Close'].iloc[-1] / hist['Close'].iloc[-(bars+1)] - 1) * 100
+
+def market_regime(bench):
+    if bench.empty: return {'regime':'UNKNOWN','score':50,'note':'Data IHSG belum tersedia'}
+    x = bench.iloc[-1]
+    score = 50
+    if pd.notna(x.MA50) and x.Close > x.MA50: score += 15
+    else: score -= 15
+    if pd.notna(x.MA200) and x.MA50 > x.MA200: score += 15
+    else: score -= 15
+    if pd.notna(x.RSI14) and x.RSI14 >= 50: score += 10
+    else: score -= 10
+    if pd.notna(x.ROC20) and x.ROC20 > 0: score += 10
+    else: score -= 10
+    score = int(max(0, min(100, score)))
+    regime = 'BULLISH' if score >= 65 else 'BEARISH' if score <= 35 else 'SIDEWAYS'
+    return {'regime':regime, 'score':score, 'note':f"IHSG {fmt_price(x.Close)} · RSI {fmt_num(x.RSI14,1)} · ROC20 {fmt_pct(x.ROC20,1)}"}
+
+def score_stock(hist, bench, bars):
+    if hist.empty: return {}
+    x = hist.iloc[-1]
+    score = 0
+    reasons, risks = [], []
+    # Trend: 35
+    if pd.notna(x.MA20) and x.Close > x.MA20: score += 8
+    else: risks.append('Harga di bawah MA20')
+    if pd.notna(x.MA50) and x.Close > x.MA50: score += 10
+    else: risks.append('Harga di bawah MA50')
+    if pd.notna(x.MA200) and x.Close > x.MA200: score += 9
+    else: risks.append('Harga di bawah MA200')
+    if pd.notna(x.MA20) and pd.notna(x.MA50) and x.MA20 > x.MA50: score += 8
+    else: risks.append('MA20 belum di atas MA50')
+    # Momentum: 25
+    if pd.notna(x.RSI14) and 50 <= x.RSI14 <= 70:
+        score += 10; reasons.append('RSI berada di zona momentum sehat')
+    elif pd.notna(x.RSI14) and x.RSI14 > 70:
+        score += 4; risks.append('RSI relatif overbought')
+    else: risks.append('RSI lemah atau belum tersedia')
+    if pd.notna(x.MACD) and pd.notna(x.MACDSignal) and x.MACD > x.MACDSignal:
+        score += 8; reasons.append('MACD bullish')
+    else: risks.append('MACD belum bullish')
+    roc = period_return(hist, bars)
+    if pd.notna(roc) and roc > 0:
+        score += 7; reasons.append(f'Return {bars} hari positif')
+    else: risks.append(f'Return {bars} hari belum positif')
+    # Setup and volume: 20
+    if pd.notna(x.VolRatio) and x.VolRatio >= 1.2:
+        score += 8; reasons.append('Volume di atas rata-rata 20 hari')
+    if pd.notna(x.High20) and x.Close > x.High20:
+        score += 7; reasons.append('Breakout high 20 hari')
+    elif pd.notna(x.High55) and x.Close > x.High55:
+        score += 5; reasons.append('Breakout high 55 hari')
+    if pd.notna(x.EMA21) and x.Close > x.EMA21: score += 5
+    # Relative strength: 10
+    rs = np.nan
+    if not bench.empty and len(hist) > bars and len(bench) > bars:
+        stock_ret = period_return(hist, bars)
+        bench_ret = period_return(bench, bars)
+        rs = stock_ret - bench_ret if pd.notna(stock_ret) and pd.notna(bench_ret) else np.nan
+        if pd.notna(rs) and rs > 0:
+            score += 10; reasons.append(f'Mengungguli IHSG pada periode {bars} hari')
+        elif pd.notna(rs):
+            risks.append('Relative strength di bawah IHSG')
+    score = int(max(0, min(100, score)))
+    trend = 'BULLISH' if pd.notna(x.MA50) and pd.notna(x.MA20) and x.Close > x.MA50 and x.MA20 > x.MA50 else 'BEARISH' if pd.notna(x.MA50) and pd.notna(x.MA20) and x.Close < x.MA50 and x.MA20 < x.MA50 else 'SIDEWAYS'
+    if score >= 78 and trend == 'BULLISH' and len(risks) <= 2: signal = 'STRONG BUY'
+    elif score >= 65 and trend != 'BEARISH': signal = 'BUY'
+    elif score >= 50: signal = 'WATCH'
+    elif score < 35: signal = 'AVOID'
+    else: signal = 'NEUTRAL'
+    gate = 'PASS' if signal in ('BUY','STRONG BUY') and trend != 'BEARISH' and pd.notna(x.RSI14) and x.RSI14 < 75 and pd.notna(x.VolRatio) and x.VolRatio >= 0.7 else 'CAUTION'
+    atrv = safe_float(x.ATR14)
+    if not pd.notna(atrv) or atrv <= 0: atrv = safe_float(x.Close) * 0.03
+    support = min([v for v in [x.Low20, x.MA20, x.MA50] if pd.notna(v)], default=x.Close - 2*atrv)
+    resistance = max([v for v in [x.High20, x.High55] if pd.notna(v)], default=x.Close + 2*atrv)
+    entry_low = max(support, x.Close - 0.5*atrv)
+    stop = max(0.01, x.Close - 1.5*atrv)
+    target1 = x.Close + 2*atrv
+    target2 = x.Close + 3*atrv
+    rr = (target1 - x.Close) / (x.Close - stop) if x.Close > stop else np.nan
     return {
-        "Price": px, "Score": round(score, 1), "Opportunity": round(opportunity, 1),
-        "Trend": trend, "Signal": signal, "RSI": round(rsi, 2),
-        "Volume": round(vr, 3), "R:R": round(rr, 3), "Support": support,
-        "Resistance": resistance, "Breakout": "YA" if breakout else "TIDAK",
-        "Return20D": round(momentum20, 2), "Return60D": round(momentum60, 2),
-        "Date": x.index[-1], "FocusDays": focus_days,
+        'Score':score, 'Signal':signal, 'RiskGate':gate, 'Trend':trend,
+        'Price':safe_float(x.Close), 'RSI':safe_float(x.RSI14), 'MACDHist':safe_float(x.MACDHist),
+        'VolRatio':safe_float(x.VolRatio), 'ROCPeriod':roc, 'ROC20':safe_float(x.ROC20),
+        'ROC60':safe_float(x.ROC60), 'RSPeriod':rs, 'ATR':atrv,
+        'Support':safe_float(support), 'Resistance':safe_float(resistance), 'EntryLow':safe_float(entry_low),
+        'StopLoss':safe_float(stop), 'Target1':safe_float(target1), 'Target2':safe_float(target2), 'RR':safe_float(rr),
+        'Reasons':reasons, 'Risks':risks, 'LastDate':hist.index[-1]
     }
 
+def analyze(code, bench, bars):
+    hist = download_history(code)
+    return hist, score_stock(hist, bench, bars) if not hist.empty else {}
 
-def scan_full_idx(universe, batch_size=50, focus_days=63, progress_callback=None):
-    results = []
-    tickers = universe["Yahoo"].tolist()
-    total = max(1, int(np.ceil(len(tickers) / batch_size)))
-    for batch_no in range(total):
-        batch_tickers = tickers[batch_no*batch_size:(batch_no+1)*batch_size]
-        batch = download_batch(tuple(batch_tickers), period="2y")
-        for ticker in batch_tickers:
-            df = extract_ticker_data(batch, ticker)
-            a = fast_analysis(df, focus_days=focus_days)
-            if a is None:
-                continue
-            meta = universe[universe["Yahoo"] == ticker]
-            if meta.empty:
-                continue
-            m = meta.iloc[0]
-            results.append({"Kode": ticker.replace(".JK", ""), "Nama": m["name"], "Sektor": m["sector"], **a})
-        if progress_callback:
-            progress_callback((batch_no+1)/total)
-    if not results:
-        return pd.DataFrame()
-    return pd.DataFrame(results).sort_values(["Opportunity", "Score", "R:R"], ascending=False).reset_index(drop=True)
-
-# -----------------------------
-# Enrich engine
-# -----------------------------
-def enrich_results(base_df, top_n=150):
-    """Enriches the filtered ranking with style-specific, non-saturated scores."""
-    if base_df.empty:
-        return pd.DataFrame()
-    d = base_df.head(top_n).copy().reset_index(drop=True)
-    rows = []
-    for _, r in d.iterrows():
-        score = safe_float(r.get("Score"))
-        opp = safe_float(r.get("Opportunity"))
-        rsi = safe_float(r.get("RSI"), 50)
-        vol = safe_float(r.get("Volume"), 1)
-        rr = safe_float(r.get("R:R"), 1)
-        ret20 = safe_float(r.get("Return20D"))
-        ret60 = safe_float(r.get("Return60D"))
-        breakout = str(r.get("Breakout", "TIDAK")) == "YA"
-        bullish = str(r.get("Trend", "")) == "BULLISH"
-        # Different formulas per style, with continuous penalties and bonuses.
-        day_score = clamp(0.28*score + 0.22*clamp(40 + (vol-1)*18) + 0.20*clamp(50 + ret20*3) + 0.15*(90 if breakout else 52) + 0.15*clamp(100 - abs(rsi-58)*2.0))
-        swing_score = clamp(0.34*score + 0.24*clamp(50 + ret20*1.8) + 0.18*clamp(50 + ret60*0.8) + 0.14*clamp(rr/2.5*100) + 0.10*(85 if bullish else 48))
-        investor_score = clamp(0.38*clamp(50 + ret60*0.7) + 0.25*(90 if bullish else 45) + 0.20*clamp(50 + (score-50)*1.2) + 0.17*clamp(100 - abs(rsi-55)*1.5))
-        day_signal = "BUY ON BREAKOUT" if breakout and day_score >= 62 else "BUY" if day_score >= 68 else "WAIT"
-        swing_signal = "BUY ON BREAKOUT" if breakout and swing_score >= 62 else "BUY" if swing_score >= 66 else "WAIT"
-        inv_signal = "ACCUMULATE" if investor_score >= 68 else "HOLD" if investor_score >= 52 else "AVOID"
-        setup = "BREAKOUT" if breakout else "BASE/NEUTRAL"
-        risk_gate = "PASS" if rr >= 1.35 and score >= 55 else "REVIEW"
-        stop = safe_float(r.get("Price")) - max(safe_float(r.get("Price"))*0.02, safe_float(r.get("Price"))*0.0)
-        price = safe_float(r.get("Price"))
-        risk = max(price*0.02, price-safe_float(r.get("Support"), price*.95))
-        stop = price - min(risk, price*.12)
-        target1 = price + max(price*0.04, price-safe_float(r.get("Resistance"), price*1.04))
-        target2 = price + max(price*0.08, 2*(price-stop))
-        rows.append({**r.to_dict(), "DayScore": round(day_score, 1), "DaySignal": day_signal,
-                     "SwingScore": round(swing_score, 1), "SwingSignal": swing_signal,
-                     "InvestorScore": round(investor_score, 1), "InvestorSignal": inv_signal,
-                     "Setup": setup, "RiskGate": risk_gate, "StopLoss": round(stop, 2),
-                     "Target1": round(target1, 2), "Target2": round(target2, 2),
-                     "EnrichStatus": "ENRICHED"})
-    return pd.DataFrame(rows)
-
-# -----------------------------
-# Individual analysis helpers
-# -----------------------------
-def render_detail_metrics(a):
-    cols = st.columns(4)
-    metrics = [
-        ("Harga", rupiah(a.get("Price"))),
-        ("Technical Score", fmt_num(a.get("Score"), 1)),
-        ("Opportunity", fmt_num(a.get("Opportunity"), 1)),
-        ("Signal", a.get("Signal", "-")),
-    ]
-    for c, (label, value) in zip(cols, metrics):
-        with c:
-            st.metric(label, value)
-
-
-def render_individual_analysis(kode, meta, df, focus_days):
-    with st.spinner(f"Mengambil data dan menganalisis {kode}..."):
-        analysis = fast_analysis(df, focus_days=focus_days)
-    if analysis is None:
-        st.error(f"Data {kode} tidak cukup untuk analisis. Diperlukan sekitar 210 hari bursa atau lebih.")
-        return
-
-    row = {"Kode": kode, "Nama": meta.get("name", kode), "Sektor": meta.get("sector", "-"), **analysis}
-    st.markdown(f"### 📊 Analisis Individual — {kode}")
-    st.caption(f"{row['Nama']} · {row['Sektor']} · Data terakhir: {analysis.get('Date', '-')}")
-    render_detail_metrics(analysis)
-    render_stock_card(row)
-
-    st.markdown("#### 🎯 Action Plan")
-    price = safe_float(analysis.get("Price"))
-    support = safe_float(analysis.get("Support"), price * .95)
-    resistance = safe_float(analysis.get("Resistance"), price * 1.05)
-    atr = max(price * .005, abs(resistance-support) * .05)
-    stop = max(0, min(price - atr * 1.5, support * .98))
-    target1 = max(resistance, price * 1.04)
-    target2 = max(price * 1.08, target1 * 1.04)
-    risk = max(price-stop, 0)
-    reward = max(target1-price, 0)
-    rr = reward/risk if risk else 0
-    ac = st.columns(4)
-    for c, label, value in [
-        (ac[0], "Support", rupiah(support)),
-        (ac[1], "Resistance", rupiah(resistance)),
-        (ac[2], "Stop Loss", rupiah(stop)),
-        (ac[3], "Target 1", rupiah(target1)),
-    ]:
-        with c:
-            st.metric(label, value)
-    st.info(f"Target 2: **{rupiah(target2)}** · Estimasi Risk/Reward dari harga saat ini ke Target 1: **{fmt_num(rr, 2)}**. Gunakan sebagai referensi, bukan kepastian hasil.")
-
-    st.markdown("#### 📈 Grafik Harga & Moving Average")
-    x = indicators(df).tail(260).copy()
-    fig = go.Figure()
-    fig.add_trace(go.Candlestick(x=x.index, open=x["Open"], high=x["High"], low=x["Low"], close=x["Close"], name="Harga"))
-    for col, name in [("MA20", "MA20"), ("MA50", "MA50"), ("MA200", "MA200")]:
-        if col in x:
-            fig.add_trace(go.Scatter(x=x.index, y=x[col], mode="lines", name=name))
-    fig.update_layout(height=470, margin=dict(l=10,r=10,t=25,b=10), xaxis_rangeslider_visible=False, legend=dict(orientation="h"))
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown("#### 🔬 Indikator Teknikal")
-    ind_cols = st.columns(3)
-    indicator_values = [
-        ("RSI", fmt_num(analysis.get("RSI"))),
-        ("MACD", fmt_num(x["MACD"].iloc[-1]) if "MACD" in x else "-"),
-        ("MACD Signal", fmt_num(x["MACDSignal"].iloc[-1]) if "MACDSignal" in x else "-"),
-        ("Volume Ratio", fmt_num(analysis.get("Volume"), 3)),
-        ("Return 20D", f"{fmt_num(analysis.get('Return20D'))}%"),
-        ("Return 60D", f"{fmt_num(analysis.get('Return60D'))}%"),
-        ("Breakout", analysis.get("Breakout", "-")),
-        ("Support 20D", rupiah(analysis.get("Support"))),
-        ("Resistance 20D", rupiah(analysis.get("Resistance"))),
-    ]
-    for i, (label, value) in enumerate(indicator_values):
-        with ind_cols[i % 3]:
-            st.markdown(f'<div class="metric-card"><div class="metric-label">{label}</div><div class="metric-value">{value}</div></div>', unsafe_allow_html=True)
-
-    with st.expander("Lihat data historis terakhir", expanded=False):
-        st.dataframe(df.tail(30).sort_index(ascending=False), use_container_width=True)
-
-
-# -----------------------------
-# UI
-# -----------------------------
-st.title("📈 Sanggul Stock Scanner IDX V8.2")
-st.caption("V8.2 • Analisis 1 Saham + Full IDX • 2 Tahun Data Konteks • Focus-Aware Analysis • Enrich Multi-Style")
-
-with st.sidebar:
-    st.header("⚙️ Pengaturan Analisis")
-    mode = st.radio("Mode Analisis", ["🔎 1 Saham", "🌐 Full IDX"], index=0)
-    focus_label = st.selectbox("Fokus Analisis", ["1 Bulan", "3 Bulan", "6 Bulan", "12 Bulan"], index=1)
-    focus_map = {"1 Bulan":21, "3 Bulan":63, "6 Bulan":126, "12 Bulan":252}
-    focus_days = focus_map[focus_label]
-    st.info(f"Data historis 2 tahun digunakan sebagai konteks dan MA200. Analisis utama memakai {focus_label.lower()} terakhir ({focus_days} hari bursa).")
-    st.caption("Sumber harga: Yahoo Finance melalui yfinance. Flow asing resmi/order book tidak tersedia di sumber ini.")
-
-universe = load_idx_universe()
-if universe.empty:
-    st.error("Universe IDX gagal dimuat. Periksa koneksi internet.")
-    st.stop()
-
-if mode == "🔎 1 Saham":
-    st.markdown('<div class="info-card"><div class="card-title">🔎 Analisis Satu Saham</div><div>Pilih atau ketik kode saham IDX untuk melihat indikator teknikal, grafik, support/resistance, dan action plan.</div></div>', unsafe_allow_html=True)
-    options = universe["ticker"].tolist()
-    default_idx = options.index("BBRI") if "BBRI" in options else 0
-    selected = st.selectbox("Pilih Kode Saham", options, index=default_idx, format_func=lambda x: f"{x} — {universe.loc[universe['ticker'].eq(x), 'name'].iloc[0]}")
-    custom = st.text_input("Atau ketik kode saham", placeholder="Contoh: BBCA, BBRI, TLKM").strip().upper().replace(".JK", "")
-    kode = custom if custom else selected
-    meta_df = universe[universe["ticker"] == kode]
-    if meta_df.empty:
-        st.warning(f"Kode {kode} tidak ditemukan pada universe IDX. Pastikan kode terdiri dari 4 huruf dan tersedia di sumber data.")
+def style_action(row, style):
+    # Focus-aware, rule-based style classification.
+    signal, gate, trend = row.get('Signal'), row.get('RiskGate'), row.get('Trend')
+    rr = safe_float(row.get('RR'))
+    vol = safe_float(row.get('VolRatio'))
+    score = safe_float(row.get('Score'))
+    if style == 'Trading Harian':
+        eligible = signal in ('BUY','STRONG BUY') and gate == 'PASS' and trend == 'BULLISH' and pd.notna(vol) and vol >= 1.0
+        setup = 'Breakout + volume' if row.get('Breakout') == 'YA' else 'Momentum intraday'
+        horizon = '1–5 hari'
+    elif style == 'Swing Trading Mingguan':
+        eligible = signal in ('BUY','STRONG BUY') and gate == 'PASS' and trend == 'BULLISH' and pd.notna(rr) and rr >= 1.5
+        setup = 'Pullback MA20 / continuation'
+        horizon = '1–8 minggu'
     else:
-        meta_row = meta_df.iloc[0]
-        if st.button("📊 ANALISIS SAHAM TERPILIH", type="primary", use_container_width=True):
-            symbol = yahoo_symbol(kode)
-            batch = download_batch((symbol,), period="2y")
-            df = extract_ticker_data(batch, symbol)
-            if df.empty:
-                st.error(f"Data Yahoo Finance untuk {kode} tidak tersedia atau gagal diambil.")
+        eligible = trend == 'BULLISH' and score >= 60 and row.get('ROC60', 0) > 0
+        setup = 'Trend following / akumulasi bertahap'
+        horizon = '6 bulan+'
+    return eligible, setup, horizon
+
+def card_stock(r, compact=False):
+    code = r.get('Code','-')
+    signal = r.get('Signal','-')
+    gate = r.get('RiskGate','-')
+    title = f"{code} <span style='float:right'>{badge(signal)}</span>"
+    extra = '' if compact else f"<div class='card-sub'>Risk Gate {badge(gate)} · Trend {badge(r.get('Trend','-'))}</div>"
+    return f'''<div class="card"><div class="card-title">{title}</div>
+    <div class="card-sub">{r.get('Name','Saham IDX')} · {r.get('Sector','Universe IDX')}</div>
+    {extra}<hr>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+      <div><div class="card-sub">Harga</div><b>{fmt_price(r.get('Price'))}</b></div>
+      <div><div class="card-sub">Score</div><b>{fmt_num(r.get('Score'),0)}</b></div>
+      <div><div class="card-sub">RSI</div><b>{fmt_num(r.get('RSI'),1)}</b></div>
+      <div><div class="card-sub">R:R</div><b>{fmt_num(r.get('RR'),2)}</b></div>
+    </div><hr>
+    <div class="card-sub">Return periode {fmt_pct(r.get('ROCPeriod'),1)} · RS vs IHSG {fmt_pct(r.get('RSPeriod'),1)} · Volume {fmt_num(r.get('VolRatio'),2)}x</div>
+    <div class="card-sub">Support {fmt_price(r.get('Support'))} · Stop {fmt_price(r.get('StopLoss'))} · Target 1 {fmt_price(r.get('Target1'))}</div>
+    </div>'''
+
+# -----------------------------
+# Sidebar
+# -----------------------------
+st.sidebar.markdown('## ⚙️ Pengaturan')
+mode = st.sidebar.radio('Mode analisis', ['🔎 1 Saham','🌐 Scanner Universe'], index=0)
+period_label = st.sidebar.selectbox('Periode historis', list(PERIODS.keys()), index=0)
+bars = PERIODS[period_label]
+benchmark_on = st.sidebar.checkbox('Bandingkan dengan IHSG', True)
+show_debug = st.sidebar.checkbox('Tampilkan data teknikal mentah', False)
+
+st.sidebar.markdown('---')
+st.sidebar.markdown('### Universe Scanner')
+universe_text = st.sidebar.text_area('Kode saham (koma/baris)', DEFAULT_UNIVERSE, height=170)
+universe = []
+for token in universe_text.replace('\n', ',').split(','):
+    c = token.strip().upper().replace('.JK','')
+    if c and c not in universe: universe.append(c)
+max_scan = st.sidebar.slider('Maksimum saham dipindai', 5, min(150, max(5, len(universe))), min(50, len(universe)))
+min_score = st.sidebar.slider('Minimum technical score', 0, 100, 60)
+
+# -----------------------------
+# Header and shared market data
+# -----------------------------
+st.markdown('''<div class="card"><div class="card-title">📈 Sanggul Stock Scanner <span style="float:right">V10 Professional</span></div><div class="card-sub">Multi-period technical screening · Risk-Gated picks · Multi-Style Action Board · Enrich Top 50 Focus-Aware. Alat bantu keputusan, bukan jaminan keuntungan.</div></div>''', unsafe_allow_html=True)
+bench = download_benchmark() if benchmark_on else pd.DataFrame()
+reg = market_regime(bench)
+
+# -----------------------------
+# Individual mode
+# -----------------------------
+if mode == '🔎 1 Saham':
+    st.markdown('### 🔎 Analisis 1 Saham')
+    c1, c2, c3 = st.columns([2,1,1])
+    with c1:
+        code = st.text_input('Kode saham IDX', value='BBRI').upper().replace('.JK','')
+    with c2:
+        st.write('')
+        run = st.button('📊 Analisis Saham', type='primary', use_container_width=True)
+    with c3:
+        st.write('')
+        st.markdown(f"**Market Regime**<br>{badge(reg['regime'])} · {reg['score']}/100", unsafe_allow_html=True)
+    if 'single_code' not in st.session_state: st.session_state.single_code = 'BBRI'
+    if run or code != st.session_state.single_code: st.session_state.single_code = code
+    code = st.session_state.single_code
+    hist, a = analyze(code, bench, bars)
+    if hist.empty or not a:
+        st.error('Data tidak tersedia. Periksa kode, koneksi internet, atau batasan Yahoo Finance.')
+    else:
+        row = {'Code':code, **a}
+        st.markdown(f"<div class='card'><div class='card-title'>{code} <span style='float:right'>{badge(a['Signal'])}</span></div><div class='card-sub'>Data terakhir {pd.Timestamp(a['LastDate']).strftime('%d %b %Y')} · Risk Gate {badge(a['RiskGate'])} · Periode {period_label}</div></div>", unsafe_allow_html=True)
+        cols = st.columns(6)
+        vals = [('Harga',fmt_price(a['Price']),a['Trend']),('Score',f"{a['Score']}/100",'Composite teknikal'),('RSI',fmt_num(a['RSI'],1),'RSI 14'),('Volume',fmt_num(a['VolRatio'],2)+'x','vs MA20'),('Return',fmt_pct(a['ROCPeriod'],1),period_label),('R:R',fmt_num(a['RR'],2),'Target 1 vs stop')]
+        for col, (lab,val,note) in zip(cols, vals): col.markdown(kpi(lab,val,note), unsafe_allow_html=True)
+        tabs = st.tabs(['📈 Chart & Trend','🎯 Action Plan','🧩 Indikator','📝 Interpretasi'])
+        with tabs[0]:
+            if go is None:
+                st.info('Plotly belum tersedia. Install requirements.txt terlebih dahulu.')
             else:
-                st.session_state["individual_result"] = {"kode": kode, "meta": meta_row.to_dict(), "df": df}
-        saved = st.session_state.get("individual_result")
-        if saved and saved.get("kode") == kode:
-            render_individual_analysis(saved["kode"], saved["meta"], saved["df"], focus_days)
-        else:
-            st.info("Pilih saham lalu klik **ANALISIS SAHAM TERPILIH** untuk menampilkan hasil.")
+                tail = hist.tail(220)
+                fig = go.Figure()
+                fig.add_trace(go.Candlestick(x=tail.index, open=tail.Open, high=tail.High, low=tail.Low, close=tail.Close, name='Harga'))
+                for col in ['MA20','MA50','MA200']:
+                    if col in tail and tail[col].notna().any(): fig.add_trace(go.Scatter(x=tail.index, y=tail[col], mode='lines', name=col))
+                fig.update_layout(height=510, xaxis_rangeslider_visible=False, margin=dict(l=10,r=10,t=20,b=10), legend=dict(orientation='h'))
+                st.plotly_chart(fig, use_container_width=True)
+                st.caption('MA20 membantu membaca momentum pendek, MA50 tren menengah, dan MA200 tren mayor. Chart menggunakan data historis 2 tahun lalu ditampilkan pada jendela terbaru.')
+        with tabs[1]:
+            st.markdown('#### Rencana aksi berbasis ATR dan struktur harga')
+            ap = st.columns(5)
+            vals = [('Area entry',f"{fmt_price(a['EntryLow'])} – {fmt_price(a['Price'])}"),('Support',fmt_price(a['Support'])),('Stop loss',fmt_price(a['StopLoss'])),('Target 1',fmt_price(a['Target1'])),('Target 2',fmt_price(a['Target2']))]
+            for col,(lab,val) in zip(ap,vals): col.markdown(kpi(lab,val,'Estimasi teknikal'),unsafe_allow_html=True)
+            st.warning('Level entry, stop, dan target adalah estimasi rule-based. Validasi dengan spread, likuiditas, berita, corporate action, dan toleransi risiko pribadi.')
+        with tabs[2]:
+            ind = pd.DataFrame({'Indikator':['MA20','MA50','MA200','EMA21','RSI14','MACD Histogram','ATR14','Volume Ratio','Return periode','ROC20','ROC60','Relative Strength vs IHSG'], 'Nilai':[safe_float(hist.MA20.iloc[-1]),safe_float(hist.MA50.iloc[-1]),safe_float(hist.MA200.iloc[-1]),safe_float(hist.EMA21.iloc[-1]),a['RSI'],a['MACDHist'],a['ATR'],a['VolRatio'],a['ROCPeriod'],a['ROC20'],a['ROC60'],a['RSPeriod']]})
+            st.dataframe(ind, hide_index=True, use_container_width=True)
+        with tabs[3]:
+            left,right = st.columns(2)
+            with left:
+                st.markdown('#### Faktor pendukung')
+                for item in a['Reasons'] or ['Belum ada faktor pendukung kuat.']: st.success('✓ '+item)
+            with right:
+                st.markdown('#### Risiko / perhatian')
+                for item in a['Risks'] or ['Tidak ada risiko teknikal utama pada rule set ini.']: st.warning('! '+item)
+            st.markdown(f"**Kesimpulan sistem:** {code} berada pada tren **{a['Trend']}**, score **{a['Score']}/100**, signal **{a['Signal']}**, dan Risk Gate **{a['RiskGate']}** untuk periode **{period_label}**.")
+        if show_debug: st.dataframe(hist.tail(60), use_container_width=True)
 
+# -----------------------------
+# Scanner mode
+# -----------------------------
 else:
-    st.markdown('<div class="info-card"><div class="card-title">🌐 Mode Full IDX</div><div>Scan seluruh universe IDX, lakukan filter, lalu perkaya hasilnya untuk tiga gaya trading.</div></div>', unsafe_allow_html=True)
-    m1, m2, m3, m4 = st.columns(4)
-    with m1: st.metric("Universe IDX", f"{len(universe):,}".replace(",", "."))
-    with m2: st.metric("Data Historis", "2 Tahun")
-    with m3: st.metric("Fokus", focus_label)
-    with m4: st.metric("Batch", "50 saham")
-
-    if st.button("🚀 SCAN SELURUH IDX SEKARANG", type="primary", use_container_width=True):
+    st.markdown('### 🌐 Scanner & Ranking')
+    st.markdown(f"<div class='card'><div class='card-title'>Market Regime: {badge(reg['regime'])} <span style='float:right'>{reg['score']}/100</span></div><div class='card-sub'>{reg['note']} · Periode ranking: {period_label} · Risk Gate dipisahkan dari score.</div></div>", unsafe_allow_html=True)
+    if st.button(f'🚀 Scan {max_scan} saham sekarang', type='primary'):
+        rows, failures = [], []
+        selected = universe[:max_scan]
         progress = st.progress(0)
         status = st.empty()
-        def cb(v):
-            progress.progress(v)
-            status.info(f"Progress scanning: {v*100:.0f}%")
-        with st.spinner("Mengambil data Full IDX selama 2 tahun..."):
-            result = scan_full_idx(universe, batch_size=50, focus_days=focus_days, progress_callback=cb)
-        progress.progress(1.0)
-        status.success(f"Scanning selesai: {len(result)} saham berhasil dianalisis.")
-        st.session_state["full_scan"] = result
-        st.session_state.pop("enriched", None)
+        for i, c in enumerate(selected, 1):
+            status.write(f'Menganalisis {c} ({i}/{len(selected)})...')
+            hist, a = analyze(c, bench, bars)
+            if a:
+                row = {'Code':c, **{k:v for k,v in a.items() if k not in ('Reasons','Risks','LastDate','ATR','MACDHist')}}
+                row['Breakout'] = 'YA' if (not hist.empty and pd.notna(hist.High20.iloc[-1]) and hist.Close.iloc[-1] > hist.High20.iloc[-1]) else 'TIDAK'
+                rows.append(row)
+            else: failures.append(c)
+            progress.progress(i/len(selected))
+        status.empty(); progress.empty()
+        st.session_state.scan_rows = rows
+        st.session_state.scan_failures = failures
+        st.session_state.scan_period = period_label
+    rows = st.session_state.get('scan_rows', [])
+    if rows:
+        df = pd.DataFrame(rows)
+        filtered = df[df['Score'] >= min_score].copy()
+        filtered = filtered.sort_values(['RiskGate','Score','RR'], ascending=[True,False,False])
+        st.markdown('### Ringkasan Scanner')
+        c = st.columns(6)
+        metrics = [('Dipindai',len(df),'Universe terpilih'),('Lolos filter',len(filtered),f'Score ≥ {min_score}'),('Top Gate Pass',int((df.RiskGate=='PASS').sum()),'Risk-gated'),('Strong Buy',int((df.Signal=='STRONG BUY').sum()),'Signal prioritas'),('Avg Score',fmt_num(df.Score.mean(),1),'Rata-rata'),('Periode',period_label,'Data historis')]
+        for col,(lab,val,note) in zip(c,metrics): col.markdown(kpi(lab,val,note),unsafe_allow_html=True)
 
-    result = st.session_state.get("full_scan", pd.DataFrame())
-    if result.empty:
-        st.warning("Klik tombol SCAN SELURUH IDX SEKARANG untuk memulai.")
+        # Top 3 risk-gated picks
+        st.markdown('### 🏆 Top 3 Actionable Picks — Risk-Gated')
+        gate = filtered[(filtered.RiskGate=='PASS') & (filtered.Signal.isin(['BUY','STRONG BUY'])) & (filtered.Trend=='BULLISH')].copy()
+        top3 = gate.sort_values(['Score','RR','VolRatio'], ascending=[False,False,False]).head(3)
+        if top3.empty: st.info('Belum ada saham yang memenuhi seluruh syarat Risk Gate pada periode ini.')
+        else:
+            cols = st.columns(3)
+            for col,(_,r) in zip(cols, top3.iterrows()):
+                with col: st.markdown(card_stock(r.to_dict()), unsafe_allow_html=True)
+
+        # Multi-style board
+        st.markdown('### 🎯 Multi-Style Action Board')
+        styles = ['Trading Harian','Swing Trading Mingguan','Investor Jangka Panjang']
+        board_cols = st.columns(3)
+        for col, style in zip(board_cols, styles):
+            eligible_rows = []
+            for _, r in filtered.iterrows():
+                ok, setup, horizon = style_action(r.to_dict(), style)
+                if ok:
+                    rr = r.to_dict(); rr['Setup'] = setup; rr['Horizon'] = horizon; eligible_rows.append(rr)
+            eligible_rows = sorted(eligible_rows, key=lambda x:(x.get('Score',0), x.get('RR',0) if pd.notna(x.get('RR')) else 0), reverse=True)[:3]
+            with col:
+                st.markdown(f"<div class='card'><div class='card-title'>{'⚡' if style=='Trading Harian' else '📊' if style=='Swing Trading Mingguan' else '🌱'} {style}</div><div class='card-sub'>Fokus: {('1–5 hari' if style=='Trading Harian' else '1–8 minggu' if style=='Swing Trading Mingguan' else '6 bulan+')}</div></div>", unsafe_allow_html=True)
+                if not eligible_rows:
+                    st.info('Belum ada kandidat yang memenuhi filter gaya ini.')
+                else:
+                    for r in eligible_rows:
+                        st.markdown(f"<div class='card'><div class='card-title'>{r['Code']} <span style='float:right'>{badge(r['Signal'])}</span></div><div class='card-sub'>{r.get('Setup','-')} · Gate {r['RiskGate']}</div><div style='margin-top:8px'><b>{fmt_price(r['Price'])}</b> · Score {fmt_num(r['Score'],0)} · R:R {fmt_num(r['RR'],2)}</div><div class='card-sub'>Stop {fmt_price(r['StopLoss'])} · Target {fmt_price(r['Target1'])}</div></div>", unsafe_allow_html=True)
+
+        # Enrich Top 50
+        st.markdown('### 🧠 Enrich Top 50 — Focus-Aware Multi-Style')
+        st.caption('Top 50 diperkaya dengan return 1M, 3M, 6M, 2Y, relative strength, style eligibility, dan risk-gated status. Nilai return dihitung dari histori 2 tahun.')
+        enrich = filtered.sort_values(['Score','RR'], ascending=[False,False]).head(50).copy()
+        if not enrich.empty:
+            # Calculate all requested period returns for each top 50 code.
+            progress = st.progress(0)
+            enrich_rows = []
+            for i, (_, base) in enumerate(enrich.iterrows(), 1):
+                h = download_history(base.Code)
+                item = base.to_dict()
+                for label, n in PERIODS.items(): item[label] = period_return(h, n)
+                # Focus-aware style flags based on current selected-period score/gate.
+                for style in styles:
+                    ok, _, _ = style_action(item, style)
+                    item[style] = 'READY' if ok else '—'
+                enrich_rows.append(item)
+                progress.progress(i/len(enrich))
+            progress.empty()
+            edf = pd.DataFrame(enrich_rows)
+            st.dataframe(edf[['Code','Price','1 Bulan','3 Bulan','6 Bulan','2 Tahun','Score','Trend','Signal','RiskGate','VolRatio','RR','Trading Harian','Swing Trading Mingguan','Investor Jangka Panjang']], hide_index=True, use_container_width=True)
+            st.download_button('⬇️ Download Enrich Top 50 CSV', edf.to_csv(index=False).encode('utf-8'), 'sanggul_enrich_top50_focus_aware.csv', 'text/csv')
+        st.markdown('### 📋 Ranking Detail')
+        st.dataframe(filtered, hide_index=True, use_container_width=True)
+        st.download_button('⬇️ Download hasil scanner CSV', filtered.to_csv(index=False).encode('utf-8'), 'sanggul_scanner_results.csv', 'text/csv')
+        if st.session_state.get('scan_failures'): st.caption('Data tidak tersedia: '+', '.join(st.session_state.scan_failures))
     else:
-        st.success(f"{len(result)} saham memiliki data teknikal yang cukup untuk dianalisis.")
-        st.subheader("🎛️ Filter Full IDX")
-        f1, f2, f3, f4 = st.columns(4)
-        with f1:
-            sectors = ["Semua"] + sorted(result["Sektor"].dropna().unique().tolist())
-            selected_sector = st.selectbox("Sektor", sectors)
-        with f2:
-            min_score = st.slider("Minimum Technical Score", 0, 100, 60, 5)
-        with f3:
-            signal_filter = st.selectbox("Signal", ["Semua", "BUY", "WAIT", "SELL"])
-        with f4:
-            breakout_filter = st.selectbox("Breakout", ["Semua", "YA", "TIDAK"])
+        st.info('Atur universe, periode, dan klik tombol Scan untuk memulai. Untuk analisis mendalam satu saham, gunakan mode 🔎 1 Saham.')
 
-        filtered = result.copy()
-        if selected_sector != "Semua": filtered = filtered[filtered["Sektor"] == selected_sector]
-        filtered = filtered[filtered["Score"] >= min_score]
-        if signal_filter != "Semua": filtered = filtered[filtered["Signal"].str.contains(signal_filter, na=False)]
-        if breakout_filter != "Semua": filtered = filtered[filtered["Breakout"] == breakout_filter]
-        st.caption(f"Hasil setelah filter: {len(filtered)} saham")
-
-        st.subheader("🏆 Top 10 Opportunity — Full IDX")
-        top10 = result.sort_values(["Opportunity", "Score"], ascending=False).head(10)
-        left, right = st.columns(2)
-        for i, (_, row) in enumerate(top10.iterrows()):
-            with (left if i % 2 == 0 else right):
-                render_stock_card(row)
-
-        st.subheader("🟢 Kandidat BUY")
-        buys = filtered[filtered["Signal"].str.contains("BUY", na=False)].head(20)
-        if buys.empty:
-            st.warning("Belum ada kandidat BUY sesuai filter.")
-        else:
-            left, right = st.columns(2)
-            for i, (_, row) in enumerate(buys.iterrows()):
-                with (left if i % 2 == 0 else right):
-                    render_compact_row(row, extra=[("Opportunity", fmt_num(row.get("Opportunity"))), ("R:R", fmt_num(row.get("R:R"))), ("Breakout", row.get("Breakout", "-"))])
-
-        st.markdown("---")
-        st.subheader("✨ Enrich Top 150 — Focus-Aware Multi-Style")
-        st.write("Enrich memperkaya ranking hasil filter menjadi tiga perspektif: Trading Harian, Swing Trading Mingguan, dan Investor Jangka Panjang.")
-        if filtered.empty:
-            st.warning("Tidak ada saham hasil filter untuk di-Enrich. Turunkan Minimum Technical Score atau ubah filter.")
-        else:
-            enrich_source = filtered.sort_values(["Opportunity", "Score"], ascending=False).head(150)
-            st.caption(f"Sumber Enrich: {len(enrich_source)} saham dari hasil filter. Fokus aktif: {focus_label}.")
-            if st.button("✨ ENRICH TOP 150 SEKARANG", type="primary", use_container_width=True):
-                with st.spinner("Menghitung skor Enrich dan rencana aksi..."):
-                    enriched = enrich_results(enrich_source, top_n=150)
-                st.session_state["enriched"] = enriched
-                st.success(f"Enrich selesai: {len(enriched)} saham diperkaya.")
-
-        if "enriched" in st.session_state and not st.session_state["enriched"].empty:
-            enriched = st.session_state["enriched"]
-            st.subheader("🥇 Top 3 Actionable Picks — Risk-Gated")
-            top3 = enriched[enriched["RiskGate"] == "PASS"].sort_values(["SwingScore", "DayScore"], ascending=False).head(3)
-            if top3.empty:
-                top3 = enriched.sort_values(["SwingScore", "DayScore"], ascending=False).head(3)
-            a, b, c = st.columns(3)
-            for i, (_, row) in enumerate(top3.iterrows()):
-                with (a if i == 0 else b if i == 1 else c):
-                    render_action_card(row, "SwingScore", "SwingSignal", "Swing Risk-Gated", extra=[("R:R", fmt_num(row.get("R:R"))), ("Risk Gate", row.get("RiskGate", "-")), ("Target 1", rupiah(row.get("Target1"))), ("Stop Loss", rupiah(row.get("StopLoss")))])
-
-            st.subheader("🎯 Multi-Style Action Board")
-            st.caption("Skor setiap gaya menggunakan formula berbeda. Skor tidak dipaksa menjadi 100; nilai dapat berbeda sesuai karakter saham.")
-            a, b, c = st.columns(3)
-            with a:
-                st.markdown("### ⚡ Trading Harian")
-                for _, row in enriched.sort_values(["DayScore", "Volume"], ascending=False).head(5).iterrows():
-                    render_action_card(row, "DayScore", "DaySignal", "Trading Harian", extra=[("Volume", fmt_num(row.get("Volume"))), ("RSI", fmt_num(row.get("RSI")))])
-            with b:
-                st.markdown("### 📈 Swing Trading Mingguan")
-                for _, row in enriched.sort_values(["SwingScore", "Opportunity"], ascending=False).head(5).iterrows():
-                    render_action_card(row, "SwingScore", "SwingSignal", "Swing Mingguan", extra=[("Return 20D", f'{fmt_num(row.get("Return20D"))}%'), ("Return 60D", f'{fmt_num(row.get("Return60D"))}%')])
-            with c:
-                st.markdown("### 🏛️ Investor Jangka Panjang")
-                for _, row in enriched.sort_values(["InvestorScore", "Return60D"], ascending=False).head(5).iterrows():
-                    render_action_card(row, "InvestorScore", "InvestorSignal", "Investor Jangka Panjang", extra=[("Return 60D", f'{fmt_num(row.get("Return60D"))}%'), ("Risk Gate", row.get("RiskGate", "-"))])
-
-            st.subheader("📋 Detail Hasil Enrich")
-            detail_cols = ["Kode","Nama","Sektor","Price","Score","Opportunity","DayScore","DaySignal","SwingScore","SwingSignal","InvestorScore","InvestorSignal","Setup","RiskGate","StopLoss","Target1","Target2"]
-            with st.expander("Buka tabel detail lengkap", expanded=False):
-                st.dataframe(enriched[detail_cols], use_container_width=True, hide_index=True)
-            csv = enriched.to_csv(index=False).encode("utf-8-sig")
-            st.download_button("⬇️ Download Hasil Enrich CSV", data=csv, file_name="enriched_top150_v82.csv", mime="text/csv", use_container_width=True)
-        else:
-            st.info("ℹ️ Hasil Enrich belum tersedia. Klik tombol ENRICH TOP 150 SEKARANG di atas.")
-
-st.markdown("---")
-st.caption("Catatan: data harga berasal dari Yahoo Finance melalui yfinance, bukan feed tick-by-tick resmi BEI. Signal dan skor adalah alat bantu analisis, bukan jaminan keuntungan. Saham yang tidak tersedia di Yahoo Finance dapat dilewati.")
+st.markdown('---')
+st.caption('Sanggul Stock Scanner V10 Professional · Rule-based decision support · Data Yahoo Finance dapat terlambat, berubah, atau gagal diakses. Bukan nasihat investasi.')
