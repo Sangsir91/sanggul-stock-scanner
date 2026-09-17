@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -536,6 +537,13 @@ if result.empty:
     st.warning("Belum ada data yang berhasil dianalisis. Coba refresh, kurangi jumlah saham, atau periksa koneksi.")
     st.stop()
 
+# Shared style definitions (used by Beranda, Scanner, and Top 3 pages)
+STYLE_DEFS = [
+    ("Trading Harian", "Daily Score", "Daily Gate"),
+    ("Swing Trading Mingguan", "Swing Score", "Swing Gate"),
+    ("Investor Jangka Panjang", "Investor Score", "Investor Gate"),
+]
+
 # Summary
 pass_daily = int((result["Daily Gate"] == "PASS").sum())
 pass_swing = int((result["Swing Gate"] == "PASS").sum())
@@ -557,12 +565,7 @@ if menu == "Beranda":
     st.info("Setiap gaya sekarang menggunakan score dan Risk Gate yang berbeda. Saham boleh overlap jika memang memenuhi lebih dari satu gaya, tetapi alasan dan skornya tidak lagi sama.")
 
     cols = st.columns(3)
-    style_defs = [
-        ("Trading Harian", "Daily Score", "Daily Gate"),
-        ("Swing Trading Mingguan", "Swing Score", "Swing Gate"),
-        ("Investor Jangka Panjang", "Investor Score", "Investor Gate"),
-    ]
-    for col, (style, score_col, gate_col) in zip(cols, style_defs):
+    for col, (style, score_col, gate_col) in zip(cols, STYLE_DEFS):
         with col:
             info = STYLE_INFO[style]
             st.markdown(f"### {info['icon']} {style}")
@@ -617,7 +620,7 @@ elif menu == "Top 3 Actionable Picks":
     st.subheader("🏆 Top 3 Actionable Picks — Risk-Gated")
     st.caption("Top 3 diambil dari score gaya masing-masing dan diprioritaskan berdasarkan Gate PASS, lalu CAUTION. Ini adalah shortlist analisis, bukan jaminan hasil.")
 
-    for style, score_col, gate_col in style_defs:
+    for style, score_col, gate_col in STYLE_DEFS:
         st.markdown(f"### {STYLE_INFO[style]['icon']} {style}")
         candidates = result[result[score_col] >= min_score].copy()
         candidates["_gate_order"] = candidates[gate_col].map({"PASS":0,"CAUTION":1,"FAIL":2}).fillna(3)
