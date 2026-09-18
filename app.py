@@ -146,6 +146,10 @@ def add_indicators(data):
     x["MA50"] = close.rolling(50).mean()
     x["MA200"] = close.rolling(200).mean()
     x["RSI"] = calc_rsi(close)
+    ema12 = close.ewm(span=12, adjust=False).mean()
+    ema26 = close.ewm(span=26, adjust=False).mean()
+    x["MACD"] = ema12 - ema26
+    x["MACDSignal"] = x["MACD"].ewm(span=9, adjust=False).mean()
     true_range = pd.concat([
         x["High"] - x["Low"],
         (x["High"] - x["Close"].shift(1)).abs(),
@@ -156,6 +160,81 @@ def add_indicators(data):
     x["High20Previous"] = x["High"].rolling(20).max().shift(1)
     x["Breakout20"] = x["Close"] > x["High20Previous"]
     return x
+
+def detect_latest_divergence(x, lookback=90):
+    """Detect the latest regular RSI divergence using confirmed local pivots."""
+    d = x.tail(lookback).copy()
+    if len(d) < 20 or "RSI" not in d.columns:
+        return {"type": "Tidak terdeteksi", "date": "—", "price": np.nan, "indicator": np.nan, "note": "Data belum cukup"}
+
+    lows, highs = [], []
+    for i in range(2, len(d) - 2):
+        low = float(d["Low"].iloc[i])
+        high = float(d["High"].iloc[i])
+        if low <= float(d["Low"].iloc[i-1]) and low <= float(d["Low"].iloc[i-2]) and low <= float(d["Low"].iloc[i+1]) and low <= float(d["Low"].iloc[i+2]):
+            if pd.notna(d["RSI"].iloc[i]):
+                lows.append((i, low, float(d["RSI"].iloc[i])))
+        if high >= float(d["High"].iloc[i-1]) and high >= float(d["High"].iloc[i-2]) and high >= float(d["High"].iloc[i+1]) and high >= float(d["High"].iloc[i+2]):
+            if pd.notna(d["RSI"].iloc[i]):
+                highs.append((i, high, float(d["RSI"].iloc[i])))
+
+    candidates = []
+    if len(lows) >= 2:
+        a, b = lows[-2], lows[-1]
+        if b[1] < a[1] and b[2] > a[2]:
+            candidates.append((b[0], "Bullish Regular", b[1], b[2], "Harga lower low, RSI higher low"))
+    if len(highs) >= 2:
+        a, b = highs[-2], highs[-1]
+        if b[1] > a[1] and b[2] < a[2]:
+            candidates.append((b[0], "Bearish Regular", b[1], b[2], "Harga higher high, RSI lower high"))
+
+    if not candidates:
+        return {"type": "Tidak terdeteksi", "date": "—", "price": np.nan, "indicator": np.nan, "note": "Belum ada divergence RSI reguler yang terkonfirmasi"}
+    c = sorted(candidates, key=lambda z: z[0])[-1]
+    idx = d.index[c[0]]
+    return {"type": c[1], "date": pd.Timestamp(idx).strftime("%Y-%m-%d"), "price": c[2], "indicator": c[3], "note": c[4]}
+
+def trading_areas(x, price, atr, divergence):
+    """Estimate support/resistance-based trading areas; confirmation remains required."""
+    recent = x.tail(20)
+    support = float(recent["Low"].min()) if not recent.empty else np.nan
+    resistance = float(recent["High"].max()) if not recent.empty else np.nan
+    atr_val = float(atr) if pd.notna(atr) and atr > 0 else max(price * 0.03, 1)
+
+    buy_low = support
+    buy_high = support + 0.50 * atr_val
+    sell_low = resistance - 0.50 * atr_val
+    sell_high = resistance
+    trigger = resistance
+    stop = min(support - 0.50 * atr_val, price - 1.50 * atr_val)
+    target1 = resistance
+    target2 = price + 2.0 * max(price - stop, atr_val)
+
+    if divergence["type"] == "Bullish Regular":
+        buy_low = min(support, divergence["price"])
+        buy_high = max(support, divergence["price"]) + 0.30 * atr_val
+    elif divergence["type"] == "Bearish Regular":
+        sell_low = min(resistance, divergence["price"]) - 0.30 * atr_val
+        sell_high = max(resistance, divergence["price"])
+
+    def area(a, b):
+        if pd.isna(a) or pd.isna(b): return "—"
+        return f"Rp {min(a,b):,.0f}–Rp {max(a,b):,.0f}"
+
+    return {
+        "Support 20D": support,
+        "Resistance 20D": resistance,
+        "Buy Area": area(buy_low, buy_high),
+        "Buy Area Low": buy_low,
+        "Buy Area High": buy_high,
+        "Buy Trigger": trigger,
+        "Sell Area": area(sell_low, sell_high),
+        "Sell Area Low": sell_low,
+        "Sell Area High": sell_high,
+        "Stop Loss": stop,
+        "Target 1": target1,
+        "Target 2": target2,
+    }
 
 def latest(series):
     value = series.iloc[-1]
@@ -229,6 +308,8 @@ def analyze(code):
     vol_ratio = latest(x["VolRatio"])
     atr = latest(x["ATR"])
     breakout = bool(x["Breakout20"].iloc[-1]) if pd.notna(x["Breakout20"].iloc[-1]) else False
+    divergence = detect_latest_divergence(x)
+    areas = trading_areas(x, price, atr, divergence)
 
     r1, r3, r6, r2 = (
         period_return(close, 21),
@@ -346,8 +427,8 @@ def analyze(code):
         "Investor Jangka Panjang": investor_score,
     }
     primary = max(scores, key=scores.get)
-    stop = price - 1.5 * atr if pd.notna(atr) else np.nan
-    target = price + 2.0 * atr if pd.notna(atr) else np.nan
+    stop = areas["Stop Loss"]
+    target = areas["Target 1"]
 
     return {
         "Code": code.upper(),
@@ -362,6 +443,19 @@ def analyze(code):
         "Adaptive Status": adaptive_status,
         "Adaptive Reason": adaptive_reason,
         "Trigger": trigger,
+        "Divergence Terakhir": divergence["type"],
+        "Divergence Date": divergence["date"],
+        "Divergence Area": (f"Rp {divergence['price']:,.0f}" if pd.notna(divergence["price"]) else "—"),
+        "Divergence RSI": divergence["indicator"],
+        "Divergence Note": divergence["note"],
+        "Support 20D": areas["Support 20D"],
+        "Resistance 20D": areas["Resistance 20D"],
+        "Buy Area": areas["Buy Area"],
+        "Buy Trigger": areas["Buy Trigger"],
+        "Sell Area": areas["Sell Area"],
+        "Stop Loss": areas["Stop Loss"],
+        "Target 1": areas["Target 1"],
+        "Target 2": areas["Target 2"],
         "Confidence": "High" if sum([trend_ok,momentum_ok,volume_ok,rs_ok,risk_ok]) >= 4 else ("Medium" if sum([trend_ok,momentum_ok,volume_ok,rs_ok,risk_ok]) >= 2 else "Low"),
         "RSI": rsi, "Vol Ratio": vol_ratio,
         "MA20": ma20, "MA50": ma50, "MA200": ma200,
@@ -441,7 +535,9 @@ def render_card(row, style):
       <div class="meta"><b>{score_col}:</b> {fmt_num(row[score_col], 1)} / 100 · <b>{row["Adaptive Status"]}</b></div>
       <div class="meta">Confidence: {row["Confidence"]} · Trigger: {row["Trigger"]}</div>
       <div class="meta">{return_col}: {fmt_pct(row[return_col])} · RSI: {fmt_num(row["RSI"], 1)}</div>
-      <div class="meta">Stop: Rp {fmt_num(row["Stop"], 0)} · Target: Rp {fmt_num(row["Target"], 0)}</div>
+      <div class="meta">Buy area: {row["Buy Area"]} · Sell area: {row["Sell Area"]}</div>
+      <div class="meta">Stop: Rp {fmt_num(row["Stop"], 0)} · T1: Rp {fmt_num(row["Target 1"], 0)} · T2: Rp {fmt_num(row["Target 2"], 0)}</div>
+      <div class="meta">Divergence: {row["Divergence Terakhir"]} · {row["Divergence Date"]}</div>
       <div class="reason">{row[reason_col]}</div>
     </div>
     """
@@ -449,7 +545,7 @@ def render_card(row, style):
 
 def show_board(result_df, min_score, show_caution, title="🎯 Top 3 Actionable Picks — Risk-Gated"):
     st.markdown(f'<div class="section-title">{title}</div>', unsafe_allow_html=True)
-    st.caption("Top 3 dipilih terpisah untuk setiap gaya. PASS diprioritaskan, lalu CAUTION; FAIL tidak dimasukkan. Status adaptif mempertimbangkan regime IHSG, skor, risiko, dan trigger.")
+    st.caption("Top 3 dipilih terpisah untuk setiap gaya. PASS diprioritaskan, lalu CAUTION; FAIL tidak dimasukkan. Area buy/sell adalah estimasi berbasis support-resistance dan ATR, bukan perintah transaksi otomatis.")
     columns = st.columns(3)
     for column, style in zip(columns, STYLES):
         with column:
@@ -540,6 +636,18 @@ if mode == "Analisis 1 Saham":
     )
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
+    st.markdown('<div class="section-title">🎯 Area Entry dan Exit</div>', unsafe_allow_html=True)
+    st.info(f"Divergence terakhir: {data['Divergence Terakhir']} ({data['Divergence Date']}) · Area: {data['Divergence Area']} · {data['Divergence Note']}")
+    area_view = pd.DataFrame([{
+        "Buy Area / Pullback": data["Buy Area"],
+        "Buy Trigger": fmt_num(data["Buy Trigger"], 0),
+        "Sell Area / Take Profit": data["Sell Area"],
+        "Stop Loss": fmt_num(data["Stop Loss"], 0),
+        "Target 1": fmt_num(data["Target 1"], 0),
+        "Target 2": fmt_num(data["Target 2"], 0),
+    }])
+    st.dataframe(area_view, use_container_width=True, hide_index=True)
+
     st.markdown('<div class="section-title">Ringkasan indikator</div>', unsafe_allow_html=True)
     summary = pd.DataFrame([{
         "Return 1M": fmt_pct(data["Return 1M"]),
@@ -553,6 +661,16 @@ if mode == "Analisis 1 Saham":
         "MA200": fmt_num(data["MA200"], 0),
         "Stop": fmt_num(data["Stop"], 0),
         "Target": fmt_num(data["Target"], 0),
+        "Support 20D": fmt_num(data["Support 20D"], 0),
+        "Resistance 20D": fmt_num(data["Resistance 20D"], 0),
+        "Buy Area": data["Buy Area"],
+        "Buy Trigger": fmt_num(data["Buy Trigger"], 0),
+        "Sell Area": data["Sell Area"],
+        "Target 1": fmt_num(data["Target 1"], 0),
+        "Target 2": fmt_num(data["Target 2"], 0),
+        "Divergence Terakhir": data["Divergence Terakhir"],
+        "Divergence Date": data["Divergence Date"],
+        "Divergence Area": data["Divergence Area"],
     }])
     st.dataframe(summary, use_container_width=True, hide_index=True)
 
