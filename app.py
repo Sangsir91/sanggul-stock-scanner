@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 
 st.set_page_config(
-    page_title="Sanggul Stock Scanner V10.5",
+    page_title="Sanggul Stock Scanner V10.5.2 | BIONS Style",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -17,22 +17,59 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-.block-container {max-width: 1480px; padding-top: 1rem; padding-bottom: 2rem;}
-h1 {letter-spacing:-.035em;}
-.section-title {font-size:1.35rem;font-weight:750;margin:1rem 0 .6rem;}
-.info-box {background:#eff6ff;border:1px solid #dbeafe;border-radius:12px;padding:11px 14px;color:#1d4ed8;font-size:.9rem;}
-.card {border:1px solid #e5e7eb;border-radius:14px;padding:14px 15px;background:#fff;min-height:168px;box-shadow:0 1px 2px rgba(16,24,40,.03);}
+/* BIONS-inspired professional trading dashboard */
+:root {
+  --navy:#102a43;
+  --navy-2:#173f63;
+  --blue:#0b74de;
+  --cyan:#00a6d6;
+  --green:#0f9d68;
+  --red:#e5484d;
+  --orange:#e88916;
+  --ink:#172b4d;
+  --muted:#6b7c93;
+  --line:#d9e2ec;
+  --surface:#ffffff;
+  --soft:#f4f7fb;
+}
+.stApp { background:linear-gradient(180deg,#f6f9fc 0%,#eef3f8 100%); color:var(--ink); }
+.block-container {max-width:1480px; padding-top:1rem; padding-bottom:2rem;}
+[data-testid="stHeader"] {background:rgba(255,255,255,.88);}
+[data-testid="stSidebar"] {background:linear-gradient(180deg,#102a43 0%,#173f63 100%);}
+[data-testid="stSidebar"] * {color:#f5f9ff !important;}
+[data-testid="stSidebar"] .stCaption {color:#c7d7e8 !important;}
+h1 {letter-spacing:-.04em; color:var(--navy); font-weight:850;}
+h2,h3 {color:var(--navy);}
+.section-title {font-size:1.25rem;font-weight:850;margin:1.1rem 0 .65rem;color:var(--navy);display:flex;align-items:center;gap:.4rem;}
+.info-box {background:linear-gradient(90deg,#e7f3ff,#f3faff);border:1px solid #a9d4f5;border-left:5px solid var(--blue);border-radius:12px;padding:12px 15px;color:#174a75;font-size:.9rem;box-shadow:0 3px 12px rgba(16,42,67,.05);}
+.card {border:1px solid var(--line);border-top:4px solid var(--blue);border-radius:14px;padding:14px 15px;background:var(--surface);min-height:168px;box-shadow:0 5px 18px rgba(16,42,67,.07);transition:transform .15s ease,box-shadow .15s ease;}
+.card:hover {transform:translateY(-2px);box-shadow:0 9px 24px rgba(16,42,67,.12);}
 .card-head {display:flex;justify-content:space-between;align-items:center;gap:8px;}
-.code {font-size:1.05rem;font-weight:800;color:#172033;}
-.company {font-size:.78rem;color:#667085;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.price {font-size:1.2rem;font-weight:800;margin:11px 0 5px;color:#172033;}
-.meta {font-size:.81rem;color:#475467;line-height:1.55;}
-.reason {font-size:.77rem;color:#667085;margin-top:8px;line-height:1.4;}
-.pill {display:inline-block;border-radius:999px;padding:4px 9px;font-size:.67rem;font-weight:800;}
-.pass {background:#dcfce7;color:#166534;}
-.caution {background:#fef3c7;color:#92400e;}
-.fail {background:#fee2e2;color:#991b1b;}
-.note {font-size:.8rem;color:#667085;}
+.code {font-size:1.08rem;font-weight:900;color:var(--navy);letter-spacing:.02em;}
+.company {font-size:.78rem;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.price {font-size:1.25rem;font-weight:900;margin:11px 0 5px;color:var(--navy);}
+.meta {font-size:.81rem;color:#486581;line-height:1.55;}
+.reason {font-size:.77rem;color:var(--muted);margin-top:8px;line-height:1.4;}
+.pill {display:inline-block;border-radius:999px;padding:4px 9px;font-size:.67rem;font-weight:850;border:1px solid transparent;}
+.pass {background:#d9f7e9;color:#087443;border-color:#9de2c1;}
+.caution {background:#fff1cc;color:#9a5b00;border-color:#f2cf78;}
+.fail {background:#ffe1e2;color:#b4232a;border-color:#f4a5a8;}
+.note {font-size:.8rem;color:var(--muted);}
+/* Streamlit controls */
+.stButton > button {border-radius:10px;border:1px solid #b8c7d9;background:#fff;color:var(--navy);font-weight:750;box-shadow:0 2px 5px rgba(16,42,67,.06);}
+.stButton > button:hover {border-color:var(--blue);color:var(--blue);background:#f2f8ff;}
+.stButton > button[kind="primary"] {background:linear-gradient(90deg,#0b74de,#00a6d6);border:0;color:#fff;box-shadow:0 5px 14px rgba(11,116,222,.24);}
+.stButton > button[kind="primary"]:hover {color:#fff;background:linear-gradient(90deg,#095fb7,#008bb5);}
+[data-testid="stMetric"] {background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:0 3px 12px rgba(16,42,67,.05);}
+[data-testid="stMetricLabel"] {color:#627d98 !important;}
+[data-testid="stMetricValue"] {color:var(--navy) !important;font-weight:850;}
+.stTabs [data-baseweb="tab-list"] {gap:8px;border-bottom:1px solid var(--line);}
+.stTabs [data-baseweb="tab"] {height:42px;border-radius:9px 9px 0 0;padding:0 16px;color:#486581;font-weight:750;}
+.stTabs [aria-selected="true"] {background:#e7f3ff;color:#075aa6 !important;border-bottom:3px solid var(--blue);}
+[data-testid="stDataFrame"] {border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 3px 12px rgba(16,42,67,.05);}
+[data-testid="stExpander"] {border:1px solid var(--line);border-radius:12px;background:#fff;}
+.stSelectbox, .stTextInput, .stNumberInput, .stMultiSelect {background:transparent;}
+hr {border-color:var(--line);}
 @media (max-width:768px) {
   .block-container {padding:.65rem .7rem 1.5rem;}
   h1 {font-size:1.65rem;}
