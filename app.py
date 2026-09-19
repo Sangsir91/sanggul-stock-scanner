@@ -1,5 +1,6 @@
 import warnings
 warnings.filterwarnings("ignore")
+import html
 
 import numpy as np
 import pandas as pd
@@ -17,66 +18,28 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-/* BIONS-inspired professional trading dashboard */
-:root {
-  --navy:#102a43;
-  --navy-2:#173f63;
-  --blue:#0b74de;
-  --cyan:#00a6d6;
-  --green:#0f9d68;
-  --red:#e5484d;
-  --orange:#e88916;
-  --ink:#172b4d;
-  --muted:#6b7c93;
-  --line:#d9e2ec;
-  --surface:#ffffff;
-  --soft:#f4f7fb;
-}
-.stApp { background:linear-gradient(180deg,#f6f9fc 0%,#eef3f8 100%); color:var(--ink); }
-.block-container {max-width:1480px; padding-top:1rem; padding-bottom:2rem;}
-[data-testid="stHeader"] {background:rgba(255,255,255,.88);}
-[data-testid="stSidebar"] {background:linear-gradient(180deg,#102a43 0%,#173f63 100%);}
-[data-testid="stSidebar"] * {color:#f5f9ff !important;}
-[data-testid="stSidebar"] .stCaption {color:#c7d7e8 !important;}
-h1 {letter-spacing:-.04em; color:var(--navy); font-weight:850;}
-h2,h3 {color:var(--navy);}
-.section-title {font-size:1.25rem;font-weight:850;margin:1.1rem 0 .65rem;color:var(--navy);display:flex;align-items:center;gap:.4rem;}
-.info-box {background:linear-gradient(90deg,#e7f3ff,#f3faff);border:1px solid #a9d4f5;border-left:5px solid var(--blue);border-radius:12px;padding:12px 15px;color:#174a75;font-size:.9rem;box-shadow:0 3px 12px rgba(16,42,67,.05);}
-.card {border:1px solid var(--line);border-top:4px solid var(--blue);border-radius:14px;padding:14px 15px;background:var(--surface);min-height:168px;box-shadow:0 5px 18px rgba(16,42,67,.07);transition:transform .15s ease,box-shadow .15s ease;}
-.card:hover {transform:translateY(-2px);box-shadow:0 9px 24px rgba(16,42,67,.12);}
-.card-head {display:flex;justify-content:space-between;align-items:center;gap:8px;}
-.code {font-size:1.08rem;font-weight:900;color:var(--navy);letter-spacing:.02em;}
-.company {font-size:.78rem;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.price {font-size:1.25rem;font-weight:900;margin:11px 0 5px;color:var(--navy);}
-.meta {font-size:.81rem;color:#486581;line-height:1.55;}
-.reason {font-size:.77rem;color:var(--muted);margin-top:8px;line-height:1.4;}
-.pill {display:inline-block;border-radius:999px;padding:4px 9px;font-size:.67rem;font-weight:850;border:1px solid transparent;}
-.pass {background:#d9f7e9;color:#087443;border-color:#9de2c1;}
-.caution {background:#fff1cc;color:#9a5b00;border-color:#f2cf78;}
-.fail {background:#ffe1e2;color:#b4232a;border-color:#f4a5a8;}
-.note {font-size:.8rem;color:var(--muted);}
-/* Streamlit controls */
-.stButton > button {border-radius:10px;border:1px solid #b8c7d9;background:#fff;color:var(--navy);font-weight:750;box-shadow:0 2px 5px rgba(16,42,67,.06);}
-.stButton > button:hover {border-color:var(--blue);color:var(--blue);background:#f2f8ff;}
-.stButton > button[kind="primary"] {background:linear-gradient(90deg,#0b74de,#00a6d6);border:0;color:#fff;box-shadow:0 5px 14px rgba(11,116,222,.24);}
-.stButton > button[kind="primary"]:hover {color:#fff;background:linear-gradient(90deg,#095fb7,#008bb5);}
-[data-testid="stMetric"] {background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:0 3px 12px rgba(16,42,67,.05);}
-[data-testid="stMetricLabel"] {color:#627d98 !important;}
-[data-testid="stMetricValue"] {color:var(--navy) !important;font-weight:850;}
-.stTabs [data-baseweb="tab-list"] {gap:8px;border-bottom:1px solid var(--line);}
-.stTabs [data-baseweb="tab"] {height:42px;border-radius:9px 9px 0 0;padding:0 16px;color:#486581;font-weight:750;}
-.stTabs [aria-selected="true"] {background:#e7f3ff;color:#075aa6 !important;border-bottom:3px solid var(--blue);}
-[data-testid="stDataFrame"] {border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 3px 12px rgba(16,42,67,.05);}
-[data-testid="stExpander"] {border:1px solid var(--line);border-radius:12px;background:#fff;}
-.stSelectbox, .stTextInput, .stNumberInput, .stMultiSelect {background:transparent;}
-hr {border-color:var(--line);}
-@media (max-width:768px) {
-  .block-container {padding:.65rem .7rem 1.5rem;}
-  h1 {font-size:1.65rem;}
-  .card {min-height:0;padding:12px;}
-  .price {font-size:1.1rem;}
-  .meta,.reason {font-size:.75rem;}
-}
+:root{--bg:#061321;--panel:#0b1c2d;--panel2:#0e2438;--line:#1e405d;--text:#e9f3ff;--muted:#8ea7bf;--blue:#1683ff;--cyan:#00c2ff;--green:#00d084;--yellow:#ffc107;--orange:#ff9f1a;--red:#ff4d5d;}
+.stApp{background:radial-gradient(circle at 75% 0%,#12304b 0%,#061321 38%,#040d17 100%);color:var(--text)}
+.block-container{max-width:1540px;padding-top:.65rem;padding-bottom:2rem}
+[data-testid="stHeader"]{background:rgba(4,13,23,.92)}
+[data-testid="stSidebar"]{background:linear-gradient(180deg,#06111e 0%,#0a1e31 100%);border-right:1px solid #18344d}
+[data-testid="stSidebar"] *{color:#e8f2ff !important}[data-testid="stSidebar"] .stCaption{color:#90a8bf !important}
+h1,h2,h3{color:#f4f8ff!important;font-weight:850;letter-spacing:-.025em}h1{font-size:2rem!important}
+.section-title{font-size:1.15rem;font-weight:850;margin:1rem 0 .55rem;color:#f4f8ff;display:flex;align-items:center;gap:.4rem}
+.info-box{background:linear-gradient(90deg,#09253d,#0b1c2d);border:1px solid #1d5279;border-left:4px solid var(--blue);border-radius:10px;padding:10px 14px;color:#bfe1ff;font-size:.86rem;box-shadow:0 5px 20px rgba(0,0,0,.18)}
+.card{border:1px solid #1b4668;border-top:3px solid var(--blue);border-radius:12px;padding:12px 14px;background:linear-gradient(180deg,#0d2235,#091725);min-height:166px;box-shadow:0 8px 24px rgba(0,0,0,.22)}
+.card-head{display:flex;justify-content:space-between;align-items:center;gap:8px}.code{font-size:1.08rem;font-weight:900;color:#fff}.company{font-size:.76rem;color:#8da8c0;margin-top:3px}.price{font-size:1.3rem;font-weight:900;margin:9px 0 4px;color:#fff}.meta{font-size:.77rem;color:#a9c0d5;line-height:1.5}.reason{font-size:.75rem;color:#809ab2;margin-top:7px;line-height:1.4}
+.pill{display:inline-block;border-radius:7px;padding:4px 8px;font-size:.65rem;font-weight:850;border:1px solid transparent}.pass{background:#073e32;color:#00e59a;border-color:#087c62}.caution{background:#493607;color:#ffd15c;border-color:#a47b12}.fail{background:#4a1820;color:#ff7180;border-color:#a83243}
+.stButton>button{border-radius:9px;border:1px solid #28516f;background:#0d2235;color:#dcecff;font-weight:750;box-shadow:none}.stButton>button:hover{border-color:#1683ff;color:#fff;background:#12314b}.stButton>button[kind="primary"]{background:linear-gradient(90deg,#0877ff,#00b8ff);border:0;color:#fff;box-shadow:0 7px 20px rgba(0,132,255,.25)}
+[data-testid="stMetric"]{background:linear-gradient(180deg,#0e263c,#091827);border:1px solid #1a3c59;border-radius:10px;padding:10px 12px;box-shadow:0 6px 20px rgba(0,0,0,.18)}[data-testid="stMetricLabel"]{color:#8ea7bf!important}[data-testid="stMetricValue"]{color:#f4f8ff!important;font-weight:850}
+.stTabs [data-baseweb="tab-list"]{gap:6px;border-bottom:1px solid #1a3c59}.stTabs [data-baseweb="tab"]{height:40px;border-radius:8px 8px 0 0;padding:0 15px;color:#8ea7bf;font-weight:750}.stTabs [aria-selected="true"]{background:#0b3d68;color:#fff!important;border-bottom:3px solid #1683ff}
+.stSelectbox>div>div,.stTextInput>div>div,.stNumberInput>div>div,.stMultiSelect>div>div{background:#0a1d2f!important;border-color:#21435f!important;color:#fff!important}
+[data-testid="stDataFrame"]{border:1px solid #1b4668;border-radius:10px;overflow:hidden;box-shadow:0 8px 25px rgba(0,0,0,.2)}[data-testid="stExpander"]{border:1px solid #1b4668;border-radius:10px;background:#091827}hr{border-color:#1b3c56}
+.table-shell{border:1px solid #1d4664;border-radius:10px;overflow-x:auto;background:#071522;box-shadow:0 8px 28px rgba(0,0,0,.25)}
+.bions-table{width:100%;min-width:1380px;border-collapse:separate;border-spacing:0;font-size:12px;color:#dcecff}.bions-table th{position:sticky;top:0;background:#0c2236;color:#8fa9c1;text-align:left;font-weight:800;padding:10px 9px;border-bottom:1px solid #27506e;white-space:nowrap;z-index:2}.bions-table td{padding:9px;border-bottom:1px solid #142f46;white-space:nowrap;background:#081725}.bions-table tr:hover td{background:#0c2237}.bions-table .num{text-align:right}.bions-table .rank{color:#ffc107;font-weight:900;text-align:center}.bions-table .ticker{font-weight:900;color:#fff}.bions-table .green{color:#00dc92;font-weight:800}.bions-table .red{color:#ff6574;font-weight:800}.bions-table .score{font-weight:900;color:#fff}.bions-table .subtle{color:#8fa9c1}.bions-table .buy{color:#00dc92}.bions-table .sell{color:#ffb24a}.bions-table .sl{color:#ff5c6d}
+.table-pill{display:inline-block;padding:4px 8px;border-radius:6px;font-size:10px;font-weight:850;border:1px solid}.tp-buy{background:#063c31;color:#00dc92;border-color:#087e64}.tp-watch{background:#063b6a;color:#4da3ff;border-color:#0a78d8}.tp-caution{background:#493607;color:#ffd15c;border-color:#9f7917}.tp-risk{background:#4a1820;color:#ff6b79;border-color:#a73545}.conf-high{background:#063c31;color:#00dc92;border-color:#087e64}.conf-med{background:#493607;color:#ffd15c;border-color:#9f7917}.conf-low{background:#4a1820;color:#ff6b79;border-color:#a73545}
+.top-banner{display:flex;align-items:center;gap:10px;margin-bottom:3px}.version{font-size:2rem;font-weight:950;color:#c76cff}.version-badge{background:#063c31;color:#00dc92;border:1px solid #087e64;padding:5px 10px;border-radius:999px;font-size:.72rem;font-weight:900}.brand-sub{color:#8fa9c1;font-size:.76rem}
+@media(max-width:768px){.block-container{padding:.55rem}.card{min-height:0;padding:11px}.bions-table{min-width:1300px}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -348,6 +311,7 @@ def analyze(code):
     divergence = detect_latest_divergence(x)
     areas = trading_areas(x, price, atr, divergence)
 
+    change_1d = period_return(close, 1)
     r1, r3, r6, r2 = (
         period_return(close, 21),
         period_return(close, 63),
@@ -471,6 +435,7 @@ def analyze(code):
         "Code": code.upper(),
         "Name": code.upper(),
         "Price": price,
+        "Change 1D": change_1d,
         "Daily Score": daily_score, "Daily Gate": daily_gate, "Daily Reason": daily_reason,
         "Swing Score": swing_score, "Swing Gate": swing_gate, "Swing Reason": swing_reason,
         "Investor Score": investor_score, "Investor Gate": investor_gate, "Investor Reason": investor_reason,
@@ -603,6 +568,31 @@ def show_board(result_df, min_score, show_caution, title="🎯 Top 3 Actionable 
                 for _, row in subset.iterrows():
                     render_card(row, style)
 
+def status_table_class(status):
+    s = str(status)
+    if "Actionable" in s: return "tp-buy"
+    if "Watchlist" in s: return "tp-watch"
+    if "Caution" in s: return "tp-caution"
+    return "tp-risk"
+
+def confidence_class(conf):
+    return {"High":"conf-high","Medium":"conf-med","Low":"conf-low"}.get(str(conf),"conf-med")
+
+def render_bions_table(df, limit=100):
+    v = df.copy().sort_values("Adaptive Score", ascending=False).head(limit).reset_index(drop=True)
+    rows=[]
+    for i, r in v.iterrows():
+        change=r.get("Change 1D",np.nan); change_cls="green" if pd.notna(change) and change>=0 else "red"
+        status=html.escape(str(r.get("Adaptive Status","—"))); conf=html.escape(str(r.get("Confidence","—")))
+        div=html.escape(str(r.get("Divergence Terakhir","—"))); reason=html.escape(str(r.get("Adaptive Reason","—")))
+        code=html.escape(str(r.get("Code","—"))); name=html.escape(str(r.get("Name",code)))
+        def p(vv): return "—" if vv is None or pd.isna(vv) else f"Rp {float(vv):,.0f}"
+        def n(vv): return "—" if vv is None or pd.isna(vv) else f"{float(vv):,.0f}"
+        short=reason[:75]+("…" if len(reason)>75 else "")
+        rows.append(f"<tr><td class='rank'>{i+1}</td><td class='ticker'>{code}</td><td>{name}</td><td class='num'>{p(r.get('Price'))}</td><td class='num {change_cls}'>{fmt_pct(change)}</td><td class='num score'>{fmt_num(r.get('Adaptive Score'),1)}</td><td><span class='table-pill {status_table_class(status)}'>{status}</span></td><td><span class='table-pill {confidence_class(conf)}'>{conf}</span></td><td class='subtle'>{div}</td><td class='buy'>{html.escape(str(r.get('Buy Area','—')))}</td><td class='num buy'>{n(r.get('Buy Trigger'))}</td><td class='num sell'>{n(r.get('Target 1'))}</td><td class='num sell'>{n(r.get('Target 2'))}</td><td class='num sl'>{n(r.get('Stop Loss'))}</td><td title='{reason}'>{short}</td></tr>")
+    table="<div class='table-shell'><table class='bions-table'><thead><tr><th>#</th><th>Kode</th><th>Nama Saham</th><th>Harga</th><th>1D</th><th>Skor</th><th>Status</th><th>Confidence</th><th>Divergence</th><th>Buy Area</th><th>Buy Trigger</th><th>Target 1</th><th>Target 2</th><th>Stop Loss</th><th>Alasan Singkat</th></tr></thead><tbody>"+"".join(rows)+"</tbody></table></div>"
+    st.markdown(table, unsafe_allow_html=True)
+
 # Sidebar
 st.sidebar.header("⚙️ Pengaturan")
 mode = st.sidebar.radio("Mode", ["Scanner Multi-Style", "Analisis 1 Saham"])
@@ -619,8 +609,7 @@ show_board_single = st.sidebar.checkbox(
 universe_text = st.sidebar.text_area("Universe kode IDX", DEFAULT_UNIVERSE, height=145)
 tickers = clean_codes(universe_text)[:max_scan]
 
-st.title("📈 Sanggul Stock Scanner V10.5")
-st.caption("Full IDX Multi-Tier · Adaptive Risk-Gated · Market Regime · Setup & Trigger · Responsive UI")
+st.markdown('<div class="top-banner"><div class="version">V10.5.2</div><div class="version-badge">Divergence · Entry Exit</div></div><div class="brand-sub">SANGGUL STOCK SCANNER · Full IDX Multi-Tier · Adaptive Risk-Gated · Market Regime · Responsive UI</div>', unsafe_allow_html=True)
 st.markdown(
     '<div class="info-box">Daily, Swing, dan Investor memakai aturan berbeda. '
     'CAUTION berarti kandidat belum memenuhi seluruh syarat PASS, bukan berarti data error. '
@@ -762,13 +751,9 @@ else:
     show_board(result_df, min_score, show_caution)
     show_low_price_board(all_result_df, min_score=0)
 
-    st.markdown('<div class="section-title">📋 Enrich Full IDX — Focus-Aware Multi-Style</div>', unsafe_allow_html=True)
-    view = result_df.copy()
-    view["Price Tier"] = view["Price"].apply(price_bucket)
-    view = view.drop(
-        columns=["Daily Reason", "Swing Reason", "Investor Reason"], errors="ignore"
-    ).copy()
-    st.dataframe(view.round(2), use_container_width=True, hide_index=True, height=460)
+    st.markdown('<div class="section-title">📋 Enrich Full IDX — BIONS Style</div>', unsafe_allow_html=True)
+    st.caption("Tabel ringkas: skor, status, confidence, divergence, area entry, target, stop loss, dan alasan utama. Geser horizontal untuk melihat seluruh kolom.")
+    render_bions_table(result_df, limit=max_scan)
     st.download_button(
         "⬇️ Unduh hasil CSV",
         result_df.to_csv(index=False).encode("utf-8-sig"),
