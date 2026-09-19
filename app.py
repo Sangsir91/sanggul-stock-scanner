@@ -420,7 +420,7 @@ def style_gate_v106(style, score, core, hard_fail, rr1, liquidity_ok, mtf_ok, re
         return 'PASS'
     return 'CAUTION'
 
-def analyze(code):
+def analyze(code, liquidity_floor=1.0e9):
     regime_data = market_regime()
     regime = regime_data["regime"]
     raw = download_history(code)
@@ -548,14 +548,17 @@ def analyze(code):
     investor_hard_fail = pd.notna(ma200) and price < ma200 * 0.85
 
     # V10.8 Risk Engine 2.0
-    liquidity_ok = pd.notna(adv20_value) and adv20_value >= 2.5e9
+    daily_liquidity_ok = pd.notna(adv20_value) and adv20_value >= 5.0e9
+    swing_liquidity_ok = pd.notna(adv20_value) and adv20_value >= 3.0e9
+    investor_liquidity_ok = pd.notna(adv20_value) and adv20_value >= 1.0e9
+    liquidity_ok = pd.notna(adv20_value) and adv20_value >= liquidity_floor
     mtf_ok = weekly_trend in ('Bullish','Mixed')
     daily_core_v106 = daily_core and pd.notna(rr1) and rr1 >= 1.5
     swing_core_v106 = swing_core and pd.notna(rr1) and rr1 >= 1.5
     investor_core_v106 = investor_core and pd.notna(rr1) and rr1 >= 1.2
-    daily_gate = style_gate_v106('Trading Harian', daily_score, daily_core_v106, daily_hard_fail, rr1, liquidity_ok, mtf_ok, regime)
-    swing_gate = style_gate_v106('Swing Trading Mingguan', swing_score, swing_core_v106, swing_hard_fail, rr1, liquidity_ok, mtf_ok, regime)
-    investor_gate = style_gate_v106('Investor Jangka Panjang', investor_score, investor_core_v106, investor_hard_fail, rr1, liquidity_ok, mtf_ok, regime)
+    daily_gate = style_gate_v106('Trading Harian', daily_score, daily_core_v106, daily_hard_fail, rr1, daily_liquidity_ok, mtf_ok, regime)
+    swing_gate = style_gate_v106('Swing Trading Mingguan', swing_score, swing_core_v106, swing_hard_fail, rr1, swing_liquidity_ok, mtf_ok, regime)
+    investor_gate = style_gate_v106('Investor Jangka Panjang', investor_score, investor_core_v106, investor_hard_fail, rr1, investor_liquidity_ok, mtf_ok, regime)
 
     overall_score = float(np.clip(max(daily_score, swing_score, investor_score), 0, 100))
     hard_fail_any = daily_hard_fail or swing_hard_fail or investor_hard_fail
@@ -565,7 +568,7 @@ def analyze(code):
     if not mtf_ok: adaptive_reason += '; konfirmasi weekly belum mendukung'
     if pd.notna(rr1) and rr1 < 1.5: adaptive_reason += '; R:R < 1.5x'
 
-    investor_gate = style_gate_v106('Investor Jangka Panjang', investor_score, investor_core_v106, investor_hard_fail, rr1, liquidity_ok, mtf_ok, regime)
+    investor_gate = style_gate_v106('Investor Jangka Panjang', investor_score, investor_core_v106, investor_hard_fail, rr1, investor_liquidity_ok, mtf_ok, regime)
     investor_reason = (
         "tren panjang dan struktur mendukung"
         if investor_core else "tren panjang/return belum cukup kuat"
@@ -612,6 +615,9 @@ def analyze(code):
         "Avg Value 20D": adv20_value,
         "Liquidity Ratio 5D/20D": liquidity_ratio,
         "Liquidity Gate": "PASS" if liquidity_ok else "CAUTION",
+        "Daily Liquidity Gate": "PASS" if daily_liquidity_ok else "CAUTION",
+        "Swing Liquidity Gate": "PASS" if swing_liquidity_ok else "CAUTION",
+        "Investor Liquidity Gate": "PASS" if investor_liquidity_ok else "CAUTION",
         "MTF Gate": "PASS" if mtf_ok else "CAUTION",
         "RR 1": rr1,
         "RR 2": rr2,
@@ -677,19 +683,58 @@ def apply_price_filter(df, selected):
     mask = mapping.get(selected, lambda x: pd.Series(True, index=x.index))(df["Price"])
     return df[mask].copy()
 
-def show_low_price_board(df, min_score=0):
-    st.markdown('<div class="section-title">💰 Top 10 Low-Price Opportunities</div>', unsafe_allow_html=True)
-    st.caption("Papan eksplorasi saham berharga di bawah Rp100. Harga murah bukan sinyal beli; tetap periksa likuiditas, risiko, dan Gate.")
+def low_price_intelligence(row, low_liquidity_floor=0.5e9):
+    """Classify sub-Rp100 stocks into exploratory setup buckets; price alone is never treated as value."""
+    score = 0.0
+    reasons = []
+    rsi, vr = row.get("RSI", np.nan), row.get("Vol Ratio", np.nan)
+    r1, r3 = row.get("Return 1M", np.nan), row.get("Return 3M", np.nan)
+    rr, adv = row.get("RR 1", np.nan), row.get("Avg Value 20D", np.nan)
+    weekly, div = row.get("Weekly Trend", "Unknown"), str(row.get("Divergence Terakhir", ""))
+    price, ma20 = row.get("Price", np.nan), row.get("MA20", np.nan)
+    if pd.notna(r1) and r1 > 0: score += min(18, 8 + r1 * 0.5); reasons.append("momentum 1M positif")
+    if pd.notna(r3) and r3 > 0: score += min(18, 8 + r3 * 0.25); reasons.append("trend 3M positif")
+    if weekly == "Bullish": score += 18; reasons.append("weekly bullish")
+    elif weekly == "Mixed": score += 9
+    if pd.notna(vr):
+        score += min(18, max(0, (vr - 0.8) * 12))
+        if vr >= 1.2: reasons.append("volume meningkat")
+    if pd.notna(price) and pd.notna(ma20) and price > ma20: score += 12; reasons.append("di atas MA20")
+    if pd.notna(rr) and rr >= 1.5: score += 12; reasons.append("R:R memadai")
+    elif pd.notna(rr) and rr >= 1.2: score += 6
+    if pd.notna(adv) and adv >= low_liquidity_floor: score += 8; reasons.append("likuiditas minimum tercapai")
+    if div == "Bullish Regular": score += 8; reasons.append("bullish divergence")
+    if div == "Bearish Regular": score -= 10; reasons.append("bearish divergence")
+    if pd.notna(rsi) and rsi > 78: score -= 8; reasons.append("RSI tinggi")
+    score = float(np.clip(score, 0, 100))
+    hard = (pd.notna(adv) and adv < low_liquidity_floor) or (pd.notna(rsi) and rsi > 85)
+    if hard: stage = "Risk-Off / Thin Liquidity"
+    elif div == "Bullish Regular" and pd.notna(price) and pd.notna(ma20) and price >= ma20: stage = "Bullish Divergence"
+    elif pd.notna(vr) and vr >= 1.5 and pd.notna(r1) and r1 > 0: stage = "Momentum / Acceleration"
+    elif weekly == "Bullish" and pd.notna(price) and pd.notna(ma20) and price > ma20: stage = "Trend Continuation"
+    elif pd.notna(price) and pd.notna(ma20) and price <= ma20 and pd.notna(vr) and vr >= 1.2: stage = "Early Accumulation Watch"
+    else: stage = "Wait for Confirmation"
+    return score, stage, "; ".join(reasons[:4]) if reasons else "belum ada konfirmasi utama"
+
+def show_low_price_board(df, min_score=35, low_liquidity_floor=0.5e9):
+    st.markdown('<div class="section-title">💰 Top 10 Low-Price Opportunities — Intelligence Board</div>', unsafe_allow_html=True)
+    st.caption("Radar khusus saham < Rp100. Ranking memakai momentum, volume, weekly trend, R:R, likuiditas dan divergence — bukan harga murah semata.")
     low = df[df["Price"] < 100].copy()
-    if min_score > 0:
-        low = low[(low[["Daily Score", "Swing Score", "Investor Score"]].max(axis=1) >= min_score)]
     if low.empty:
-        st.info("Belum ada saham di bawah Rp100 yang memenuhi batas score atau berhasil diambil datanya.")
+        st.info("Belum ada saham di bawah Rp100 yang berhasil diambil datanya.")
         return
+    intelligence = low.apply(lambda r: low_price_intelligence(r, low_liquidity_floor), axis=1, result_type="expand")
+    low[["LP Score", "LP Stage", "LP Reason"]] = intelligence
     low["Best Style"] = low[["Daily Score", "Swing Score", "Investor Score"]].idxmax(axis=1).str.replace(" Score", "", regex=False)
     low["Best Score"] = low[["Daily Score", "Swing Score", "Investor Score"]].max(axis=1).round(1)
-    cols = ["Code", "Price", "Best Style", "Best Score", "Daily Gate", "Swing Gate", "Investor Gate", "RSI", "Vol Ratio", "Return 1M", "Return 3M", "Return 6M"]
-    view = low.sort_values(["Best Score", "Vol Ratio"], ascending=False)[cols].head(10).copy()
+    low = low[low["LP Score"] >= min_score]
+    if low.empty:
+        st.info("Tidak ada saham < Rp100 yang memenuhi Low-Price Opportunity Score minimum.")
+        return
+    cols = ["Code", "Price", "LP Score", "LP Stage", "Best Style", "Best Score", "Avg Value 20D", "Weekly Trend", "Vol Ratio", "RSI", "Return 1M", "Return 3M", "RR 1", "Divergence Terakhir", "LP Reason"]
+    view = low.sort_values(["LP Score", "Vol Ratio", "Best Score"], ascending=False)[cols].head(10).copy()
+    view["Avg Value 20D"] = view["Avg Value 20D"] / 1e9
+    view = view.rename(columns={"Avg Value 20D":"Avg Value 20D (Rp M)", "LP Score":"Opportunity Score", "LP Stage":"Opportunity Stage", "LP Reason":"Reason"})
     st.dataframe(view.round(2), use_container_width=True, hide_index=True)
 
 def render_card(row, style):
@@ -782,14 +827,20 @@ min_score = st.sidebar.slider("Minimum score shortlist", 0, 100, 60, 1)
 price_filter = st.sidebar.selectbox("Filter harga saham", ["Semua harga", "Di bawah Rp100", "Rp100–499", "Rp500–1.999", "Rp2.000–4.999", "Rp5.000 ke atas"], index=0)
 show_caution = st.sidebar.checkbox("Tampilkan CAUTION pada shortlist", True)
 unique_top3 = st.sidebar.checkbox("Top 3 antar gaya dibuat berbeda", True, help="Mengurangi pengulangan saham antar Daily, Swing, dan Investor.")
-min_liquidity = st.sidebar.number_input("Min nilai transaksi 20D (Rp miliar)", min_value=0.0, max_value=100.0, value=2.5, step=0.5)
+st.sidebar.markdown("### ⚙️ Adaptive Liquidity Filter")
+daily_liq = st.sidebar.number_input("Daily — Min transaksi 20D (Rp M)", min_value=0.0, max_value=100.0, value=5.0, step=0.5)
+swing_liq = st.sidebar.number_input("Swing — Min transaksi 20D (Rp M)", min_value=0.0, max_value=100.0, value=3.0, step=0.5)
+investor_liq = st.sidebar.number_input("Investor — Min transaksi 20D (Rp M)", min_value=0.0, max_value=100.0, value=1.0, step=0.5)
+low_liq = st.sidebar.number_input("Low-Price — Min transaksi 20D (Rp M)", min_value=0.0, max_value=50.0, value=0.5, step=0.25)
+min_liquidity = st.sidebar.number_input("Filter tabel utama (Rp M)", min_value=0.0, max_value=100.0, value=1.0, step=0.5, help="Filter tampilan utama. Gate tiap gaya memakai ambang adaptif.")
+low_score = st.sidebar.slider("Low-Price Opportunity Score minimum", 0, 100, 35, 5)
 show_board_single = st.sidebar.checkbox(
     "Tampilkan Top 3 pada Analisis 1 Saham", True
 )
 universe_text = st.sidebar.text_area("🔴 Universe kode IDX", DEFAULT_UNIVERSE, height=145, help="Kode saham IDX yang akan dipindai. Teks dibuat merah agar lebih mudah dibaca.")
 tickers = clean_codes(universe_text)[:max_scan]
 
-st.markdown('<div class="hero-pro"><div class="hero-kicker">SANGGUL STOCK SCANNER · NEXT-GEN IDX DECISION DASHBOARD</div><div class="hero-title">V10.8 <span style="color:#5cc8ff">BIONS Fundamental Pro</span></div><div class="hero-desc">Technical + Fundamental + Market Regime + Sector + Risk Engine + Historical Signal Study</div><span class="mini-chip">⚡ Daily</span><span class="mini-chip">📊 Swing</span><span class="mini-chip">🌱 Investor</span><span class="mini-chip">🧠 Fundamental</span><span class="mini-chip">🛡 Risk Engine 2.0</span><span class="mini-chip">📈 Backtest</span></div>', unsafe_allow_html=True)
+st.markdown('<div class="hero-pro"><div class="hero-kicker">SANGGUL STOCK SCANNER · NEXT-GEN IDX DECISION DASHBOARD</div><div class="hero-title">V10.8.1 <span style="color:#5cc8ff">BIONS Decision Intelligence</span></div><div class="hero-desc">Technical + Fundamental + Adaptive Liquidity + Low-Price Intelligence + Risk Engine + Historical Signal Study</div><span class="mini-chip">⚡ Daily</span><span class="mini-chip">📊 Swing</span><span class="mini-chip">🌱 Investor</span><span class="mini-chip">🧠 Fundamental</span><span class="mini-chip">🛡 Risk Engine 2.0</span><span class="mini-chip">📈 Backtest</span><span class="mini-chip">💎 Low-Price Radar</span></div>', unsafe_allow_html=True)
 st.markdown(
     '<div class="info-box">Daily, Swing, dan Investor memakai aturan berbeda. '
     'CAUTION berarti kandidat belum memenuhi seluruh syarat PASS, bukan berarti data error. '
@@ -808,7 +859,7 @@ if not tickers:
 # Single-stock mode: individual analysis first, then Top 3 board.
 if mode == "Analisis 1 Saham":
     selected = st.sidebar.selectbox("Pilih saham", tickers)
-    data = analyze(selected)
+    data = analyze(selected, liquidity_floor=min_liquidity * 1e9)
     if data is None:
         st.error("Data saham tidak tersedia atau histori belum cukup.")
         st.stop()
@@ -937,7 +988,7 @@ else:
     st.metric("Actionable / Watchlist", int(result_df["Adaptive Status"].isin(["Actionable Buy","Watchlist – Strong Setup","Watchlist – Early Setup"]).sum()))
 
     show_board(result_df, min_score, show_caution, unique_styles=unique_top3)
-    show_low_price_board(all_result_df, min_score=0)
+    show_low_price_board(all_result_df, min_score=low_score, low_liquidity_floor=low_liq * 1e9)
 
     # Sector and fundamental overview
     sec = result_df.groupby("Sector", dropna=False).agg(Saham=("Code","count"), AvgFundamental=("Fundamental Score","mean"), AvgTechnical=("Adaptive Score","mean")).reset_index().sort_values("AvgFundamental", ascending=False).head(8)
