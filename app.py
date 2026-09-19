@@ -24,6 +24,9 @@ st.markdown("""
 [data-testid="stHeader"]{background:rgba(4,13,23,.92)}
 [data-testid="stSidebar"]{background:linear-gradient(180deg,#06111e 0%,#0a1e31 100%);border-right:1px solid #18344d}
 [data-testid="stSidebar"] *{color:#e8f2ff !important}[data-testid="stSidebar"] .stCaption{color:#90a8bf !important}
+/* Universe IDX: ticker text dibuat merah agar lebih mudah dibaca */
+[data-testid="stSidebar"] textarea{color:#ff4d5d !important;-webkit-text-fill-color:#ff4d5d !important;caret-color:#ff4d5d !important;font-weight:800 !important;background:#0a1d2f !important;border:1px solid #ff4d5d !important;box-shadow:0 0 0 1px rgba(255,77,93,.12),0 0 14px rgba(255,77,93,.08)}
+[data-testid="stSidebar"] textarea:focus{border-color:#ff6574 !important;box-shadow:0 0 0 2px rgba(255,77,93,.20),0 0 18px rgba(255,77,93,.12)}
 h1,h2,h3{color:#f4f8ff!important;font-weight:850;letter-spacing:-.025em}h1{font-size:2rem!important}
 .section-title{font-size:1.15rem;font-weight:850;margin:1rem 0 .55rem;color:#f4f8ff;display:flex;align-items:center;gap:.4rem}
 .info-box{background:linear-gradient(90deg,#09253d,#0b1c2d);border:1px solid #1d5279;border-left:4px solid var(--blue);border-radius:10px;padding:10px 14px;color:#bfe1ff;font-size:.86rem;box-shadow:0 5px 20px rgba(0,0,0,.18)}
@@ -606,7 +609,7 @@ show_caution = st.sidebar.checkbox("Tampilkan CAUTION pada shortlist", True)
 show_board_single = st.sidebar.checkbox(
     "Tampilkan Top 3 pada Analisis 1 Saham", True
 )
-universe_text = st.sidebar.text_area("Universe kode IDX", DEFAULT_UNIVERSE, height=145)
+universe_text = st.sidebar.text_area("🔴 Universe kode IDX", DEFAULT_UNIVERSE, height=145, help="Kode saham IDX yang akan dipindai. Teks dibuat merah agar lebih mudah dibaca.")
 tickers = clean_codes(universe_text)[:max_scan]
 
 st.markdown('<div class="top-banner"><div class="version">V10.5.2</div><div class="version-badge">Divergence · Entry Exit</div></div><div class="brand-sub">SANGGUL STOCK SCANNER · Full IDX Multi-Tier · Adaptive Risk-Gated · Market Regime · Responsive UI</div>', unsafe_allow_html=True)
