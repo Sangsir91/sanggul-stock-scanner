@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 
 st.set_page_config(
-    page_title="Sanggul Stock Scanner V10.5.2 | BIONS Style",
+    page_title="Sanggul Stock Scanner V10.8 | BIONS Decision Intelligence",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -39,10 +39,11 @@ h1,h2,h3{color:#f4f8ff!important;font-weight:850;letter-spacing:-.025em}h1{font-
 .stSelectbox>div>div,.stTextInput>div>div,.stNumberInput>div>div,.stMultiSelect>div>div{background:#0a1d2f!important;border-color:#21435f!important;color:#fff!important}
 [data-testid="stDataFrame"]{border:1px solid #1b4668;border-radius:10px;overflow:hidden;box-shadow:0 8px 25px rgba(0,0,0,.2)}[data-testid="stExpander"]{border:1px solid #1b4668;border-radius:10px;background:#091827}hr{border-color:#1b3c56}
 .table-shell{border:1px solid #1d4664;border-radius:10px;overflow-x:auto;background:#071522;box-shadow:0 8px 28px rgba(0,0,0,.25)}
-.bions-table{width:100%;min-width:1380px;border-collapse:separate;border-spacing:0;font-size:12px;color:#dcecff}.bions-table th{position:sticky;top:0;background:#0c2236;color:#8fa9c1;text-align:left;font-weight:800;padding:10px 9px;border-bottom:1px solid #27506e;white-space:nowrap;z-index:2}.bions-table td{padding:9px;border-bottom:1px solid #142f46;white-space:nowrap;background:#081725}.bions-table tr:hover td{background:#0c2237}.bions-table .num{text-align:right}.bions-table .rank{color:#ffc107;font-weight:900;text-align:center}.bions-table .ticker{font-weight:900;color:#fff}.bions-table .green{color:#00dc92;font-weight:800}.bions-table .red{color:#ff6574;font-weight:800}.bions-table .score{font-weight:900;color:#fff}.bions-table .subtle{color:#8fa9c1}.bions-table .buy{color:#00dc92}.bions-table .sell{color:#ffb24a}.bions-table .sl{color:#ff5c6d}
+.bions-table{width:100%;min-width:1760px;border-collapse:separate;border-spacing:0;font-size:12px;color:#dcecff}.bions-table th{position:sticky;top:0;background:#0c2236;color:#8fa9c1;text-align:left;font-weight:800;padding:10px 9px;border-bottom:1px solid #27506e;white-space:nowrap;z-index:2}.bions-table td{padding:9px;border-bottom:1px solid #142f46;white-space:nowrap;background:#081725}.bions-table tr:hover td{background:#0c2237}.bions-table .num{text-align:right}.bions-table .rank{color:#ffc107;font-weight:900;text-align:center}.bions-table .ticker{font-weight:900;color:#fff}.bions-table .green{color:#00dc92;font-weight:800}.bions-table .red{color:#ff6574;font-weight:800}.bions-table .score{font-weight:900;color:#fff}.bions-table .subtle{color:#8fa9c1}.bions-table .buy{color:#00dc92}.bions-table .sell{color:#ffb24a}.bions-table .sl{color:#ff5c6d}
 .table-pill{display:inline-block;padding:4px 8px;border-radius:6px;font-size:10px;font-weight:850;border:1px solid}.tp-buy{background:#063c31;color:#00dc92;border-color:#087e64}.tp-watch{background:#063b6a;color:#4da3ff;border-color:#0a78d8}.tp-caution{background:#493607;color:#ffd15c;border-color:#9f7917}.tp-risk{background:#4a1820;color:#ff6b79;border-color:#a73545}.conf-high{background:#063c31;color:#00dc92;border-color:#087e64}.conf-med{background:#493607;color:#ffd15c;border-color:#9f7917}.conf-low{background:#4a1820;color:#ff6b79;border-color:#a73545}
 .top-banner{display:flex;align-items:center;gap:10px;margin-bottom:3px}.version{font-size:2rem;font-weight:950;color:#c76cff}.version-badge{background:#063c31;color:#00dc92;border:1px solid #087e64;padding:5px 10px;border-radius:999px;font-size:.72rem;font-weight:900}.brand-sub{color:#8fa9c1;font-size:.76rem}
 @media(max-width:768px){.block-container{padding:.55rem}.card{min-height:0;padding:11px}.bions-table{min-width:1300px}}
+.hero-pro{background:linear-gradient(135deg,#0b2a46 0%,#081522 48%,#10102d 100%);border:1px solid #1c6da0;border-radius:18px;padding:20px 22px;margin:10px 0 14px;box-shadow:0 14px 45px rgba(0,0,0,.30),inset 0 1px 0 rgba(255,255,255,.04)}.hero-title{font-size:2.35rem;font-weight:950;color:#fff;letter-spacing:-.045em}.hero-kicker{color:#58c7ff;font-weight:850;font-size:.78rem;letter-spacing:.12em;text-transform:uppercase}.hero-desc{color:#9db7ce;margin-top:5px;font-size:.88rem}.mini-chip{display:inline-block;padding:5px 9px;border-radius:999px;margin:7px 5px 0 0;background:#0b3554;border:1px solid #176b9b;color:#bfe8ff;font-size:.68rem;font-weight:800}.metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.kpi{background:linear-gradient(180deg,#0e2941,#081623);border:1px solid #1c4969;border-radius:13px;padding:13px;box-shadow:0 8px 24px rgba(0,0,0,.18)}.kpi-label{color:#7897b0;font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;font-weight:800}.kpi-value{font-size:1.5rem;color:#fff;font-weight:950;margin-top:4px}.kpi-note{font-size:.7rem;color:#90abc0}.glow-blue{border-color:#1683ff;box-shadow:0 0 22px rgba(22,131,255,.13)}.glow-green{border-color:#00d084;box-shadow:0 0 22px rgba(0,208,132,.11)}.glow-orange{border-color:#ff9f1a;box-shadow:0 0 22px rgba(255,159,26,.10)}.glow-red{border-color:#ff4d5d;box-shadow:0 0 22px rgba(255,77,93,.10)}.score-ring{font-size:1.35rem;font-weight:950;color:#fff}.subpanel{background:#081725;border:1px solid #193f5b;border-radius:13px;padding:13px}.tag-blue{color:#63c9ff}.tag-green{color:#00e39a}.tag-yellow{color:#ffd35a}.tag-red{color:#ff6978}.sector-bar{height:7px;border-radius:10px;background:#142c40;overflow:hidden}.sector-fill{height:100%;background:linear-gradient(90deg,#0877ff,#00d084)}@media(max-width:900px){.metric-grid{grid-template-columns:repeat(2,1fr)}.hero-title{font-size:1.8rem}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -244,6 +245,62 @@ def latest(series):
     return float(value) if pd.notna(value) else np.nan
 
 
+@st.cache_data(ttl=21600, show_spinner=False)
+def fundamental_snapshot(code):
+    """Fetch public Yahoo Finance company/fundamental fields. Missing values remain unavailable."""
+    out = {"Sector":"Unknown","Industry":"Unknown","Fundamental Score":50.0,
+           "PE":np.nan,"PB":np.nan,"ROE":np.nan,"Profit Margin":np.nan,
+           "Revenue Growth":np.nan,"Earnings Growth":np.nan,"Debt/Equity":np.nan,
+           "Market Cap":np.nan,"Fundamental Quality":"Limited Data"}
+    try:
+        t = yf.Ticker(yf_code(code))
+        info = t.info or {}
+        out["Sector"] = info.get("sector") or "Unknown"
+        out["Industry"] = info.get("industry") or "Unknown"
+        vals = {
+            "PE": info.get("trailingPE"), "PB": info.get("priceToBook"),
+            "ROE": info.get("returnOnEquity"), "Profit Margin": info.get("profitMargins"),
+            "Revenue Growth": info.get("revenueGrowth"), "Earnings Growth": info.get("earningsGrowth"),
+            "Debt/Equity": info.get("debtToEquity"), "Market Cap": info.get("marketCap")
+        }
+        for k,v in vals.items():
+            try: out[k] = float(v) if v is not None else np.nan
+            except Exception: pass
+
+        score = 50.0; evidence = 0
+        # Valuation: lower relative multiples are not automatically better; reward reasonable positive values.
+        if pd.notna(out["PE"]):
+            evidence += 1; score += 8 if 0 < out["PE"] <= 15 else (4 if out["PE"] <= 25 else -4 if out["PE"] > 40 else 0)
+        if pd.notna(out["PB"]):
+            evidence += 1; score += 7 if 0 < out["PB"] <= 2.5 else (3 if out["PB"] <= 4 else -3 if out["PB"] > 8 else 0)
+        if pd.notna(out["ROE"]):
+            evidence += 1; score += 10 if out["ROE"] >= .15 else (5 if out["ROE"] >= .08 else -5 if out["ROE"] < 0 else 0)
+        if pd.notna(out["Profit Margin"]):
+            evidence += 1; score += 8 if out["Profit Margin"] >= .10 else (3 if out["Profit Margin"] >= .03 else -5 if out["Profit Margin"] < 0 else 0)
+        if pd.notna(out["Revenue Growth"]):
+            evidence += 1; score += 8 if out["Revenue Growth"] >= .10 else (3 if out["Revenue Growth"] > 0 else -5)
+        if pd.notna(out["Earnings Growth"]):
+            evidence += 1; score += 8 if out["Earnings Growth"] >= .10 else (3 if out["Earnings Growth"] > 0 else -5)
+        if pd.notna(out["Debt/Equity"]):
+            evidence += 1; score += 6 if out["Debt/Equity"] <= 80 else (2 if out["Debt/Equity"] <= 150 else -6 if out["Debt/Equity"] > 250 else 0)
+        out["Fundamental Score"] = float(np.clip(score,0,100))
+        out["Fundamental Quality"] = "Strong Data" if evidence >= 5 else ("Partial Data" if evidence >= 2 else "Limited Data")
+    except Exception:
+        pass
+    return out
+
+def simple_backtest(x, horizon=10):
+    """Historical technical signal study: signal = close>MA20, RSI 45-72, volume ratio >=0.8.
+    Returns average forward return, win rate and sample count. Not a trading recommendation."""
+    d = add_indicators(x.copy())
+    sig = (d["Close"] > d["MA20"]) & (d["RSI"].between(45,72)) & (d["VolRatio"] >= .8)
+    fwd = d["Close"].shift(-horizon) / d["Close"] - 1
+    vals = fwd[sig].dropna()
+    if len(vals)==0:
+        return {"Backtest N":0,"Backtest Win Rate":np.nan,"Backtest Avg Return":np.nan,"Backtest Median Return":np.nan}
+    return {"Backtest N":int(len(vals)),"Backtest Win Rate":float((vals>0).mean()*100),"Backtest Avg Return":float(vals.mean()*100),"Backtest Median Return":float(vals.median()*100)}
+
+
 @st.cache_data(ttl=900, show_spinner=False)
 def market_regime():
     """Determine broad IDX regime using IHSG (^JKSE) trend and momentum."""
@@ -296,6 +353,73 @@ def score_reason(score, trend_ok, momentum_ok, volume_ok, rs_ok, risk_ok, trigge
     parts.append(f"trigger: {trigger}")
     return "; ".join(parts)
 
+
+def weekly_trend_state(x):
+    """Approximate higher-timeframe confirmation from daily data resampled to weekly."""
+    try:
+        w = x[['Close']].resample('W-FRI').last().dropna()
+        if len(w) < 30:
+            return 'Unknown', np.nan
+        ma10 = w['Close'].rolling(10).mean().iloc[-1]
+        ma20 = w['Close'].rolling(20).mean().iloc[-1]
+        px = w['Close'].iloc[-1]
+        if pd.notna(ma10) and pd.notna(ma20):
+            if px > ma10 > ma20: return 'Bullish', float(px/ma20-1)*100
+            if px < ma10 < ma20: return 'Bearish', float(px/ma20-1)*100
+            return 'Mixed', float(px/ma20-1)*100
+    except Exception:
+        pass
+    return 'Unknown', np.nan
+
+def liquidity_metrics(x):
+    """Value-traded based liquidity; more useful than raw volume across different price levels."""
+    value = x['Close'] * x['Volume']
+    adv20 = value.tail(20).mean() if len(value) >= 20 else np.nan
+    adv5 = value.tail(5).mean() if len(value) >= 5 else np.nan
+    ratio = adv5 / adv20 if pd.notna(adv5) and pd.notna(adv20) and adv20 > 0 else np.nan
+    return adv20, ratio
+
+def rr_metrics(price, stop, target1, target2):
+    if any(pd.isna(v) for v in [price, stop, target1]):
+        return np.nan, np.nan
+    risk = price - stop
+    reward = max(target1-price, 0)
+    rr1 = reward/risk if risk > 0 else np.nan
+    rr2 = max(target2-price,0)/risk if risk > 0 and pd.notna(target2) else np.nan
+    return rr1, rr2
+
+def divergence_age_days(x, divergence):
+    if divergence.get('date') in (None, '—'):
+        return np.nan
+    try:
+        d = pd.Timestamp(divergence['date'])
+        return max((x.index[-1].normalize() - d.normalize()).days, 0)
+    except Exception:
+        return np.nan
+
+def setup_type(breakout, price, ma20, divergence, rsi):
+    if breakout:
+        return 'Breakout + Volume' if pd.notna(rsi) and rsi >= 50 else 'Breakout'
+    if divergence.get('type') == 'Bullish Regular' and pd.notna(ma20) and price >= ma20:
+        return 'Bullish Divergence / Reclaim'
+    if pd.notna(ma20) and price > ma20:
+        return 'Trend Continuation / Pullback'
+    return 'Wait for Reclaim'
+
+def style_gate_v106(style, score, core, hard_fail, rr1, liquidity_ok, mtf_ok, regime):
+    """Risk gate 2.0: combines score, structure, liquidity, multi-timeframe and R:R."""
+    if hard_fail:
+        return 'FAIL'
+    rr_ok = pd.notna(rr1) and rr1 >= (1.5 if style != 'Investor Jangka Panjang' else 1.2)
+    threshold = {
+        'Trading Harian': {'Bullish':67,'Sideways':72,'Bearish':78},
+        'Swing Trading Mingguan': {'Bullish':68,'Sideways':73,'Bearish':79},
+        'Investor Jangka Panjang': {'Bullish':65,'Sideways':70,'Bearish':76},
+    }[style].get(regime, 72)
+    if score >= threshold and core and liquidity_ok and mtf_ok and rr_ok:
+        return 'PASS'
+    return 'CAUTION'
+
 def analyze(code):
     regime_data = market_regime()
     regime = regime_data["regime"]
@@ -313,6 +437,14 @@ def analyze(code):
     breakout = bool(x["Breakout20"].iloc[-1]) if pd.notna(x["Breakout20"].iloc[-1]) else False
     divergence = detect_latest_divergence(x)
     areas = trading_areas(x, price, atr, divergence)
+    weekly_trend, weekly_vs_ma20 = weekly_trend_state(x)
+    adv20_value, liquidity_ratio = liquidity_metrics(x)
+    fundamentals = fundamental_snapshot(code)
+    backtest = simple_backtest(x)
+    divergence_age = divergence_age_days(x, divergence)
+    rr1, rr2 = rr_metrics(price, areas["Stop Loss"], areas["Target 1"], areas["Target 2"])
+    setup = setup_type(breakout, price, ma20, divergence, rsi)
+    price_vs_ma20 = ((price/ma20)-1)*100 if pd.notna(ma20) and ma20 else np.nan
 
     change_1d = period_return(close, 1)
     r1, r3, r6, r2 = (
@@ -389,6 +521,11 @@ def analyze(code):
     investor_score += 15 if pd.notna(rsi) and 40 <= rsi <= 75 else 7
     investor_score += 10 if pd.notna(ma50) and price > ma50 else 0
     investor_score = float(np.clip(investor_score, 0, 100))
+    # Fundamental overlay is strongest for Investor style, lighter for Swing/Daily.
+    fscore = fundamentals["Fundamental Score"]
+    investor_score = float(np.clip(investor_score * 0.70 + fscore * 0.30, 0, 100))
+    swing_score = float(np.clip(swing_score * 0.90 + fscore * 0.10, 0, 100))
+    daily_score = float(np.clip(daily_score * 0.95 + fscore * 0.05, 0, 100))
 
     # Adaptive cross-style adjustments: reward alignment and penalize conflicting signals.
     trend_ok = bool(pd.notna(ma20) and pd.notna(ma50) and price > ma20 > ma50)
@@ -410,14 +547,25 @@ def analyze(code):
     investor_core = pd.notna(ma200) and price > ma200 and pd.notna(r6) and r6 > -5
     investor_hard_fail = pd.notna(ma200) and price < ma200 * 0.85
 
-    overall_score = float(max(daily_score, swing_score, investor_score))
+    # V10.8 Risk Engine 2.0
+    liquidity_ok = pd.notna(adv20_value) and adv20_value >= 2.5e9
+    mtf_ok = weekly_trend in ('Bullish','Mixed')
+    daily_core_v106 = daily_core and pd.notna(rr1) and rr1 >= 1.5
+    swing_core_v106 = swing_core and pd.notna(rr1) and rr1 >= 1.5
+    investor_core_v106 = investor_core and pd.notna(rr1) and rr1 >= 1.2
+    daily_gate = style_gate_v106('Trading Harian', daily_score, daily_core_v106, daily_hard_fail, rr1, liquidity_ok, mtf_ok, regime)
+    swing_gate = style_gate_v106('Swing Trading Mingguan', swing_score, swing_core_v106, swing_hard_fail, rr1, liquidity_ok, mtf_ok, regime)
+    investor_gate = style_gate_v106('Investor Jangka Panjang', investor_score, investor_core_v106, investor_hard_fail, rr1, liquidity_ok, mtf_ok, regime)
+
+    overall_score = float(np.clip(max(daily_score, swing_score, investor_score), 0, 100))
     hard_fail_any = daily_hard_fail or swing_hard_fail or investor_hard_fail
     adaptive_status = adaptive_label(overall_score, hard_fail_any, regime)
     adaptive_reason = score_reason(overall_score, trend_ok, momentum_ok, volume_ok, rs_ok, risk_ok, trigger)
+    if not liquidity_ok: adaptive_reason += '; likuiditas nilai transaksi perlu diperhatikan'
+    if not mtf_ok: adaptive_reason += '; konfirmasi weekly belum mendukung'
+    if pd.notna(rr1) and rr1 < 1.5: adaptive_reason += '; R:R < 1.5x'
 
-    investor_gate = "FAIL" if investor_hard_fail else (
-        "PASS" if investor_score >= 65 and investor_core else "CAUTION"
-    )
+    investor_gate = style_gate_v106('Investor Jangka Panjang', investor_score, investor_core_v106, investor_hard_fail, rr1, liquidity_ok, mtf_ok, regime)
     investor_reason = (
         "tren panjang dan struktur mendukung"
         if investor_core else "tren panjang/return belum cukup kuat"
@@ -444,10 +592,31 @@ def analyze(code):
         "Investor Score": investor_score, "Investor Gate": investor_gate, "Investor Reason": investor_reason,
         "Primary Style": primary,
         "Market Regime": regime,
+        "Sector": fundamentals["Sector"], "Industry": fundamentals["Industry"],
+        "Fundamental Score": fundamentals["Fundamental Score"], "Fundamental Quality": fundamentals["Fundamental Quality"],
+        "PE": fundamentals["PE"], "PB": fundamentals["PB"], "ROE": fundamentals["ROE"],
+        "Profit Margin": fundamentals["Profit Margin"], "Revenue Growth": fundamentals["Revenue Growth"],
+        "Earnings Growth": fundamentals["Earnings Growth"], "Debt/Equity": fundamentals["Debt/Equity"],
+        "Market Cap": fundamentals["Market Cap"],
+        "Backtest N": backtest["Backtest N"], "Backtest Win Rate": backtest["Backtest Win Rate"],
+        "Backtest Avg Return": backtest["Backtest Avg Return"], "Backtest Median Return": backtest["Backtest Median Return"],
+        "Foreign Flow": "N/A — data source not connected",
         "Adaptive Score": overall_score,
         "Adaptive Status": adaptive_status,
         "Adaptive Reason": adaptive_reason,
         "Trigger": trigger,
+        "Setup Type": setup,
+        "Weekly Trend": weekly_trend,
+        "Weekly vs MA20 %": weekly_vs_ma20,
+        "Price vs MA20 %": price_vs_ma20,
+        "Avg Value 20D": adv20_value,
+        "Liquidity Ratio 5D/20D": liquidity_ratio,
+        "Liquidity Gate": "PASS" if liquidity_ok else "CAUTION",
+        "MTF Gate": "PASS" if mtf_ok else "CAUTION",
+        "RR 1": rr1,
+        "RR 2": rr2,
+        "RR Gate": "PASS" if pd.notna(rr1) and rr1 >= 1.5 else "CAUTION",
+        "Divergence Age Days": divergence_age,
         "Divergence Terakhir": divergence["type"],
         "Divergence Date": divergence["date"],
         "Divergence Area": (f"Rp {divergence['price']:,.0f}" if pd.notna(divergence["price"]) else "—"),
@@ -548,10 +717,11 @@ def render_card(row, style):
     """
     st.markdown(html, unsafe_allow_html=True)
 
-def show_board(result_df, min_score, show_caution, title="🎯 Top 3 Actionable Picks — Risk-Gated"):
+def show_board(result_df, min_score, show_caution, title="🎯 Top 3 Actionable Picks — Risk-Gated 2.0", unique_styles=True):
     st.markdown(f'<div class="section-title">{title}</div>', unsafe_allow_html=True)
-    st.caption("Top 3 dipilih terpisah untuk setiap gaya. PASS diprioritaskan, lalu CAUTION; FAIL tidak dimasukkan. Area buy/sell adalah estimasi berbasis support-resistance dan ATR, bukan perintah transaksi otomatis.")
+    st.caption("V10.8 menambahkan Multi-Timeframe confirmation, nilai transaksi 20D, R:R, dan Risk Engine 2.0. PASS diprioritaskan; CAUTION tetap ditampilkan bila dipilih. Top 3 antar gaya dapat dibuat berbeda.")
     columns = st.columns(3)
+    used = set()
     for column, style in zip(columns, STYLES):
         with column:
             meta = STYLES[style]
@@ -561,13 +731,14 @@ def show_board(result_df, min_score, show_caution, title="🎯 Top 3 Actionable 
             subset = subset[subset[meta["gate"]] != "FAIL"]
             if not show_caution:
                 subset = subset[subset[meta["gate"]] == "PASS"]
+            if unique_styles:
+                subset = subset[~subset["Code"].isin(used)]
             subset["_gate_order"] = subset[meta["gate"]].map({"PASS": 0, "CAUTION": 1})
-            subset = subset.sort_values(
-                ["_gate_order", meta["score"]], ascending=[True, False]
-            ).head(3)
+            subset = subset.sort_values(["_gate_order", meta["score"], "RR 1"], ascending=[True, False, False], na_position="last").head(3)
             if subset.empty:
                 st.info("Belum ada kandidat pada filter gaya ini.")
             else:
+                used.update(subset["Code"].tolist())
                 for _, row in subset.iterrows():
                     render_card(row, style)
 
@@ -592,8 +763,12 @@ def render_bions_table(df, limit=100):
         def p(vv): return "—" if vv is None or pd.isna(vv) else f"Rp {float(vv):,.0f}"
         def n(vv): return "—" if vv is None or pd.isna(vv) else f"{float(vv):,.0f}"
         short=reason[:75]+("…" if len(reason)>75 else "")
-        rows.append(f"<tr><td class='rank'>{i+1}</td><td class='ticker'>{code}</td><td>{name}</td><td class='num'>{p(r.get('Price'))}</td><td class='num {change_cls}'>{fmt_pct(change)}</td><td class='num score'>{fmt_num(r.get('Adaptive Score'),1)}</td><td><span class='table-pill {status_table_class(status)}'>{status}</span></td><td><span class='table-pill {confidence_class(conf)}'>{conf}</span></td><td class='subtle'>{div}</td><td class='buy'>{html.escape(str(r.get('Buy Area','—')))}</td><td class='num buy'>{n(r.get('Buy Trigger'))}</td><td class='num sell'>{n(r.get('Target 1'))}</td><td class='num sell'>{n(r.get('Target 2'))}</td><td class='num sl'>{n(r.get('Stop Loss'))}</td><td title='{reason}'>{short}</td></tr>")
-    table="<div class='table-shell'><table class='bions-table'><thead><tr><th>#</th><th>Kode</th><th>Nama Saham</th><th>Harga</th><th>1D</th><th>Skor</th><th>Status</th><th>Confidence</th><th>Divergence</th><th>Buy Area</th><th>Buy Trigger</th><th>Target 1</th><th>Target 2</th><th>Stop Loss</th><th>Alasan Singkat</th></tr></thead><tbody>"+"".join(rows)+"</tbody></table></div>"
+        rr = r.get('RR 1', np.nan)
+        liq = r.get('Avg Value 20D', np.nan)
+        mtf = html.escape(str(r.get('Weekly Trend','—')))
+        setup = html.escape(str(r.get('Setup Type','—')))
+        rows.append(f"<tr><td class='rank'>{i+1}</td><td class='ticker'>{code}</td><td>{name}</td><td class='num'>{p(r.get('Price'))}</td><td class='num {change_cls}'>{fmt_pct(change)}</td><td class='num score'>{fmt_num(r.get('Adaptive Score'),1)}</td><td><span class='table-pill {status_table_class(status)}'>{status}</span></td><td><span class='table-pill {confidence_class(conf)}'>{conf}</span></td><td>{setup}</td><td>{mtf}</td><td class='num'>{fmt_num(rr,2)}x</td><td class='num'>{fmt_num(liq/1e9 if pd.notna(liq) else np.nan,1)}</td><td>{html.escape(str(r.get('Sector','Unknown')))}</td><td class='num score'>{fmt_num(r.get('Fundamental Score'),1)}</td><td class='num'>{fmt_num(r.get('PE'),1)}</td><td class='num'>{fmt_num(r.get('PB'),2)}</td><td class='num'>{fmt_pct(r.get('ROE')*100) if pd.notna(r.get('ROE')) else '—'}</td><td class='num'>{fmt_num(r.get('Backtest Win Rate'),1)}</td><td class='subtle'>{div}</td><td class='buy'>{html.escape(str(r.get('Buy Area','—')))}</td><td class='num buy'>{n(r.get('Buy Trigger'))}</td><td class='num sell'>{n(r.get('Target 1'))}</td><td class='num sell'>{n(r.get('Target 2'))}</td><td class='num sl'>{n(r.get('Stop Loss'))}</td><td title='{reason}'>{short}</td></tr>")
+    table="<div class='table-shell'><table class='bions-table'><thead><tr><th>#</th><th>Kode</th><th>Nama Saham</th><th>Harga</th><th>1D</th><th>Skor</th><th>Status</th><th>Confidence</th><th>Setup</th><th>Weekly Trend</th><th>R:R T1</th><th>Avg Value 20D<br>(Rp M)</th><th>Sector</th><th>Fund. Score</th><th>PE</th><th>PB</th><th>ROE</th><th>BT Win%</th><th>Divergence</th><th>Buy Area</th><th>Buy Trigger</th><th>Target 1</th><th>Target 2</th><th>Stop Loss</th><th>Alasan Singkat</th></tr></thead><tbody>"+"".join(rows)+"</tbody></table></div>"
     st.markdown(table, unsafe_allow_html=True)
 
 # Sidebar
@@ -606,13 +781,15 @@ max_scan = st.sidebar.slider("Maksimum saham dipindai", 5, 200, 100, 5)
 min_score = st.sidebar.slider("Minimum score shortlist", 0, 100, 60, 1)
 price_filter = st.sidebar.selectbox("Filter harga saham", ["Semua harga", "Di bawah Rp100", "Rp100–499", "Rp500–1.999", "Rp2.000–4.999", "Rp5.000 ke atas"], index=0)
 show_caution = st.sidebar.checkbox("Tampilkan CAUTION pada shortlist", True)
+unique_top3 = st.sidebar.checkbox("Top 3 antar gaya dibuat berbeda", True, help="Mengurangi pengulangan saham antar Daily, Swing, dan Investor.")
+min_liquidity = st.sidebar.number_input("Min nilai transaksi 20D (Rp miliar)", min_value=0.0, max_value=100.0, value=2.5, step=0.5)
 show_board_single = st.sidebar.checkbox(
     "Tampilkan Top 3 pada Analisis 1 Saham", True
 )
 universe_text = st.sidebar.text_area("🔴 Universe kode IDX", DEFAULT_UNIVERSE, height=145, help="Kode saham IDX yang akan dipindai. Teks dibuat merah agar lebih mudah dibaca.")
 tickers = clean_codes(universe_text)[:max_scan]
 
-st.markdown('<div class="top-banner"><div class="version">V10.5.2</div><div class="version-badge">Divergence · Entry Exit</div></div><div class="brand-sub">SANGGUL STOCK SCANNER · Full IDX Multi-Tier · Adaptive Risk-Gated · Market Regime · Responsive UI</div>', unsafe_allow_html=True)
+st.markdown('<div class="hero-pro"><div class="hero-kicker">SANGGUL STOCK SCANNER · NEXT-GEN IDX DECISION DASHBOARD</div><div class="hero-title">V10.8 <span style="color:#5cc8ff">BIONS Fundamental Pro</span></div><div class="hero-desc">Technical + Fundamental + Market Regime + Sector + Risk Engine + Historical Signal Study</div><span class="mini-chip">⚡ Daily</span><span class="mini-chip">📊 Swing</span><span class="mini-chip">🌱 Investor</span><span class="mini-chip">🧠 Fundamental</span><span class="mini-chip">🛡 Risk Engine 2.0</span><span class="mini-chip">📈 Backtest</span></div>', unsafe_allow_html=True)
 st.markdown(
     '<div class="info-box">Daily, Swing, dan Investor memakai aturan berbeda. '
     'CAUTION berarti kandidat belum memenuhi seluruh syarat PASS, bukan berarti data error. '
@@ -622,6 +799,7 @@ st.markdown(
 
 regime_now = market_regime()
 st.markdown(f"**Market Regime IHSG:** `{regime_now["regime"]}` · RSI IHSG: `{fmt_num(regime_now["rsi"],1)}` · Threshold adaptif aktif", unsafe_allow_html=True)
+st.markdown(f"<div class='metric-grid'><div class='kpi glow-blue'><div class='kpi-label'>IHSG Regime</div><div class='kpi-value'>{regime_now["regime"]}</div><div class='kpi-note'>RSI {fmt_num(regime_now["rsi"],1)}</div></div><div class='kpi glow-green'><div class='kpi-label'>Scanner Engine</div><div class='kpi-value'>V10.8</div><div class='kpi-note'>Adaptive + Fundamental</div></div><div class='kpi glow-orange'><div class='kpi-label'>Data Horizon</div><div class='kpi-value'>2Y</div><div class='kpi-note'>Analisis 1M / 3M / 6M / 2Y</div></div><div class='kpi glow-red'><div class='kpi-label'>Flow Data</div><div class='kpi-value'>N/A</div><div class='kpi-note'>Tidak difabrikasi tanpa sumber valid</div></div></div>", unsafe_allow_html=True)
 
 if not tickers:
     st.warning("Universe kosong. Masukkan minimal satu kode saham.")
@@ -642,6 +820,11 @@ if mode == "Analisis 1 Saham":
     m3.metric("Swing Score", f"{data['Swing Score']:.1f}", data["Swing Gate"])
     m4.metric("Investor Score", f"{data['Investor Score']:.1f}", data["Investor Gate"])
     m5.metric("Primary Style", data["Primary Style"])
+    q1, q2, q3, q4 = st.columns(4)
+    q1.metric("R:R T1", f"{fmt_num(data['RR 1'],2)}x" if pd.notna(data['RR 1']) else "—")
+    q2.metric("Avg Value 20D", f"Rp {fmt_num(data['Avg Value 20D']/1e9,1)} M" if pd.notna(data['Avg Value 20D']) else "—")
+    q3.metric("Weekly Trend", data['Weekly Trend'])
+    q4.metric("Setup", data['Setup Type'])
 
     days = {"1 Bulan": 22, "3 Bulan": 66, "6 Bulan": 132, "1 Tahun": 264, "2 Tahun": 520}
     plot_df = data["_df"].tail(days[period_label])
@@ -714,7 +897,7 @@ if mode == "Analisis 1 Saham":
                     rows.append({k: v for k, v in item.items() if not k.startswith("_")})
         board_df = pd.DataFrame(rows)
         if not board_df.empty:
-            show_board(board_df, min_score, show_caution)
+            show_board(board_df, min_score, show_caution, unique_styles=unique_top3)
 
 else:
     if st.button("🚀 Jalankan / Refresh Scan", type="primary", use_container_width=True):
@@ -738,6 +921,8 @@ else:
         st.stop()
 
     all_result_df = result_df.copy()
+    # User-adjustable liquidity floor for the V10.8 shortlist.
+    result_df = result_df[(result_df["Avg Value 20D"].fillna(0) >= min_liquidity * 1e9)].copy()
     result_df = apply_price_filter(result_df, price_filter)
     if result_df.empty:
         st.warning("Tidak ada saham pada filter harga yang dipilih. Pilih Semua harga atau ubah filter.")
@@ -751,12 +936,22 @@ else:
     e.metric("Primary terbanyak", result_df["Primary Style"].value_counts().index[0])
     st.metric("Actionable / Watchlist", int(result_df["Adaptive Status"].isin(["Actionable Buy","Watchlist – Strong Setup","Watchlist – Early Setup"]).sum()))
 
-    show_board(result_df, min_score, show_caution)
+    show_board(result_df, min_score, show_caution, unique_styles=unique_top3)
     show_low_price_board(all_result_df, min_score=0)
 
-    st.markdown('<div class="section-title">📋 Enrich Full IDX — BIONS Style</div>', unsafe_allow_html=True)
-    st.caption("Tabel ringkas: skor, status, confidence, divergence, area entry, target, stop loss, dan alasan utama. Geser horizontal untuk melihat seluruh kolom.")
+    # Sector and fundamental overview
+    sec = result_df.groupby("Sector", dropna=False).agg(Saham=("Code","count"), AvgFundamental=("Fundamental Score","mean"), AvgTechnical=("Adaptive Score","mean")).reset_index().sort_values("AvgFundamental", ascending=False).head(8)
+    if not sec.empty:
+        st.markdown('<div class="section-title">🏢 Sector & Fundamental Strength</div>', unsafe_allow_html=True)
+        cols = st.columns(min(4,len(sec)))
+        for col, (_, sr) in zip(cols, sec.iterrows()):
+            with col:
+                st.markdown(f'<div class="subpanel"><b class="tag-blue">{html.escape(str(sr["Sector"]))}</b><br><span class="score-ring">{sr["AvgFundamental"]:.1f}</span> <span class="tag-green">Fund.</span><br><span style="color:#829db5;font-size:.7rem">{int(sr["Saham"])} saham · Tech {sr["AvgTechnical"]:.1f}</span></div>', unsafe_allow_html=True)
+    
+    st.markdown('<div class="section-title">📋 Enrich Full IDX — BIONS V10.8 Pro</div>', unsafe_allow_html=True)
+    st.caption("Tabel V10.8: skor, status, setup, weekly trend, R:R, likuiditas, divergence, area entry, target, stop loss, dan alasan utama. Geser horizontal untuk melihat seluruh kolom.")
     render_bions_table(result_df, limit=max_scan)
+    st.info("V10.8 Risk Engine: PASS membutuhkan kombinasi score, struktur gaya, likuiditas nilai transaksi, konfirmasi weekly, dan R:R. Threshold bersifat adaptif terhadap regime IHSG.")
     st.download_button(
         "⬇️ Unduh hasil CSV",
         result_df.to_csv(index=False).encode("utf-8-sig"),
