@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 
 st.set_page_config(
-    page_title="Sanggul Stock Scanner V10.9 | BIONS Adaptive Decision Engine",
+    page_title="Sanggul Stock Scanner V10.9.2 | BIONS IDX Foreign Flow Intelligence",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -27,6 +27,13 @@ st.markdown("""
 /* Universe IDX: ticker text dibuat merah agar lebih mudah dibaca */
 [data-testid="stSidebar"] textarea{color:#ff4d5d !important;-webkit-text-fill-color:#ff4d5d !important;caret-color:#ff4d5d !important;font-weight:800 !important;background:#0a1d2f !important;border:1px solid #ff4d5d !important;box-shadow:0 0 0 1px rgba(255,77,93,.12),0 0 14px rgba(255,77,93,.08)}
 [data-testid="stSidebar"] textarea:focus{border-color:#ff6574 !important;box-shadow:0 0 0 2px rgba(255,77,93,.20),0 0 18px rgba(255,77,93,.12)}
+/* Foreign Flow CSV uploader: gunakan hijau agar teks tetap terbaca pada tema gelap */
+[data-testid="stSidebar"] [data-testid="stFileUploader"] label{color:#00d084 !important;font-weight:850 !important}
+[data-testid="stSidebar"] [data-testid="stFileUploader"] section{background:#0b1c2d !important;border:1px solid #1e405d !important;border-radius:10px !important}
+[data-testid="stSidebar"] [data-testid="stFileUploader"] button{color:#00d084 !important;background:#0a1d2f !important;border:1px solid #00a86b !important}
+[data-testid="stSidebar"] [data-testid="stFileUploader"] button span{color:#00d084 !important}
+[data-testid="stSidebar"] [data-testid="stFileUploader"] small{color:#00d084 !important}
+[data-testid="stSidebar"] [data-testid="stFileUploader"] [data-testid="stMarkdownContainer"] p{color:#00d084 !important}
 h1,h2,h3{color:#f4f8ff!important;font-weight:850;letter-spacing:-.025em}h1{font-size:2rem!important}
 .section-title{font-size:1.15rem;font-weight:850;margin:1rem 0 .55rem;color:#f4f8ff;display:flex;align-items:center;gap:.4rem}
 .info-box{background:linear-gradient(90deg,#09253d,#0b1c2d);border:1px solid #1d5279;border-left:4px solid var(--blue);border-radius:10px;padding:10px 14px;color:#bfe1ff;font-size:.86rem;box-shadow:0 5px 20px rgba(0,0,0,.18)}
@@ -118,9 +125,9 @@ def ihsg_history():
 def market_returns():
     d = ihsg_history()
     if d.empty:
-        return {"1M":np.nan,"3M":np.nan,"6M":np.nan,"2Y":np.nan}
+        return {"10D":np.nan,"1M":np.nan,"3M":np.nan,"6M":np.nan,"2Y":np.nan}
     c=d["Close"]
-    return {"1M":period_return(c,21),"3M":period_return(c,63),"6M":period_return(c,126),"2Y":period_return(c,504)}
+    return {"10D":period_return(c,10),"1M":period_return(c,21),"3M":period_return(c,63),"6M":period_return(c,126),"2Y":period_return(c,504)}
 
 def clean_codes(text):
     result = []
@@ -394,12 +401,106 @@ def weekly_trend_state(x):
     return 'Unknown', np.nan
 
 def liquidity_metrics(x):
-    """Value-traded based liquidity; more useful than raw volume across different price levels."""
+    """Liquidity Intelligence 2.0: average, median, consistency and acceleration."""
     value = x['Close'] * x['Volume']
-    adv20 = value.tail(20).mean() if len(value) >= 20 else np.nan
-    adv5 = value.tail(5).mean() if len(value) >= 5 else np.nan
+    tail20 = value.tail(20)
+    tail5 = value.tail(5)
+    adv20 = tail20.mean() if len(tail20) >= 20 else np.nan
+    med20 = tail20.median() if len(tail20) >= 20 else np.nan
+    adv5 = tail5.mean() if len(tail5) >= 5 else np.nan
     ratio = adv5 / adv20 if pd.notna(adv5) and pd.notna(adv20) and adv20 > 0 else np.nan
-    return adv20, ratio
+    consistency = (tail20 >= adv20 * 0.5).mean() * 100 if pd.notna(adv20) and len(tail20) >= 20 else np.nan
+    median_ratio = med20 / adv20 if pd.notna(med20) and pd.notna(adv20) and adv20 > 0 else np.nan
+    # A robust liquidity score: level, consistency and recent acceleration.
+    level_score = np.clip(np.log10(max(adv20, 1)) - 7, 0, 3) / 3 * 45 if pd.notna(adv20) else 0
+    consistency_score = np.clip((consistency if pd.notna(consistency) else 0), 0, 100) * 0.25
+    accel_score = np.clip((ratio if pd.notna(ratio) else 0) / 2.0, 0, 1) * 20
+    median_score = np.clip((median_ratio if pd.notna(median_ratio) else 0), 0, 1) * 10
+    liquidity_score = float(np.clip(level_score + consistency_score + accel_score + median_score, 0, 100))
+    return adv20, ratio, med20, consistency, liquidity_score
+
+def normalize_foreign_flow(df):
+    """Normalize optional foreign-flow CSV into per-stock daily records.
+
+    Supported columns (case-insensitive aliases): Code/Kode/Ticker, Date/Tanggal,
+    ForeignBuyValue, ForeignSellValue, ForeignNetValue, ForeignBuyVolume,
+    ForeignSellVolume. Values are IDR for value columns and shares for volume columns.
+    """
+    if df is None or df.empty:
+        return pd.DataFrame()
+    d = df.copy()
+    aliases = {
+        'code':['code','kode','ticker','symbol'],
+        'date':['date','tanggal','datetime','tradingdate'],
+        'buy_value':['foreignbuyvalue','foreign_buy_value','foreignbuy','asingbuyvalue','buyvalueasing'],
+        'sell_value':['foreignsellvalue','foreign_sell_value','foreignsell','asingsellvalue','sellvalueasing'],
+        'net_value':['foreignnetvalue','foreign_net_value','netforeignvalue','netvalueasing','netbuyvalue'],
+        'buy_volume':['foreignbuyvolume','foreign_buy_volume','foreignbuyvol','asingbuyvolume','buyvolumeasing'],
+        'sell_volume':['foreignsellvolume','foreign_sell_volume','foreignsellvol','asingsellvolume','sellvolumeasing'],
+        'net_volume':['foreignnetvolume','foreign_net_volume','netforeignvolume','netvolumeasing'],
+    }
+    norm={str(c).strip().lower().replace(' ','').replace('-','').replace('/',''): c for c in d.columns}
+    def pick(names):
+        for n in names:
+            key=n.lower().replace(' ','').replace('-','').replace('/','')
+            if key in norm: return norm[key]
+        return None
+    mapping={k:pick(v) for k,v in aliases.items()}
+    if not mapping['code'] or not mapping['date']:
+        return pd.DataFrame()
+    out=pd.DataFrame()
+    out['Code']=d[mapping['code']].astype(str).str.upper().str.strip()
+    out['Date']=pd.to_datetime(d[mapping['date']], errors='coerce')
+    for target in ['buy_value','sell_value','net_value','buy_volume','sell_volume','net_volume']:
+        src=mapping[target]
+        out[target]=pd.to_numeric(d[src], errors='coerce') if src else np.nan
+    if out['net_value'].isna().all() and out['buy_value'].notna().any() and out['sell_value'].notna().any():
+        out['net_value']=out['buy_value'].fillna(0)-out['sell_value'].fillna(0)
+    if out['net_volume'].isna().all() and out['buy_volume'].notna().any() and out['sell_volume'].notna().any():
+        out['net_volume']=out['buy_volume'].fillna(0)-out['sell_volume'].fillna(0)
+    out=out.dropna(subset=['Code','Date']).sort_values(['Code','Date'])
+    return out
+
+def foreign_flow_metrics(flow_df, code):
+    """Return 1D/5D/20D foreign net value/volume and a bounded confirmation score."""
+    empty={
+        'Foreign Data Status':'N/A — belum ada data asing', 'Foreign Net Value 1D':np.nan,
+        'Foreign Net Value 5D':np.nan, 'Foreign Net Value 10D':np.nan, 'Foreign Net Value 20D':np.nan,
+        'Foreign Net Volume 1D':np.nan, 'Foreign Net Volume 5D':np.nan, 'Foreign Net Volume 10D':np.nan,
+        'Foreign Net Volume 20D':np.nan, 'Foreign Buy Value 1D':np.nan,
+        'Foreign Sell Value 1D':np.nan, 'Foreign Flow Score':np.nan,
+        'Foreign Bias':'N/A', 'Foreign Flow Source':'Not connected'
+    }
+    if flow_df is None or flow_df.empty:
+        return empty
+    d=flow_df[flow_df['Code'].eq(str(code).upper())].sort_values('Date')
+    if d.empty:
+        return empty
+    def sm(col,n):
+        z=d[col].dropna().tail(n)
+        return z.sum() if len(z) else np.nan
+    nv1,nv5,nv10,nv20=sm('net_value',1),sm('net_value',5),sm('net_value',10),sm('net_value',20)
+    vol1,vol5,vol10,vol20=sm('net_volume',1),sm('net_volume',5),sm('net_volume',10),sm('net_volume',20)
+    bv1,sv1=sm('buy_value',1),sm('sell_value',1)
+    # Score is a confirmation signal, not a standalone buy/sell recommendation.
+    vals=[v for v in [nv1,nv5,nv10,nv20] if pd.notna(v)]
+    if not vals:
+        fs=np.nan; bias='N/A'
+    else:
+        pos=sum(v>0 for v in vals); neg=sum(v<0 for v in vals)
+        if pos>=2: bias='Net Buy / Accumulation'
+        elif neg>=2: bias='Net Sell / Distribution'
+        else: bias='Mixed'
+        signs=np.mean([1 if v>0 else -1 if v<0 else 0 for v in vals])
+        fs=float(np.clip(50+signs*35,0,100))
+    latest_date=d['Date'].max()
+    return {
+        'Foreign Data Status':f'OK · sampai {latest_date:%Y-%m-%d}',
+        'Foreign Net Value 1D':nv1,'Foreign Net Value 5D':nv5,'Foreign Net Value 10D':nv10,'Foreign Net Value 20D':nv20,
+        'Foreign Net Volume 1D':vol1,'Foreign Net Volume 5D':vol5,'Foreign Net Volume 10D':vol10,'Foreign Net Volume 20D':vol20,
+        'Foreign Buy Value 1D':bv1,'Foreign Sell Value 1D':sv1,'Foreign Flow Score':fs,
+        'Foreign Bias':bias,'Foreign Flow Source':'User CSV / external valid source'
+    }
 
 def rr_metrics(price, stop, target1, target2):
     if any(pd.isna(v) for v in [price, stop, target1]):
@@ -483,7 +584,7 @@ def risk_score(atr_pct, adv20, liquidity_floor, weekly_trend, rr1, hard_fail=Fal
     return float(np.clip(r,0,100))
 
 
-def analyze(code, liquidity_floor=1.0e9, daily_floor=5.0e9, swing_floor=3.0e9, investor_floor=1.0e9, low_floor=0.5e9):
+def analyze(code, liquidity_floor=1.0e9, daily_floor=5.0e9, swing_floor=3.0e9, investor_floor=1.0e9, low_floor=0.5e9, foreign_flow=None):
     regime_data = market_regime()
     regime = regime_data["regime"]
     raw = download_history(code)
@@ -501,7 +602,8 @@ def analyze(code, liquidity_floor=1.0e9, daily_floor=5.0e9, swing_floor=3.0e9, i
     divergence = detect_latest_divergence(x)
     areas = trading_areas(x, price, atr, divergence)
     weekly_trend, weekly_vs_ma20 = weekly_trend_state(x)
-    adv20_value, liquidity_ratio = liquidity_metrics(x)
+    adv20_value, liquidity_ratio, median20_value, liquidity_consistency, liquidity_score = liquidity_metrics(x)
+    foreign = foreign_flow_metrics(foreign_flow, code)
     fundamentals = fundamental_snapshot(code)
     backtest = simple_backtest(x)
     divergence_age = divergence_age_days(x, divergence)
@@ -510,13 +612,13 @@ def analyze(code, liquidity_floor=1.0e9, daily_floor=5.0e9, swing_floor=3.0e9, i
     price_vs_ma20 = ((price/ma20)-1)*100 if pd.notna(ma20) and ma20 else np.nan
 
     change_1d = period_return(close, 1)
-    r1, r3, r6, r2 = (
+    r10, r1, r3, r6, r2 = (
+        period_return(close, 10),
         period_return(close, 21),
         period_return(close, 63),
         period_return(close, 126),
         period_return(close, 504),
     )
-
     # Daily: momentum, liquidity and short-term structure.
     daily_score = 0
     if pd.notna(r1):
@@ -625,6 +727,7 @@ def analyze(code, liquidity_floor=1.0e9, daily_floor=5.0e9, swing_floor=3.0e9, i
     investor_gate = style_gate_v109('Investor Jangka Panjang', investor_score, investor_core_v109, investor_hard_fail, rr1, investor_liquidity_ok, mtf_ok, regime, readiness)
 
     mkt_ret = market_returns()
+    rs10 = r10 - mkt_ret['10D'] if pd.notna(r10) and pd.notna(mkt_ret['10D']) else np.nan
     rs1 = r1 - mkt_ret['1M'] if pd.notna(r1) and pd.notna(mkt_ret['1M']) else np.nan
     rs3 = r3 - mkt_ret['3M'] if pd.notna(r3) and pd.notna(mkt_ret['3M']) else np.nan
     rs6 = r6 - mkt_ret['6M'] if pd.notna(r6) and pd.notna(mkt_ret['6M']) else np.nan
@@ -633,12 +736,18 @@ def analyze(code, liquidity_floor=1.0e9, daily_floor=5.0e9, swing_floor=3.0e9, i
     rs_bonus = float(np.clip((rs3 + 10) * 0.45, 0, 8)) if pd.notna(rs3) else 0
     readiness_bonus = float(np.clip((readiness - 50) * 0.12, -6, 6))
     risk_tmp = risk_score(atr_pct, adv20_value, liquidity_floor, weekly_trend, rr1, hard_fail_any)
-    overall_score = float(np.clip(base_overall + rs_bonus + readiness_bonus - max(0,risk_tmp-60)*0.08, 0, 100))
+    foreign_adj = 0.0
+    if pd.notna(foreign.get('Foreign Flow Score', np.nan)):
+        foreign_adj = float(np.clip((foreign['Foreign Flow Score'] - 50) * 0.10, -5, 5))
+    overall_score = float(np.clip(base_overall + rs_bonus + readiness_bonus + foreign_adj - max(0,risk_tmp-60)*0.08, 0, 100))
     hard_fail_any = daily_hard_fail or swing_hard_fail or investor_hard_fail
     adaptive_status = adaptive_label(overall_score, hard_fail_any, regime)
     adaptive_reason = score_reason(overall_score, trend_ok, momentum_ok, volume_ok, rs_ok, risk_ok, trigger)
     if pd.notna(rs3): adaptive_reason += f"; RS 3M vs IHSG {rs3:+.1f}%"
     adaptive_reason += f"; entry readiness {readiness:.0f}/100 ({readiness_stage})"
+    adaptive_reason += f"; Liquidity Score {liquidity_score:.0f}/100"
+    if foreign.get('Foreign Bias') not in (None, 'N/A'):
+        adaptive_reason += f"; asing {foreign['Foreign Bias']}"
     if not liquidity_ok: adaptive_reason += '; likuiditas nilai transaksi perlu diperhatikan'
     if not mtf_ok: adaptive_reason += '; konfirmasi weekly belum mendukung'
     if pd.notna(rr1) and rr1 < 1.5: adaptive_reason += '; R:R < 1.5x'
@@ -677,16 +786,31 @@ def analyze(code, liquidity_floor=1.0e9, daily_floor=5.0e9, swing_floor=3.0e9, i
         "Market Cap": fundamentals["Market Cap"],
         "Backtest N": backtest["Backtest N"], "Backtest Win Rate": backtest["Backtest Win Rate"],
         "Backtest Avg Return": backtest["Backtest Avg Return"], "Backtest Median Return": backtest["Backtest Median Return"],
-        "Foreign Flow": "N/A — data source not connected",
+        "Foreign Flow": foreign["Foreign Bias"],
+        "Foreign Data Status": foreign["Foreign Data Status"],
+        "Foreign Net Value 1D": foreign["Foreign Net Value 1D"],
+        "Foreign Net Value 5D": foreign["Foreign Net Value 5D"],
+        "Foreign Net Value 10D": foreign["Foreign Net Value 10D"],
+        "Foreign Net Value 20D": foreign["Foreign Net Value 20D"],
+        "Foreign Net Volume 1D": foreign["Foreign Net Volume 1D"],
+        "Foreign Net Volume 5D": foreign["Foreign Net Volume 5D"],
+        "Foreign Net Volume 10D": foreign["Foreign Net Volume 10D"],
+        "Foreign Net Volume 20D": foreign["Foreign Net Volume 20D"],
+        "Foreign Buy Value 1D": foreign["Foreign Buy Value 1D"],
+        "Foreign Sell Value 1D": foreign["Foreign Sell Value 1D"],
+        "Foreign Flow Score": foreign["Foreign Flow Score"],
+        "Foreign Flow Source": foreign["Foreign Flow Source"],
         "Adaptive Score": overall_score,
         "Decision Score": overall_score,
         "Opportunity Score": float(np.clip(base_overall + rs_bonus + max(readiness_bonus,0),0,100)),
         "Risk Score": risk_tmp,
         "Entry Readiness": readiness,
         "Entry Readiness Stage": readiness_stage,
+        "RS 10D vs IHSG": rs10,
         "RS 1M vs IHSG": rs1,
         "RS 3M vs IHSG": rs3,
         "RS 6M vs IHSG": rs6,
+        "IHSG Return 10D": mkt_ret['10D'],
         "IHSG Return 1M": mkt_ret['1M'],
         "IHSG Return 3M": mkt_ret['3M'],
         "IHSG Return 6M": mkt_ret['6M'],
@@ -698,7 +822,10 @@ def analyze(code, liquidity_floor=1.0e9, daily_floor=5.0e9, swing_floor=3.0e9, i
         "Weekly vs MA20 %": weekly_vs_ma20,
         "Price vs MA20 %": price_vs_ma20,
         "Avg Value 20D": adv20_value,
+        "Median Value 20D": median20_value,
+        "Liquidity Consistency 20D %": liquidity_consistency,
         "Liquidity Ratio 5D/20D": liquidity_ratio,
+        "Liquidity Score": liquidity_score,
         "Liquidity Gate": "PASS" if liquidity_ok else "CAUTION",
         "Daily Liquidity Gate": "PASS" if daily_liquidity_ok else "CAUTION",
         "Swing Liquidity Gate": "PASS" if swing_liquidity_ok else "CAUTION",
@@ -724,7 +851,7 @@ def analyze(code, liquidity_floor=1.0e9, daily_floor=5.0e9, swing_floor=3.0e9, i
         "Confidence": "High" if sum([trend_ok,momentum_ok,volume_ok,rs_ok,risk_ok]) >= 4 else ("Medium" if sum([trend_ok,momentum_ok,volume_ok,rs_ok,risk_ok]) >= 2 else "Low"),
         "RSI": rsi, "Vol Ratio": vol_ratio,
         "MA20": ma20, "MA50": ma50, "MA200": ma200,
-        "Return 1M": r1, "Return 3M": r3, "Return 6M": r6, "Return 2Y": r2,
+        "Return 10D": r10, "Return 1M": r1, "Return 3M": r3, "Return 6M": r6, "Return 2Y": r2,
         "Stop": stop, "Target": target, "_df": x,
     }
 
@@ -849,7 +976,7 @@ def render_card(row, style):
 
 def show_board(result_df, min_score, show_caution, title="🎯 Top 3 Actionable Picks — Risk-Gated 2.0", unique_styles=True):
     st.markdown(f'<div class="section-title">{title}</div>', unsafe_allow_html=True)
-    st.caption("V10.9 menambahkan Adaptive Liquidity Engine, Relative Strength vs IHSG, Sector Strength, Entry Readiness, Opportunity/Risk Score, dan Decision Engine. PASS diprioritaskan; CAUTION tetap ditampilkan bila dipilih. Top 3 antar gaya dapat dibuat berbeda.")
+    st.caption("V10.9.2 menambahkan Liquidity Intelligence 2.0 dan IDX Foreign Flow Gateway. Foreign flow per saham hanya diaktifkan bila feed resmi IDX/berlisensi tersedia; CSV tetap sebagai fallback. PASS diprioritaskan; CAUTION tetap ditampilkan bila dipilih. Top 3 antar gaya dapat dibuat berbeda.")
     columns = st.columns(3)
     used = set()
     for column, style in zip(columns, STYLES):
@@ -895,17 +1022,21 @@ def render_bions_table(df, limit=100):
         short=reason[:75]+("…" if len(reason)>75 else "")
         rr = r.get('RR 1', np.nan)
         liq = r.get('Avg Value 20D', np.nan)
+        liq_score = r.get('Liquidity Score', np.nan)
+        liq_accel = r.get('Liquidity Ratio 5D/20D', np.nan)
+        foreign_bias = html.escape(str(r.get('Foreign Bias','N/A')))
+        foreign_net5 = r.get('Foreign Net Value 5D', np.nan)
         mtf = html.escape(str(r.get('Weekly Trend','—')))
         setup = html.escape(str(r.get('Setup Type','—')))
-        rows.append(f"<tr><td class='rank'>{i+1}</td><td class='ticker'>{code}</td><td>{name}</td><td class='num'>{p(r.get('Price'))}</td><td class='num {change_cls}'>{fmt_pct(change)}</td><td class='num score'>{fmt_num(r.get('Decision Score'),1)}</td><td><span class='table-pill {status_table_class(status)}'>{status}</span></td><td><span class='table-pill {confidence_class(conf)}'>{conf}</span></td><td>{fmt_num(r.get('Entry Readiness'),0)} · {html.escape(str(r.get('Entry Readiness Stage','—')))}</td><td class='num'>{fmt_num(r.get('Risk Score'),0)}</td><td class='num'>{fmt_pct(r.get('RS 3M vs IHSG'))}</td><td>{setup}</td><td>{mtf}</td><td class='num'>{fmt_num(rr,2)}x</td><td class='num'>{fmt_num(liq/1e9 if pd.notna(liq) else np.nan,1)}</td><td>{html.escape(str(r.get('Sector','Unknown')))}</td><td class='num score'>{fmt_num(r.get('Fundamental Score'),1)}</td><td class='num'>{fmt_num(r.get('PE'),1)}</td><td class='num'>{fmt_num(r.get('PB'),2)}</td><td class='num'>{fmt_pct(r.get('ROE')*100) if pd.notna(r.get('ROE')) else '—'}</td><td class='num'>{fmt_num(r.get('Backtest Win Rate'),1)}</td><td class='subtle'>{div}</td><td class='buy'>{html.escape(str(r.get('Buy Area','—')))}</td><td class='num buy'>{n(r.get('Buy Trigger'))}</td><td class='num sell'>{n(r.get('Target 1'))}</td><td class='num sell'>{n(r.get('Target 2'))}</td><td class='num sl'>{n(r.get('Stop Loss'))}</td><td title='{reason}'>{short}</td></tr>")
-    table="<div class='table-shell'><table class='bions-table'><thead><tr><th>#</th><th>Kode</th><th>Nama Saham</th><th>Harga</th><th>1D</th><th>Decision</th><th>Status</th><th>Confidence</th><th>Entry Readiness</th><th>Risk</th><th>RS 3M</th><th>Setup</th><th>Weekly Trend</th><th>R:R T1</th><th>Avg Value 20D<br>(Rp M)</th><th>Sector</th><th>Fund. Score</th><th>PE</th><th>PB</th><th>ROE</th><th>BT Win%</th><th>Divergence</th><th>Buy Area</th><th>Buy Trigger</th><th>Target 1</th><th>Target 2</th><th>Stop Loss</th><th>Alasan Singkat</th></tr></thead><tbody>"+"".join(rows)+"</tbody></table></div>"
+        rows.append(f"<tr><td class='rank'>{i+1}</td><td class='ticker'>{code}</td><td>{name}</td><td class='num'>{p(r.get('Price'))}</td><td class='num {change_cls}'>{fmt_pct(change)}</td><td class='num score'>{fmt_num(r.get('Decision Score'),1)}</td><td><span class='table-pill {status_table_class(status)}'>{status}</span></td><td><span class='table-pill {confidence_class(conf)}'>{conf}</span></td><td>{fmt_num(r.get('Entry Readiness'),0)} · {html.escape(str(r.get('Entry Readiness Stage','—')))}</td><td class='num'>{fmt_num(r.get('Risk Score'),0)}</td><td class='num'>{fmt_pct(r.get('RS 3M vs IHSG'))}</td><td>{setup}</td><td>{mtf}</td><td class='num'>{fmt_num(rr,2)}x</td><td class='num'>{fmt_num(liq/1e9 if pd.notna(liq) else np.nan,1)}</td><td class='num'>{fmt_num(liq_score,0)}</td><td class='num'>{fmt_num(liq_accel,2)}x</td><td>{foreign_bias}</td><td class='num'>{fmt_num(foreign_net5/1e9 if pd.notna(foreign_net5) else np.nan,1)}</td><td class='num'>{fmt_num(r.get('Foreign Net Value 10D')/1e9 if pd.notna(r.get('Foreign Net Value 10D')) else np.nan,1)}</td><td>{html.escape(str(r.get('Sector','Unknown')))}</td><td class='num score'>{fmt_num(r.get('Fundamental Score'),1)}</td><td class='num'>{fmt_num(r.get('PE'),1)}</td><td class='num'>{fmt_num(r.get('PB'),2)}</td><td class='num'>{fmt_pct(r.get('ROE')*100) if pd.notna(r.get('ROE')) else '—'}</td><td class='num'>{fmt_num(r.get('Backtest Win Rate'),1)}</td><td class='subtle'>{div}</td><td class='buy'>{html.escape(str(r.get('Buy Area','—')))}</td><td class='num buy'>{n(r.get('Buy Trigger'))}</td><td class='num sell'>{n(r.get('Target 1'))}</td><td class='num sell'>{n(r.get('Target 2'))}</td><td class='num sl'>{n(r.get('Stop Loss'))}</td><td title='{reason}'>{short}</td></tr>")
+    table="<div class='table-shell'><table class='bions-table'><thead><tr><th>#</th><th>Kode</th><th>Nama Saham</th><th>Harga</th><th>1D</th><th>Decision</th><th>Status</th><th>Confidence</th><th>Entry Readiness</th><th>Risk</th><th>RS 3M</th><th>Setup</th><th>Weekly Trend</th><th>R:R T1</th><th>Avg Value 20D<br>(Rp M)</th><th>Liquidity Score</th><th>5D/20D</th><th>Foreign Bias</th><th>Foreign Net 5D<br>(Rp M)</th><th>Foreign Net 10D<br>(Rp M)</th><th>Sector</th><th>Fund. Score</th><th>PE</th><th>PB</th><th>ROE</th><th>BT Win%</th><th>Divergence</th><th>Buy Area</th><th>Buy Trigger</th><th>Target 1</th><th>Target 2</th><th>Stop Loss</th><th>Alasan Singkat</th></tr></thead><tbody>"+"".join(rows)+"</tbody></table></div>"
     st.markdown(table, unsafe_allow_html=True)
 
 # Sidebar
 st.sidebar.header("⚙️ Pengaturan")
 mode = st.sidebar.radio("Mode", ["Scanner Multi-Style", "Analisis 1 Saham"])
 period_label = st.sidebar.selectbox(
-    "Periode grafik", ["1 Bulan", "3 Bulan", "6 Bulan", "1 Tahun", "2 Tahun"], index=2
+    "Periode grafik", ["10 Hari", "1 Bulan", "3 Bulan", "6 Bulan", "1 Tahun", "2 Tahun"], index=2
 )
 max_scan = st.sidebar.slider("Maksimum saham dipindai", 5, 200, 100, 5)
 min_score = st.sidebar.slider("Minimum score shortlist", 0, 100, 60, 1)
@@ -919,23 +1050,55 @@ investor_liq = st.sidebar.number_input("Investor — Min transaksi 20D (Rp M)", 
 low_liq = st.sidebar.number_input("Low-Price — Min transaksi 20D (Rp M)", min_value=0.0, max_value=50.0, value=0.5, step=0.25)
 min_liquidity = st.sidebar.number_input("Filter tabel utama (Rp M)", min_value=0.0, max_value=100.0, value=1.0, step=0.5, help="Filter tampilan utama. Gate tiap gaya memakai ambang adaptif.")
 low_score = st.sidebar.slider("Low-Price Opportunity Score minimum", 0, 100, 35, 5)
+
+st.sidebar.markdown("### 🌍 IDX Foreign Flow Intelligence")
+st.sidebar.caption("Prioritas: feed resmi IDX/berlisensi. CSV hanya fallback. Scanner tidak mengarang data asing.")
+foreign_source = st.sidebar.radio("Sumber Foreign Flow", ["IDX Direct (Official Feed)", "CSV Fallback"], index=0, help="IDX Direct membutuhkan endpoint/feed resmi yang Anda miliki. CSV dipakai jika feed belum tersedia.")
+FOREIGN_FLOW_DATA = pd.DataFrame()
+FOREIGN_FLOW_SOURCE_STATUS = "IDX Direct belum dikonfigurasi"
+if foreign_source == "IDX Direct (Official Feed)":
+    st.sidebar.info("Mode IDX Direct aktif. Konfigurasi endpoint resmi melalui Streamlit secrets/env: IDX_FOREIGN_FLOW_URL dan opsional IDX_API_TOKEN.")
+    try:
+        from idx_connector import load_idx_foreign_flow
+        FOREIGN_FLOW_DATA, FOREIGN_FLOW_SOURCE_STATUS = load_idx_foreign_flow()
+        if not FOREIGN_FLOW_DATA.empty:
+            st.sidebar.success(f"IDX Foreign Flow aktif: {len(FOREIGN_FLOW_DATA):,} baris")
+        else:
+            st.sidebar.warning(FOREIGN_FLOW_SOURCE_STATUS)
+    except Exception as exc:
+        FOREIGN_FLOW_SOURCE_STATUS = f"IDX Direct belum aktif: {exc}"
+        st.sidebar.warning(FOREIGN_FLOW_SOURCE_STATUS)
+else:
+    foreign_file = st.sidebar.file_uploader("Upload Foreign Flow CSV", type=["csv"], help="Kolom minimal: Code/Kode dan Date/Tanggal. Disarankan juga ForeignBuyValue, ForeignSellValue, ForeignBuyVolume, ForeignSellVolume.")
+    if foreign_file is not None:
+        try:
+            FOREIGN_FLOW_DATA = normalize_foreign_flow(pd.read_csv(foreign_file))
+            if FOREIGN_FLOW_DATA.empty:
+                FOREIGN_FLOW_SOURCE_STATUS = "CSV tidak terbaca"
+                st.sidebar.error("CSV foreign flow tidak terbaca. Periksa kolom Code/Kode dan Date/Tanggal.")
+            else:
+                FOREIGN_FLOW_SOURCE_STATUS = "CSV fallback"
+                st.sidebar.success(f"Foreign flow aktif: {len(FOREIGN_FLOW_DATA):,} baris")
+        except Exception as exc:
+            FOREIGN_FLOW_SOURCE_STATUS = f"CSV error: {exc}"
+            st.sidebar.error(f"Gagal membaca CSV foreign flow: {exc}")
 show_board_single = st.sidebar.checkbox(
     "Tampilkan Top 3 pada Analisis 1 Saham", True
 )
 universe_text = st.sidebar.text_area("🔴 Universe kode IDX", DEFAULT_UNIVERSE, height=145, help="Kode saham IDX yang akan dipindai. Teks dibuat merah agar lebih mudah dibaca.")
 tickers = clean_codes(universe_text)[:max_scan]
 
-st.markdown('<div class="hero-pro"><div class="hero-kicker">SANGGUL STOCK SCANNER · NEXT-GEN IDX DECISION DASHBOARD</div><div class="hero-title">V10.9 <span style="color:#5cc8ff">BIONS Adaptive Decision Engine</span></div><div class="hero-desc">Market + Sector + Technical + Fundamental + Adaptive Liquidity + Entry Readiness + Risk Engine + Historical Signal Study</div><span class="mini-chip">⚡ Daily</span><span class="mini-chip">📊 Swing</span><span class="mini-chip">🌱 Investor</span><span class="mini-chip">🧠 Fundamental</span><span class="mini-chip">🛡 Risk Engine 2.0</span><span class="mini-chip">📈 Backtest</span><span class="mini-chip">🧭 Entry Readiness</span><span class="mini-chip">💎 Low-Price Radar</span></div>', unsafe_allow_html=True)
+st.markdown('<div class="hero-pro"><div class="hero-kicker">SANGGUL STOCK SCANNER · NEXT-GEN IDX DECISION DASHBOARD</div><div class="hero-title">V10.9.2 <span style="color:#5cc8ff">BIONS IDX Foreign Flow Intelligence</span></div><div class="hero-desc">Market + Sector + Technical + Fundamental + Liquidity Intelligence 2.0 + Foreign Flow + Entry Readiness + Risk Engine + Historical Signal Study</div><span class="mini-chip">⚡ Daily</span><span class="mini-chip">📊 Swing</span><span class="mini-chip">🌱 Investor</span><span class="mini-chip">🧠 Fundamental</span><span class="mini-chip">🛡 Risk Engine 2.0</span><span class="mini-chip">📈 Backtest</span><span class="mini-chip">🧭 Entry Readiness</span><span class="mini-chip">💎 Low-Price Radar</span></div>', unsafe_allow_html=True)
 st.markdown(
     '<div class="info-box">Daily, Swing, dan Investor memakai aturan berbeda. '
-    'CAUTION berarti kandidat belum memenuhi seluruh syarat PASS, bukan berarti data error. '
+    'Foreign Flow per saham hanya aktif jika data valid tersedia dari feed resmi IDX/berlisensi atau CSV fallback; tanpa data, scanner tidak mengarang arus asing. CAUTION berarti kandidat belum memenuhi seluruh syarat PASS, bukan berarti data error. '
     'FAIL digunakan untuk risiko atau struktur yang lebih kritis.</div>',
     unsafe_allow_html=True
 )
 
 regime_now = market_regime()
 st.markdown(f"**Market Regime IHSG:** `{regime_now["regime"]}` · RSI IHSG: `{fmt_num(regime_now["rsi"],1)}` · Threshold adaptif aktif", unsafe_allow_html=True)
-st.markdown(f"<div class='metric-grid'><div class='kpi glow-blue'><div class='kpi-label'>IHSG Regime</div><div class='kpi-value'>{regime_now["regime"]}</div><div class='kpi-note'>RSI {fmt_num(regime_now["rsi"],1)}</div></div><div class='kpi glow-green'><div class='kpi-label'>Scanner Engine</div><div class='kpi-value'>V10.9</div><div class='kpi-note'>Adaptive Decision Engine</div></div><div class='kpi glow-orange'><div class='kpi-label'>Data Horizon</div><div class='kpi-value'>2Y</div><div class='kpi-note'>Analisis 1M / 3M / 6M / 2Y</div></div><div class='kpi glow-red'><div class='kpi-label'>Flow Data</div><div class='kpi-value'>N/A</div><div class='kpi-note'>Tidak difabrikasi tanpa sumber valid</div></div></div>", unsafe_allow_html=True)
+st.markdown(f"<div class='metric-grid'><div class='kpi glow-blue'><div class='kpi-label'>IHSG Regime</div><div class='kpi-value'>{regime_now["regime"]}</div><div class='kpi-note'>RSI {fmt_num(regime_now["rsi"],1)}</div></div><div class='kpi glow-green'><div class='kpi-label'>Scanner Engine</div><div class='kpi-value'>V10.9</div><div class='kpi-note'>Adaptive Decision Engine</div></div><div class='kpi glow-orange'><div class='kpi-label'>Data Horizon</div><div class='kpi-value'>2Y</div><div class='kpi-note'>Analisis 10D / 1M / 3M / 6M / 2Y</div></div><div class='kpi glow-red'><div class='kpi-label'>Foreign Flow</div><div class='kpi-value'>{'CONNECTED' if not FOREIGN_FLOW_DATA.empty else 'IDX READY'}</div><div class='kpi-note'>{FOREIGN_FLOW_SOURCE_STATUS}</div></div></div>", unsafe_allow_html=True)
 
 if not tickers:
     st.warning("Universe kosong. Masukkan minimal satu kode saham.")
@@ -944,7 +1107,7 @@ if not tickers:
 # Single-stock mode: individual analysis first, then Top 3 board.
 if mode == "Analisis 1 Saham":
     selected = st.sidebar.selectbox("Pilih saham", tickers)
-    data = analyze(selected, liquidity_floor=min_liquidity * 1e9, daily_floor=daily_liq*1e9, swing_floor=swing_liq*1e9, investor_floor=investor_liq*1e9, low_floor=low_liq*1e9)
+    data = analyze(selected, liquidity_floor=min_liquidity * 1e9, daily_floor=daily_liq*1e9, swing_floor=swing_liq*1e9, investor_floor=investor_liq*1e9, low_floor=low_liq*1e9, foreign_flow=FOREIGN_FLOW_DATA)
     if data is None:
         st.error("Data saham tidak tersedia atau histori belum cukup.")
         st.stop()
@@ -965,9 +1128,14 @@ if mode == "Analisis 1 Saham":
     s1.metric("Decision Score", f"{data['Decision Score']:.1f}")
     s2.metric("Opportunity", f"{data['Opportunity Score']:.1f}")
     s3.metric("Risk Score", f"{data['Risk Score']:.0f}")
-    s4.metric("RS 3M vs IHSG", fmt_pct(data['RS 3M vs IHSG']))
+    s4.metric("RS 10D vs IHSG", fmt_pct(data['RS 10D vs IHSG']))
+    f1, f2, f3, f4 = st.columns(4)
+    f1.metric("Liquidity Score", f"{data['Liquidity Score']:.0f}/100")
+    f2.metric("Median Value 20D", f"Rp {fmt_num(data['Median Value 20D']/1e9,1)} M" if pd.notna(data['Median Value 20D']) else "—")
+    f3.metric("Foreign Bias", str(data['Foreign Bias']))
+    f4.metric("Foreign Net 5D", f"Rp {fmt_num(data['Foreign Net Value 5D']/1e9,1)} M" if pd.notna(data['Foreign Net Value 5D']) else "—")
 
-    days = {"1 Bulan": 22, "3 Bulan": 66, "6 Bulan": 132, "1 Tahun": 264, "2 Tahun": 520}
+    days = {"10 Hari": 12, "1 Bulan": 22, "3 Bulan": 66, "6 Bulan": 132, "1 Tahun": 264, "2 Tahun": 520}
     plot_df = data["_df"].tail(days[period_label])
     fig = go.Figure()
     fig.add_trace(go.Candlestick(
@@ -987,6 +1155,7 @@ if mode == "Analisis 1 Saham":
         xaxis_rangeslider_visible=False,
         legend={"orientation": "h", "y": 1.02, "x": 0},
     )
+    st.caption("10 Hari = 10 hari perdagangan terakhir. Grafik 10D memakai histori OHLCV yang sama, bukan 10 hari kalender.") if period_label == "10 Hari" else None
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     st.markdown('<div class="section-title">🎯 Area Entry dan Exit</div>', unsafe_allow_html=True)
@@ -1003,12 +1172,21 @@ if mode == "Analisis 1 Saham":
 
     st.markdown('<div class="section-title">Ringkasan indikator</div>', unsafe_allow_html=True)
     summary = pd.DataFrame([{
+        "Return 10D": fmt_pct(data["Return 10D"]),
         "Return 1M": fmt_pct(data["Return 1M"]),
         "Return 3M": fmt_pct(data["Return 3M"]),
         "Return 6M": fmt_pct(data["Return 6M"]),
         "Return 2Y": fmt_pct(data["Return 2Y"]),
         "RSI": fmt_num(data["RSI"], 1),
         "Vol Ratio": fmt_num(data["Vol Ratio"], 2),
+        "Liquidity Score": fmt_num(data["Liquidity Score"], 0),
+        "Liquidity Consistency 20D": fmt_num(data["Liquidity Consistency 20D %"], 0) + "%",
+        "Foreign Bias": data["Foreign Bias"],
+        "Foreign Net 1D (Rp M)": fmt_num(data["Foreign Net Value 1D"]/1e9 if pd.notna(data["Foreign Net Value 1D"]) else np.nan, 1),
+        "Foreign Net 5D (Rp M)": fmt_num(data["Foreign Net Value 5D"]/1e9 if pd.notna(data["Foreign Net Value 5D"]) else np.nan, 1),
+        "Foreign Net 10D (Rp M)": fmt_num(data["Foreign Net Value 10D"]/1e9 if pd.notna(data["Foreign Net Value 10D"]) else np.nan, 1),
+        "Foreign Net 20D (Rp M)": fmt_num(data["Foreign Net Value 20D"]/1e9 if pd.notna(data["Foreign Net Value 20D"]) else np.nan, 1),
+        "Foreign Net Volume 5D (M)": fmt_num(data["Foreign Net Volume 5D"]/1e6 if pd.notna(data["Foreign Net Volume 5D"]) else np.nan, 2),
         "MA20": fmt_num(data["MA20"], 0),
         "MA50": fmt_num(data["MA50"], 0),
         "MA200": fmt_num(data["MA200"], 0),
@@ -1033,7 +1211,7 @@ if mode == "Analisis 1 Saham":
         with st.spinner("Menghitung Top 3 untuk seluruh universe..."):
             rows = []
             for code in tickers:
-                item = analyze(code, liquidity_floor=min_liquidity*1e9, daily_floor=daily_liq*1e9, swing_floor=swing_liq*1e9, investor_floor=investor_liq*1e9, low_floor=low_liq*1e9)
+                item = analyze(code, liquidity_floor=min_liquidity*1e9, daily_floor=daily_liq*1e9, swing_floor=swing_liq*1e9, investor_floor=investor_liq*1e9, low_floor=low_liq*1e9, foreign_flow=FOREIGN_FLOW_DATA)
                 if item:
                     rows.append({k: v for k, v in item.items() if not k.startswith("_")})
         board_df = pd.DataFrame(rows)
@@ -1047,7 +1225,7 @@ else:
     rows = []
     progress = st.progress(0, text="Mengambil data historis...")
     for index, code in enumerate(tickers):
-        item = analyze(code, liquidity_floor=min_liquidity*1e9, daily_floor=daily_liq*1e9, swing_floor=swing_liq*1e9, investor_floor=investor_liq*1e9, low_floor=low_liq*1e9)
+        item = analyze(code, liquidity_floor=min_liquidity*1e9, daily_floor=daily_liq*1e9, swing_floor=swing_liq*1e9, investor_floor=investor_liq*1e9, low_floor=low_liq*1e9, foreign_flow=FOREIGN_FLOW_DATA)
         if item:
             rows.append({k: v for k, v in item.items() if not k.startswith("_")})
         progress.progress(
