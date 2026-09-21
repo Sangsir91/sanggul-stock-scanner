@@ -786,7 +786,8 @@ def analyze(code, liquidity_floor=1.0e9, daily_floor=5.0e9, swing_floor=3.0e9, i
         "Market Cap": fundamentals["Market Cap"],
         "Backtest N": backtest["Backtest N"], "Backtest Win Rate": backtest["Backtest Win Rate"],
         "Backtest Avg Return": backtest["Backtest Avg Return"], "Backtest Median Return": backtest["Backtest Median Return"],
-        "Foreign Flow": foreign["Foreign Bias"],
+        "Foreign Flow": foreign.get("Foreign Bias", "N/A"),
+        "Foreign Bias": foreign.get("Foreign Bias", "N/A"),
         "Foreign Data Status": foreign["Foreign Data Status"],
         "Foreign Net Value 1D": foreign["Foreign Net Value 1D"],
         "Foreign Net Value 5D": foreign["Foreign Net Value 5D"],
@@ -1132,7 +1133,7 @@ if mode == "Analisis 1 Saham":
     f1, f2, f3, f4 = st.columns(4)
     f1.metric("Liquidity Score", f"{data['Liquidity Score']:.0f}/100")
     f2.metric("Median Value 20D", f"Rp {fmt_num(data['Median Value 20D']/1e9,1)} M" if pd.notna(data['Median Value 20D']) else "—")
-    f3.metric("Foreign Bias", str(data['Foreign Bias']))
+    f3.metric("Foreign Bias", str(data.get("Foreign Bias", data.get("Foreign Flow", "N/A"))))
     f4.metric("Foreign Net 5D", f"Rp {fmt_num(data['Foreign Net Value 5D']/1e9,1)} M" if pd.notna(data['Foreign Net Value 5D']) else "—")
 
     days = {"10 Hari": 12, "1 Bulan": 22, "3 Bulan": 66, "6 Bulan": 132, "1 Tahun": 264, "2 Tahun": 520}
@@ -1181,7 +1182,7 @@ if mode == "Analisis 1 Saham":
         "Vol Ratio": fmt_num(data["Vol Ratio"], 2),
         "Liquidity Score": fmt_num(data["Liquidity Score"], 0),
         "Liquidity Consistency 20D": fmt_num(data["Liquidity Consistency 20D %"], 0) + "%",
-        "Foreign Bias": data["Foreign Bias"],
+        "Foreign Bias": data.get("Foreign Bias", data.get("Foreign Flow", "N/A")),
         "Foreign Net 1D (Rp M)": fmt_num(data["Foreign Net Value 1D"]/1e9 if pd.notna(data["Foreign Net Value 1D"]) else np.nan, 1),
         "Foreign Net 5D (Rp M)": fmt_num(data["Foreign Net Value 5D"]/1e9 if pd.notna(data["Foreign Net Value 5D"]) else np.nan, 1),
         "Foreign Net 10D (Rp M)": fmt_num(data["Foreign Net Value 10D"]/1e9 if pd.notna(data["Foreign Net Value 10D"]) else np.nan, 1),
