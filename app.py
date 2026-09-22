@@ -36,10 +36,10 @@ h1,h2,h3{color:#f4f8ff!important;font-weight:850;letter-spacing:-.025em}h1{font-
 .card-head{display:flex;justify-content:space-between;align-items:center;gap:8px}.code{font-size:1.08rem;font-weight:900;color:#fff}.company{font-size:.76rem;color:#8da8c0;margin-top:3px}.price{font-size:1.3rem;font-weight:900;margin:9px 0 4px;color:#fff}.meta{font-size:.77rem;color:#a9c0d5;line-height:1.5}.reason{font-size:.75rem;color:#809ab2;margin-top:7px;line-height:1.4}
 .pill{display:inline-block;border-radius:7px;padding:4px 8px;font-size:.65rem;font-weight:850;border:1px solid transparent}.pass{background:#073e32;color:#00e59a;border-color:#087c62}.caution{background:#493607;color:#ffd15c;border-color:#a47b12}.fail{background:#4a1820;color:#ff7180;border-color:#a83243}
 .stButton>button{border-radius:9px;border:1px solid #28516f;background:#0d2235;color:#dcecff;font-weight:750;box-shadow:none}.stButton>button:hover{border-color:#1683ff;color:#fff;background:#12314b}.stButton>button[kind="primary"]{background:linear-gradient(90deg,#0877ff,#00b8ff);border:0;color:#fff;box-shadow:0 7px 20px rgba(0,132,255,.25)}
-[data-testid="stMetric"]{background:linear-gradient(180deg,#0e263c,#091827);border:1px solid #1a3c59;border-radius:10px;padding:10px 12px;box-shadow:0 6px 20px rgba(0,0,0,.18)}[data-testid="stMetricLabel"]{color:#8ea7bf!important}[data-testid="stMetricValue"]{color:#f4f8ff!important;font-weight:850}
+[data-testid="stMetric"]{background:linear-gradient(180deg,#0e263c,#091827);border:1px solid #1a3c59;border-radius:10px;padding:8px 11px;min-height:68px;box-shadow:0 6px 20px rgba(0,0,0,.16)}[data-testid="stMetricLabel"]{color:#8ea7bf!important;font-size:.68rem!important;line-height:1.15!important}[data-testid="stMetricValue"]{color:#f4f8ff!important;font-weight:850!important;font-size:1.22rem!important;line-height:1.05!important}[data-testid="stMetricDelta"]{font-size:.64rem!important;line-height:1!important}
 .stTabs [data-baseweb="tab-list"]{gap:6px;border-bottom:1px solid #1a3c59}.stTabs [data-baseweb="tab"]{height:40px;border-radius:8px 8px 0 0;padding:0 15px;color:#8ea7bf;font-weight:750}.stTabs [aria-selected="true"]{background:#0b3d68;color:#fff!important;border-bottom:3px solid #1683ff}
 .stSelectbox>div>div,.stTextInput>div>div,.stNumberInput>div>div,.stMultiSelect>div>div{background:#0a1d2f!important;border-color:#21435f!important;color:#fff!important}
-[data-testid="stDataFrame"]{border:1px solid #1b4668;border-radius:10px;overflow:hidden;box-shadow:0 8px 25px rgba(0,0,0,.2)}[data-testid="stExpander"]{border:1px solid #1b4668;border-radius:10px;background:#091827}hr{border-color:#1b3c56}
+[data-testid="stDataFrame"]{border:1px solid #1b4668;border-radius:10px;overflow:hidden;box-shadow:0 8px 25px rgba(0,0,0,.2)}[data-testid="stExpander"]{border:1px solid #1b4668;border-radius:10px;background:linear-gradient(180deg,#0b2033,#081522);box-shadow:0 7px 22px rgba(0,0,0,.16);margin:6px 0 10px}[data-testid="stExpander"] summary{font-size:.82rem;font-weight:800;color:#dcecff}[data-testid="stExpander"] summary:hover{color:#fff}hr{border-color:#1b3c56}
 .table-shell{border:1px solid #1d4664;border-radius:10px;overflow-x:auto;background:#071522;box-shadow:0 8px 28px rgba(0,0,0,.25)}
 .bions-table{width:100%;min-width:1760px;border-collapse:separate;border-spacing:0;font-size:12px;color:#dcecff}.bions-table th{position:sticky;top:0;background:#0c2236;color:#8fa9c1;text-align:left;font-weight:800;padding:10px 9px;border-bottom:1px solid #27506e;white-space:nowrap;z-index:2}.bions-table td{padding:9px;border-bottom:1px solid #142f46;white-space:nowrap;background:#081725}.bions-table tr:hover td{background:#0c2237}.bions-table .num{text-align:right}.bions-table .rank{color:#ffc107;font-weight:900;text-align:center}.bions-table .ticker{font-weight:900;color:#fff}.bions-table .green{color:#00dc92;font-weight:800}.bions-table .red{color:#ff6574;font-weight:800}.bions-table .score{font-weight:900;color:#fff}.bions-table .subtle{color:#8fa9c1}.bions-table .buy{color:#00dc92}.bions-table .sell{color:#ffb24a}.bions-table .sl{color:#ff5c6d}
 .table-pill{display:inline-block;padding:4px 8px;border-radius:6px;font-size:10px;font-weight:850;border:1px solid}.tp-buy{background:#063c31;color:#00dc92;border-color:#087e64}.tp-watch{background:#063b6a;color:#4da3ff;border-color:#0a78d8}.tp-caution{background:#493607;color:#ffd15c;border-color:#9f7917}.tp-risk{background:#4a1820;color:#ff6b79;border-color:#a73545}.conf-high{background:#063c31;color:#00dc92;border-color:#087e64}.conf-med{background:#493607;color:#ffd15c;border-color:#9f7917}.conf-low{background:#4a1820;color:#ff6b79;border-color:#a73545}
@@ -1117,15 +1117,14 @@ else:
         st.warning("Tidak ada saham pada filter harga yang dipilih. Pilih Semua harga atau ubah filter.")
         st.stop()
 
-    a, b, c, d, e = st.columns(5)
+    # KPI ringkas dibuat mengikuti layout compact: 4 kartu di baris atas + 1 kartu lebar.
+    a, b, c, d = st.columns(4)
     a.metric("Saham dianalisis", len(result_df))
     b.metric("Daily PASS", int((result_df["Daily Gate"] == "PASS").sum()))
     c.metric("Swing PASS", int((result_df["Swing Gate"] == "PASS").sum()))
     d.metric("Investor PASS", int((result_df["Investor Gate"] == "PASS").sum()))
-    primary_mode = result_df["Primary Style"].value_counts().index[0]
-    primary_count = int(result_df["Primary Style"].value_counts().iloc[0])
-    e.markdown(f"<div class='primary-card' style='min-height:0; padding:10px 12px;'><div class='primary-label'>Primary terbanyak</div><div class='primary-value'>{html.escape(str(primary_mode))}</div><div class='primary-note'>{primary_count} saham · style dominan</div></div>", unsafe_allow_html=True)
-    st.metric("Actionable / Watchlist", int(result_df["Adaptive Status"].isin(["Actionable Buy","Watchlist – Strong Setup","Watchlist – Early Setup"]).sum()))
+    actionable_count = int(result_df["Adaptive Status"].isin(["Actionable Buy","Watchlist – Strong Setup","Watchlist – Early Setup"]).sum())
+    st.metric("Actionable / Watchlist", actionable_count)
 
     # Sector-relative intelligence: descriptive ranking inside the scanned universe.
     sector_stats = result_df.groupby("Sector", dropna=False).agg(
@@ -1163,10 +1162,12 @@ else:
             with col:
                 st.markdown(f'<div class="subpanel"><b class="tag-blue">{html.escape(str(sr["Sector"]))}</b><br><span class="score-ring">{sr["AvgFundamental"]:.1f}</span> <span class="tag-green">Fund.</span><br><span style="color:#829db5;font-size:.7rem">{int(sr["Saham"])} saham · Tech {sr["AvgTechnical"]:.1f} · RS {sr.get("SectorRS3M",np.nan):+.1f}%</span></div>', unsafe_allow_html=True)
     
-    st.markdown('<div class="section-title">📋 Enrich Full IDX — BIONS V10.8 Pro</div>', unsafe_allow_html=True)
-    st.caption("Tabel V10.8: skor, status, setup, weekly trend, R:R, likuiditas, divergence, area entry, target, stop loss, dan alasan utama. Geser horizontal untuk melihat seluruh kolom.")
-    render_bions_table(result_df, limit=max_scan)
-    st.info("V10.8 Risk Engine: PASS membutuhkan kombinasi score, struktur gaya, likuiditas nilai transaksi, konfirmasi weekly, dan R:R. Threshold bersifat adaptif terhadap regime IHSG.")
+    st.markdown('<div class="section-title">📋 Enrich Full IDX — BIONS V10.9.2.1</div>', unsafe_allow_html=True)
+    st.caption("Daftar saham disembunyikan secara default agar dashboard tetap ringkas di laptop maupun HP. Tekan menu di bawah jika ingin membuka tabel lengkap.")
+    with st.expander(f"📂 Buka Daftar Enrich Full IDX · {len(result_df)} saham", expanded=False):
+        st.caption("Tabel lengkap: skor, status, setup, weekly trend, R:R, likuiditas, divergence, area entry, target, stop loss, fundamental, dan alasan utama. Geser horizontal bila diperlukan.")
+        render_bions_table(result_df, limit=max_scan)
+        st.info("Risk Engine: PASS membutuhkan kombinasi score, struktur gaya, likuiditas nilai transaksi, konfirmasi weekly, dan R:R. Threshold bersifat adaptif terhadap regime IHSG.")
     st.download_button(
         "⬇️ Unduh hasil CSV",
         result_df.to_csv(index=False).encode("utf-8-sig"),
