@@ -1,10 +1,12 @@
 import warnings
 warnings.filterwarnings("ignore")
 import html
+import json
 
 import numpy as np
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 import yfinance as yf
 import plotly.graph_objects as go
 from datetime import datetime
@@ -747,6 +749,35 @@ def analyze(code, liquidity_floor=1.0e9, daily_floor=5.0e9, swing_floor=3.0e9, i
         "Stop": stop, "Target": target, "_df": x,
     }
 
+def render_tradingview_chart(symbol, period_label="3 Bulan"):
+    """Render TradingView Advanced Chart for the selected IDX symbol."""
+    code = str(symbol).upper().strip()
+    tv_symbol = f"IDX:{code}"
+    period_map = {"10 Hari": "1M", "1 Bulan": "1M", "3 Bulan": "3M", "6 Bulan": "6M", "1 Tahun": "1Y", "2 Tahun": "5Y"}
+    initial_range = period_map.get(period_label, "3M")
+    payload = {
+        "autosize": True, "symbol": tv_symbol, "interval": "D", "timezone": "Asia/Jakarta",
+        "theme": "dark", "style": "1", "locale": "id", "enable_publishing": False,
+        "allow_symbol_change": True, "hide_side_toolbar": False, "hide_top_toolbar": False,
+        "withdateranges": True, "save_image": False, "calendar": False, "details": False, "hotlist": False,
+        "studies": ["MASimple@tv-basicstudies", "Volume@tv-basicstudies", "RSI@tv-basicstudies"],
+        "support_host": "https://www.tradingview.com", "range": initial_range,
+        "backgroundColor": "#071522", "gridColor": "rgba(110,140,165,0.12)"
+    }
+    config_json = json.dumps(payload, ensure_ascii=False)
+    html_block = f'''
+    <div style="width:100%;height:650px;background:#071522;border:1px solid #1b4668;border-radius:14px;overflow:hidden;">
+      <div class="tradingview-widget-container" style="height:100%;width:100%">
+        <div class="tradingview-widget-container__widget" style="height:calc(100% - 22px);width:100%"></div>
+        <div style="height:22px;background:#071522;color:#7897b0;font:11px Arial,sans-serif;text-align:right;padding:3px 10px;">TradingView · {html.escape(code)} · Visualisasi chart eksternal</div>
+        <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
+        {config_json}
+        </script>
+      </div>
+    </div>
+    '''
+    components.html(html_block, height=680, scrolling=False)
+
 def fmt_num(value, decimals=1):
     if value is None or pd.isna(value):
         return "—"
@@ -989,28 +1020,10 @@ if mode == "Analisis 1 Saham":
     f3.metric("Vol Ratio", fmt_num(data["Vol Ratio"],2))
     f4.metric("Return 10D", fmt_pct(data["Return 10D"]))
 
-    days = {"10 Hari": 12, "1 Bulan": 22, "3 Bulan": 66, "6 Bulan": 132, "1 Tahun": 264, "2 Tahun": 520}
-    plot_df = data["_df"].tail(days[period_label])
-    fig = go.Figure()
-    fig.add_trace(go.Candlestick(
-        x=plot_df.index,
-        open=plot_df["Open"], high=plot_df["High"],
-        low=plot_df["Low"], close=plot_df["Close"],
-        name="Harga"
-    ))
-    for col, line_color in [("MA20", "#2563eb"), ("MA50", "#f59e0b"), ("MA200", "#7c3aed")]:
-        fig.add_trace(go.Scatter(
-            x=plot_df.index, y=plot_df[col], mode="lines",
-            name=col, line={"width": 1.6, "color": line_color}
-        ))
-    fig.update_layout(
-        height=440, margin={"l": 8, "r": 8, "t": 35, "b": 8},
-        template="plotly_dark", title=f"{selected.upper()} · {period_label}",
-        xaxis_rangeslider_visible=False,
-        legend={"orientation": "h", "y": 1.02, "x": 0},
-    )
-    st.caption("10 Hari = 10 hari perdagangan terakhir. Grafik 10D memakai histori OHLCV yang sama, bukan 10 hari kalender.") if period_label == "10 Hari" else None
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.markdown("<div class='section-title'>📈 Advanced Chart · TradingView</div>", unsafe_allow_html=True)
+    st.caption("Chart interaktif TradingView untuk simbol IDX yang dipilih. Anda dapat zoom, pan, mengganti timeframe, menambah indikator, dan mengganti simbol langsung dari chart. Analitik/scoring scanner tetap dihitung dari data OHLCV internal.")
+    render_tradingview_chart(selected, period_label)
+    st.markdown("<div class='app-shell-note'><span>🟢 Chart: TradingView Advanced Chart</span><span>Simbol aktif: <b>IDX:" + html.escape(selected.upper()) + "</b></span></div>", unsafe_allow_html=True)
 
     st.markdown('<div class="section-title">🎯 Area Entry dan Exit</div>', unsafe_allow_html=True)
     st.info(f"Divergence terakhir: {data['Divergence Terakhir']} ({data['Divergence Date']}) · Area: {data['Divergence Area']} · {data['Divergence Note']}")
