@@ -962,7 +962,7 @@ mode = st.sidebar.radio("Mode", ["Scanner Multi-Style", "Analisis 1 Saham"])
 period_label = st.sidebar.selectbox(
     "Periode grafik", ["10 Hari", "1 Bulan", "3 Bulan", "6 Bulan", "1 Tahun", "2 Tahun"], index=2
 )
-max_scan = st.sidebar.slider("Maksimum saham dipindai", 5, 200, 100, 5)
+max_scan = st.sidebar.slider("Maksimum saham dipindai", 5, 200, 200, 5)
 min_score = st.sidebar.slider("Minimum score shortlist", 0, 100, 60, 1)
 price_filter = st.sidebar.selectbox("Filter harga saham", ["Semua harga", "Di bawah Rp100", "Rp100–499", "Rp500–1.999", "Rp2.000–4.999", "Rp5.000 ke atas"], index=0)
 show_caution = st.sidebar.checkbox("Tampilkan CAUTION pada shortlist", True)
@@ -979,7 +979,9 @@ show_board_single = st.sidebar.checkbox(
     "Tampilkan Top 3 pada Analisis 1 Saham", True
 )
 universe_text = st.sidebar.text_area("🔴 Universe kode IDX", DEFAULT_UNIVERSE, height=145, help="Kode saham IDX yang akan dipindai. Teks dibuat merah agar lebih mudah dibaca.")
-tickers = clean_codes(universe_text)[:max_scan]
+universe_codes = clean_codes(universe_text)
+tickers = universe_codes[:max_scan]
+st.sidebar.caption(f"Universe: {len(universe_codes)} kode · Dipindai: {len(tickers)} (maks. {max_scan})")
 
 st.markdown('<div class="hero-pro"><div class="hero-kicker">SANGGUL STOCK SCANNER · NEXT-GEN IDX DECISION DASHBOARD</div><div class="hero-title">V10.9.2.1 <span style="color:#5cc8ff">BIONS Adaptive Decision Dashboard</span></div><div class="hero-desc">Market + Sector + Technical + Fundamental + Liquidity Intelligence 2.0 + Entry Readiness + Risk Engine + Historical Signal Study</div><span class="mini-chip">⚡ Daily</span><span class="mini-chip">📊 Swing</span><span class="mini-chip">🌱 Investor</span><span class="mini-chip">🧠 Fundamental</span><span class="mini-chip">🛡 Risk Engine 2.0</span><span class="mini-chip">📈 Backtest</span><span class="mini-chip">🧭 Entry Readiness</span><span class="mini-chip">💎 Low-Price Radar</span></div>', unsafe_allow_html=True)
 st.markdown('<div class="info-box">Daily, Swing, dan Investor memakai aturan berbeda. V10.9.2.1 fokus pada data yang dapat diverifikasi: harga, volume, likuiditas 20D, relative strength, sektor, fundamental, entry readiness, dan risk engine. CAUTION berarti kandidat belum memenuhi seluruh syarat PASS.</div>', unsafe_allow_html=True)
@@ -1113,26 +1115,30 @@ else:
         st.stop()
 
     all_result_df = result_df.copy()
-    # User-adjustable liquidity floor for the V10.8 shortlist.
+    scanned_count = len(all_result_df)
+    data_failed = max(len(tickers) - scanned_count, 0)
+    # User-adjustable liquidity and price filters apply only to the shortlist.
     result_df = result_df[(result_df["Avg Value 20D"].fillna(0) >= min_liquidity * 1e9)].copy()
     result_df = apply_price_filter(result_df, price_filter)
+    qualified_count = len(result_df)
     if result_df.empty:
-        st.warning("Tidak ada saham pada filter harga yang dipilih. Pilih Semua harga atau ubah filter.")
+        st.warning("Tidak ada saham pada filter harga/likuiditas yang dipilih. Pilih Semua harga atau turunkan filter likuiditas.")
+        st.info(f"Universe {len(universe_codes)} kode · batas scan {max_scan} · berhasil dianalisis {scanned_count} · data tidak tersedia/gagal {data_failed}.")
         st.stop()
 
-    # Premium KPI strip: compact, readable, and responsive on laptop/phone.
+    # Premium KPI strip: distinguish universe size, scan coverage, and filtered shortlist.
     daily_pass = int((result_df["Daily Gate"] == "PASS").sum())
     swing_pass = int((result_df["Swing Gate"] == "PASS").sum())
     investor_pass = int((result_df["Investor Gate"] == "PASS").sum())
     actionable_count = int(result_df["Adaptive Status"].isin(["Actionable Buy","Watchlist – Strong Setup","Watchlist – Early Setup"]).sum())
     st.markdown(f"""
     <div class="dashboard-kpis">
-      <div class="dashboard-kpi blue"><div class="kpi-icon">▥</div><div class="kpi-copy"><div class="kpi-label">Saham dianalisis</div><div class="kpi-number">{len(result_df)}</div></div></div>
-      <div class="dashboard-kpi green"><div class="kpi-icon">✓</div><div class="kpi-copy"><div class="kpi-label">Daily PASS</div><div class="kpi-number">{daily_pass}</div></div></div>
-      <div class="dashboard-kpi purple"><div class="kpi-icon">↗</div><div class="kpi-copy"><div class="kpi-label">Swing PASS</div><div class="kpi-number">{swing_pass}</div></div></div>
-      <div class="dashboard-kpi gold"><div class="kpi-icon">♟</div><div class="kpi-copy"><div class="kpi-label">Investor PASS</div><div class="kpi-number">{investor_pass}</div></div></div>
+      <div class="dashboard-kpi blue"><div class="kpi-icon">◎</div><div class="kpi-copy"><div class="kpi-label">Universe</div><div class="kpi-number">{len(universe_codes)}</div><div class="kpi-note">kode dimasukkan</div></div></div>
+      <div class="dashboard-kpi green"><div class="kpi-icon">✓</div><div class="kpi-copy"><div class="kpi-label">Dipindai / Data OK</div><div class="kpi-number">{scanned_count}</div><div class="kpi-note">gagal/tidak tersedia: {data_failed}</div></div></div>
+      <div class="dashboard-kpi purple"><div class="kpi-icon">▣</div><div class="kpi-copy"><div class="kpi-label">Lolos Filter</div><div class="kpi-number">{qualified_count}</div><div class="kpi-note">likuiditas + harga</div></div></div>
+      <div class="dashboard-kpi gold"><div class="kpi-icon">★</div><div class="kpi-copy"><div class="kpi-label">Actionable / Watchlist</div><div class="kpi-number">{actionable_count}</div><div class="kpi-note">dari shortlist</div></div></div>
     </div>
-    <div class="dashboard-kpi-wide"><div class="wide-icon">★</div><div><div class="wide-label">Actionable / Watchlist</div><div class="wide-number">{actionable_count}</div></div></div>
+    <div class="dashboard-kpi-wide"><div class="wide-icon">▤</div><div><div class="wide-label">Coverage Scan</div><div class="wide-number">{scanned_count} / {len(tickers)}</div></div><div style="margin-left:auto;opacity:.72;font-size:12px">Batas scan: {max_scan} · Daily PASS {daily_pass} · Swing PASS {swing_pass} · Investor PASS {investor_pass}</div></div>
     """, unsafe_allow_html=True)
 
     # Sector-relative intelligence: descriptive ranking inside the scanned universe.
