@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 
 st.set_page_config(
-    page_title="Sanggul Stock Scanner V10.9.2 | BIONS IDX Foreign Flow Intelligence",
+    page_title="Sanggul Stock Scanner V10.9.2.1 | BIONS Adaptive Decision Dashboard",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -27,13 +27,6 @@ st.markdown("""
 /* Universe IDX: ticker text dibuat merah agar lebih mudah dibaca */
 [data-testid="stSidebar"] textarea{color:#ff4d5d !important;-webkit-text-fill-color:#ff4d5d !important;caret-color:#ff4d5d !important;font-weight:800 !important;background:#0a1d2f !important;border:1px solid #ff4d5d !important;box-shadow:0 0 0 1px rgba(255,77,93,.12),0 0 14px rgba(255,77,93,.08)}
 [data-testid="stSidebar"] textarea:focus{border-color:#ff6574 !important;box-shadow:0 0 0 2px rgba(255,77,93,.20),0 0 18px rgba(255,77,93,.12)}
-/* Foreign Flow CSV uploader: gunakan hijau agar teks tetap terbaca pada tema gelap */
-[data-testid="stSidebar"] [data-testid="stFileUploader"] label{color:#00d084 !important;font-weight:850 !important}
-[data-testid="stSidebar"] [data-testid="stFileUploader"] section{background:#0b1c2d !important;border:1px solid #1e405d !important;border-radius:10px !important}
-[data-testid="stSidebar"] [data-testid="stFileUploader"] button{color:#00d084 !important;background:#0a1d2f !important;border:1px solid #00a86b !important}
-[data-testid="stSidebar"] [data-testid="stFileUploader"] button span{color:#00d084 !important}
-[data-testid="stSidebar"] [data-testid="stFileUploader"] small{color:#00d084 !important}
-[data-testid="stSidebar"] [data-testid="stFileUploader"] [data-testid="stMarkdownContainer"] p{color:#00d084 !important}
 h1,h2,h3{color:#f4f8ff!important;font-weight:850;letter-spacing:-.025em}h1{font-size:2rem!important}
 .section-title{font-size:1.15rem;font-weight:850;margin:1rem 0 .55rem;color:#f4f8ff;display:flex;align-items:center;gap:.4rem}
 .info-box{background:linear-gradient(90deg,#09253d,#0b1c2d);border:1px solid #1d5279;border-left:4px solid var(--blue);border-radius:10px;padding:10px 14px;color:#bfe1ff;font-size:.86rem;box-shadow:0 5px 20px rgba(0,0,0,.18)}
@@ -51,6 +44,8 @@ h1,h2,h3{color:#f4f8ff!important;font-weight:850;letter-spacing:-.025em}h1{font-
 .top-banner{display:flex;align-items:center;gap:10px;margin-bottom:3px}.version{font-size:2rem;font-weight:950;color:#c76cff}.version-badge{background:#063c31;color:#00dc92;border:1px solid #087e64;padding:5px 10px;border-radius:999px;font-size:.72rem;font-weight:900}.brand-sub{color:#8fa9c1;font-size:.76rem}
 @media(max-width:768px){.block-container{padding:.55rem}.card{min-height:0;padding:11px}.bions-table{min-width:1300px}}
 .hero-pro{background:linear-gradient(135deg,#0b2a46 0%,#081522 48%,#10102d 100%);border:1px solid #1c6da0;border-radius:18px;padding:20px 22px;margin:10px 0 14px;box-shadow:0 14px 45px rgba(0,0,0,.30),inset 0 1px 0 rgba(255,255,255,.04)}.hero-title{font-size:2.35rem;font-weight:950;color:#fff;letter-spacing:-.045em}.hero-kicker{color:#58c7ff;font-weight:850;font-size:.78rem;letter-spacing:.12em;text-transform:uppercase}.hero-desc{color:#9db7ce;margin-top:5px;font-size:.88rem}.mini-chip{display:inline-block;padding:5px 9px;border-radius:999px;margin:7px 5px 0 0;background:#0b3554;border:1px solid #176b9b;color:#bfe8ff;font-size:.68rem;font-weight:800}.metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.kpi{background:linear-gradient(180deg,#0e2941,#081623);border:1px solid #1c4969;border-radius:13px;padding:13px;box-shadow:0 8px 24px rgba(0,0,0,.18)}.kpi-label{color:#7897b0;font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;font-weight:800}.kpi-value{font-size:1.5rem;color:#fff;font-weight:950;margin-top:4px}.kpi-note{font-size:.7rem;color:#90abc0}.glow-blue{border-color:#1683ff;box-shadow:0 0 22px rgba(22,131,255,.13)}.glow-green{border-color:#00d084;box-shadow:0 0 22px rgba(0,208,132,.11)}.glow-orange{border-color:#ff9f1a;box-shadow:0 0 22px rgba(255,159,26,.10)}.glow-red{border-color:#ff4d5d;box-shadow:0 0 22px rgba(255,77,93,.10)}.score-ring{font-size:1.35rem;font-weight:950;color:#fff}.subpanel{background:#081725;border:1px solid #193f5b;border-radius:13px;padding:13px}.tag-blue{color:#63c9ff}.tag-green{color:#00e39a}.tag-yellow{color:#ffd35a}.tag-red{color:#ff6978}.sector-bar{height:7px;border-radius:10px;background:#142c40;overflow:hidden}.sector-fill{height:100%;background:linear-gradient(90deg,#0877ff,#00d084)}@media(max-width:900px){.metric-grid{grid-template-columns:repeat(2,1fr)}.hero-title{font-size:1.8rem}}
+
+.modern-stock-head{display:grid;grid-template-columns:minmax(260px,1.2fr) repeat(4,minmax(120px,.55fr));gap:10px;align-items:stretch;margin:8px 0 12px}.stock-identity,.quote-card{background:linear-gradient(180deg,#0d263c,#081623);border:1px solid #1c4868;border-radius:13px;padding:12px 15px}.stock-identity{border-left:4px solid #00d084}.stock-code{font-size:2rem;font-weight:950;line-height:1;color:#fff;letter-spacing:-.04em}.stock-name{font-size:.82rem;color:#91aac0;margin-top:5px}.stock-tag{display:inline-block;margin-top:8px;padding:4px 8px;border-radius:999px;background:#0a3550;border:1px solid #1c668f;color:#70d2ff;font-size:.65rem;font-weight:850}.quote-label{font-size:.65rem;color:#7897b0;text-transform:uppercase;font-weight:800;letter-spacing:.08em}.quote-value{font-size:1.28rem;font-weight:950;color:#fff;margin-top:4px}.quote-note{font-size:.68rem;color:#00d084;margin-top:3px}.primary-card{background:linear-gradient(135deg,#0b2d45,#0a1b2a);border:1px solid #246087;border-radius:13px;padding:10px 12px;min-height:70px}.primary-label{font-size:.62rem;color:#7897b0;text-transform:uppercase;letter-spacing:.08em;font-weight:850}.primary-value{font-size:.96rem;color:#fff;font-weight:900;line-height:1.2;margin-top:6px;word-break:break-word}.primary-note{font-size:.64rem;color:#8fa9c1;margin-top:4px}.app-shell-note{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 12px;border:1px solid #183b57;border-radius:11px;background:linear-gradient(90deg,#071827,#0a2033);margin:4px 0 12px;color:#8fa9c1;font-size:.72rem}.clean-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.clean-panel{background:#081725;border:1px solid #193f5b;border-radius:13px;padding:13px}.clean-panel h4{margin:0 0 8px;color:#f4f8ff;font-size:.82rem}.kv{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid #143149;font-size:.72rem}.kv:last-child{border-bottom:0}.kv .label{color:#7897b0}.kv .value{color:#e9f3ff;font-weight:800;text-align:right}.footer-note{margin-top:15px;padding:9px 12px;border-top:1px solid #173650;color:#6f8da7;font-size:.67rem;text-align:center}@media(max-width:1100px){.modern-stock-head{grid-template-columns:1fr 1fr}.stock-identity{grid-column:1/-1}.clean-grid{grid-template-columns:1fr 1fr}}@media(max-width:720px){.modern-stock-head{grid-template-columns:1fr 1fr}.stock-identity{grid-column:1/-1}.clean-grid{grid-template-columns:1fr}.hero-title{font-size:1.55rem}.app-shell-note{align-items:flex-start;flex-direction:column}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -419,89 +414,6 @@ def liquidity_metrics(x):
     liquidity_score = float(np.clip(level_score + consistency_score + accel_score + median_score, 0, 100))
     return adv20, ratio, med20, consistency, liquidity_score
 
-def normalize_foreign_flow(df):
-    """Normalize optional foreign-flow CSV into per-stock daily records.
-
-    Supported columns (case-insensitive aliases): Code/Kode/Ticker, Date/Tanggal,
-    ForeignBuyValue, ForeignSellValue, ForeignNetValue, ForeignBuyVolume,
-    ForeignSellVolume. Values are IDR for value columns and shares for volume columns.
-    """
-    if df is None or df.empty:
-        return pd.DataFrame()
-    d = df.copy()
-    aliases = {
-        'code':['code','kode','ticker','symbol'],
-        'date':['date','tanggal','datetime','tradingdate'],
-        'buy_value':['foreignbuyvalue','foreign_buy_value','foreignbuy','asingbuyvalue','buyvalueasing'],
-        'sell_value':['foreignsellvalue','foreign_sell_value','foreignsell','asingsellvalue','sellvalueasing'],
-        'net_value':['foreignnetvalue','foreign_net_value','netforeignvalue','netvalueasing','netbuyvalue'],
-        'buy_volume':['foreignbuyvolume','foreign_buy_volume','foreignbuyvol','asingbuyvolume','buyvolumeasing'],
-        'sell_volume':['foreignsellvolume','foreign_sell_volume','foreignsellvol','asingsellvolume','sellvolumeasing'],
-        'net_volume':['foreignnetvolume','foreign_net_volume','netforeignvolume','netvolumeasing'],
-    }
-    norm={str(c).strip().lower().replace(' ','').replace('-','').replace('/',''): c for c in d.columns}
-    def pick(names):
-        for n in names:
-            key=n.lower().replace(' ','').replace('-','').replace('/','')
-            if key in norm: return norm[key]
-        return None
-    mapping={k:pick(v) for k,v in aliases.items()}
-    if not mapping['code'] or not mapping['date']:
-        return pd.DataFrame()
-    out=pd.DataFrame()
-    out['Code']=d[mapping['code']].astype(str).str.upper().str.strip()
-    out['Date']=pd.to_datetime(d[mapping['date']], errors='coerce')
-    for target in ['buy_value','sell_value','net_value','buy_volume','sell_volume','net_volume']:
-        src=mapping[target]
-        out[target]=pd.to_numeric(d[src], errors='coerce') if src else np.nan
-    if out['net_value'].isna().all() and out['buy_value'].notna().any() and out['sell_value'].notna().any():
-        out['net_value']=out['buy_value'].fillna(0)-out['sell_value'].fillna(0)
-    if out['net_volume'].isna().all() and out['buy_volume'].notna().any() and out['sell_volume'].notna().any():
-        out['net_volume']=out['buy_volume'].fillna(0)-out['sell_volume'].fillna(0)
-    out=out.dropna(subset=['Code','Date']).sort_values(['Code','Date'])
-    return out
-
-def foreign_flow_metrics(flow_df, code):
-    """Return 1D/5D/20D foreign net value/volume and a bounded confirmation score."""
-    empty={
-        'Foreign Data Status':'N/A — belum ada data asing', 'Foreign Net Value 1D':np.nan,
-        'Foreign Net Value 5D':np.nan, 'Foreign Net Value 10D':np.nan, 'Foreign Net Value 20D':np.nan,
-        'Foreign Net Volume 1D':np.nan, 'Foreign Net Volume 5D':np.nan, 'Foreign Net Volume 10D':np.nan,
-        'Foreign Net Volume 20D':np.nan, 'Foreign Buy Value 1D':np.nan,
-        'Foreign Sell Value 1D':np.nan, 'Foreign Flow Score':np.nan,
-        'Foreign Bias':'N/A', 'Foreign Flow Source':'Not connected'
-    }
-    if flow_df is None or flow_df.empty:
-        return empty
-    d=flow_df[flow_df['Code'].eq(str(code).upper())].sort_values('Date')
-    if d.empty:
-        return empty
-    def sm(col,n):
-        z=d[col].dropna().tail(n)
-        return z.sum() if len(z) else np.nan
-    nv1,nv5,nv10,nv20=sm('net_value',1),sm('net_value',5),sm('net_value',10),sm('net_value',20)
-    vol1,vol5,vol10,vol20=sm('net_volume',1),sm('net_volume',5),sm('net_volume',10),sm('net_volume',20)
-    bv1,sv1=sm('buy_value',1),sm('sell_value',1)
-    # Score is a confirmation signal, not a standalone buy/sell recommendation.
-    vals=[v for v in [nv1,nv5,nv10,nv20] if pd.notna(v)]
-    if not vals:
-        fs=np.nan; bias='N/A'
-    else:
-        pos=sum(v>0 for v in vals); neg=sum(v<0 for v in vals)
-        if pos>=2: bias='Net Buy / Accumulation'
-        elif neg>=2: bias='Net Sell / Distribution'
-        else: bias='Mixed'
-        signs=np.mean([1 if v>0 else -1 if v<0 else 0 for v in vals])
-        fs=float(np.clip(50+signs*35,0,100))
-    latest_date=d['Date'].max()
-    return {
-        'Foreign Data Status':f'OK · sampai {latest_date:%Y-%m-%d}',
-        'Foreign Net Value 1D':nv1,'Foreign Net Value 5D':nv5,'Foreign Net Value 10D':nv10,'Foreign Net Value 20D':nv20,
-        'Foreign Net Volume 1D':vol1,'Foreign Net Volume 5D':vol5,'Foreign Net Volume 10D':vol10,'Foreign Net Volume 20D':vol20,
-        'Foreign Buy Value 1D':bv1,'Foreign Sell Value 1D':sv1,'Foreign Flow Score':fs,
-        'Foreign Bias':bias,'Foreign Flow Source':'User CSV / external valid source'
-    }
-
 def rr_metrics(price, stop, target1, target2):
     if any(pd.isna(v) for v in [price, stop, target1]):
         return np.nan, np.nan
@@ -584,7 +496,7 @@ def risk_score(atr_pct, adv20, liquidity_floor, weekly_trend, rr1, hard_fail=Fal
     return float(np.clip(r,0,100))
 
 
-def analyze(code, liquidity_floor=1.0e9, daily_floor=5.0e9, swing_floor=3.0e9, investor_floor=1.0e9, low_floor=0.5e9, foreign_flow=None):
+def analyze(code, liquidity_floor=1.0e9, daily_floor=5.0e9, swing_floor=3.0e9, investor_floor=1.0e9, low_floor=0.5e9):
     regime_data = market_regime()
     regime = regime_data["regime"]
     raw = download_history(code)
@@ -603,7 +515,6 @@ def analyze(code, liquidity_floor=1.0e9, daily_floor=5.0e9, swing_floor=3.0e9, i
     areas = trading_areas(x, price, atr, divergence)
     weekly_trend, weekly_vs_ma20 = weekly_trend_state(x)
     adv20_value, liquidity_ratio, median20_value, liquidity_consistency, liquidity_score = liquidity_metrics(x)
-    foreign = foreign_flow_metrics(foreign_flow, code)
     fundamentals = fundamental_snapshot(code)
     backtest = simple_backtest(x)
     divergence_age = divergence_age_days(x, divergence)
@@ -736,18 +647,13 @@ def analyze(code, liquidity_floor=1.0e9, daily_floor=5.0e9, swing_floor=3.0e9, i
     rs_bonus = float(np.clip((rs3 + 10) * 0.45, 0, 8)) if pd.notna(rs3) else 0
     readiness_bonus = float(np.clip((readiness - 50) * 0.12, -6, 6))
     risk_tmp = risk_score(atr_pct, adv20_value, liquidity_floor, weekly_trend, rr1, hard_fail_any)
-    foreign_adj = 0.0
-    if pd.notna(foreign.get('Foreign Flow Score', np.nan)):
-        foreign_adj = float(np.clip((foreign['Foreign Flow Score'] - 50) * 0.10, -5, 5))
-    overall_score = float(np.clip(base_overall + rs_bonus + readiness_bonus + foreign_adj - max(0,risk_tmp-60)*0.08, 0, 100))
+    overall_score = float(np.clip(base_overall + rs_bonus + readiness_bonus - max(0,risk_tmp-60)*0.08, 0, 100))
     hard_fail_any = daily_hard_fail or swing_hard_fail or investor_hard_fail
     adaptive_status = adaptive_label(overall_score, hard_fail_any, regime)
     adaptive_reason = score_reason(overall_score, trend_ok, momentum_ok, volume_ok, rs_ok, risk_ok, trigger)
     if pd.notna(rs3): adaptive_reason += f"; RS 3M vs IHSG {rs3:+.1f}%"
     adaptive_reason += f"; entry readiness {readiness:.0f}/100 ({readiness_stage})"
     adaptive_reason += f"; Liquidity Score {liquidity_score:.0f}/100"
-    if foreign.get('Foreign Bias') not in (None, 'N/A'):
-        adaptive_reason += f"; asing {foreign['Foreign Bias']}"
     if not liquidity_ok: adaptive_reason += '; likuiditas nilai transaksi perlu diperhatikan'
     if not mtf_ok: adaptive_reason += '; konfirmasi weekly belum mendukung'
     if pd.notna(rr1) and rr1 < 1.5: adaptive_reason += '; R:R < 1.5x'
@@ -786,21 +692,6 @@ def analyze(code, liquidity_floor=1.0e9, daily_floor=5.0e9, swing_floor=3.0e9, i
         "Market Cap": fundamentals["Market Cap"],
         "Backtest N": backtest["Backtest N"], "Backtest Win Rate": backtest["Backtest Win Rate"],
         "Backtest Avg Return": backtest["Backtest Avg Return"], "Backtest Median Return": backtest["Backtest Median Return"],
-        "Foreign Flow": foreign.get("Foreign Bias", "N/A"),
-        "Foreign Bias": foreign.get("Foreign Bias", "N/A"),
-        "Foreign Data Status": foreign["Foreign Data Status"],
-        "Foreign Net Value 1D": foreign["Foreign Net Value 1D"],
-        "Foreign Net Value 5D": foreign["Foreign Net Value 5D"],
-        "Foreign Net Value 10D": foreign["Foreign Net Value 10D"],
-        "Foreign Net Value 20D": foreign["Foreign Net Value 20D"],
-        "Foreign Net Volume 1D": foreign["Foreign Net Volume 1D"],
-        "Foreign Net Volume 5D": foreign["Foreign Net Volume 5D"],
-        "Foreign Net Volume 10D": foreign["Foreign Net Volume 10D"],
-        "Foreign Net Volume 20D": foreign["Foreign Net Volume 20D"],
-        "Foreign Buy Value 1D": foreign["Foreign Buy Value 1D"],
-        "Foreign Sell Value 1D": foreign["Foreign Sell Value 1D"],
-        "Foreign Flow Score": foreign["Foreign Flow Score"],
-        "Foreign Flow Source": foreign["Foreign Flow Source"],
         "Adaptive Score": overall_score,
         "Decision Score": overall_score,
         "Opportunity Score": float(np.clip(base_overall + rs_bonus + max(readiness_bonus,0),0,100)),
@@ -977,7 +868,7 @@ def render_card(row, style):
 
 def show_board(result_df, min_score, show_caution, title="🎯 Top 3 Actionable Picks — Risk-Gated 2.0", unique_styles=True):
     st.markdown(f'<div class="section-title">{title}</div>', unsafe_allow_html=True)
-    st.caption("V10.9.2 menambahkan Liquidity Intelligence 2.0 dan IDX Foreign Flow Gateway. Foreign flow per saham hanya diaktifkan bila feed resmi IDX/berlisensi tersedia; CSV tetap sebagai fallback. PASS diprioritaskan; CAUTION tetap ditampilkan bila dipilih. Top 3 antar gaya dapat dibuat berbeda.")
+    st.caption("Liquidity Intelligence 2.0 + Entry Readiness + Adaptive Risk Engine. PASS diprioritaskan; CAUTION tetap ditampilkan bila dipilih. Top 3 antar gaya dapat dibuat berbeda.")
     columns = st.columns(3)
     used = set()
     for column, style in zip(columns, STYLES):
@@ -1025,12 +916,10 @@ def render_bions_table(df, limit=100):
         liq = r.get('Avg Value 20D', np.nan)
         liq_score = r.get('Liquidity Score', np.nan)
         liq_accel = r.get('Liquidity Ratio 5D/20D', np.nan)
-        foreign_bias = html.escape(str(r.get('Foreign Bias','N/A')))
-        foreign_net5 = r.get('Foreign Net Value 5D', np.nan)
         mtf = html.escape(str(r.get('Weekly Trend','—')))
         setup = html.escape(str(r.get('Setup Type','—')))
-        rows.append(f"<tr><td class='rank'>{i+1}</td><td class='ticker'>{code}</td><td>{name}</td><td class='num'>{p(r.get('Price'))}</td><td class='num {change_cls}'>{fmt_pct(change)}</td><td class='num score'>{fmt_num(r.get('Decision Score'),1)}</td><td><span class='table-pill {status_table_class(status)}'>{status}</span></td><td><span class='table-pill {confidence_class(conf)}'>{conf}</span></td><td>{fmt_num(r.get('Entry Readiness'),0)} · {html.escape(str(r.get('Entry Readiness Stage','—')))}</td><td class='num'>{fmt_num(r.get('Risk Score'),0)}</td><td class='num'>{fmt_pct(r.get('RS 3M vs IHSG'))}</td><td>{setup}</td><td>{mtf}</td><td class='num'>{fmt_num(rr,2)}x</td><td class='num'>{fmt_num(liq/1e9 if pd.notna(liq) else np.nan,1)}</td><td class='num'>{fmt_num(liq_score,0)}</td><td class='num'>{fmt_num(liq_accel,2)}x</td><td>{foreign_bias}</td><td class='num'>{fmt_num(foreign_net5/1e9 if pd.notna(foreign_net5) else np.nan,1)}</td><td class='num'>{fmt_num(r.get('Foreign Net Value 10D')/1e9 if pd.notna(r.get('Foreign Net Value 10D')) else np.nan,1)}</td><td>{html.escape(str(r.get('Sector','Unknown')))}</td><td class='num score'>{fmt_num(r.get('Fundamental Score'),1)}</td><td class='num'>{fmt_num(r.get('PE'),1)}</td><td class='num'>{fmt_num(r.get('PB'),2)}</td><td class='num'>{fmt_pct(r.get('ROE')*100) if pd.notna(r.get('ROE')) else '—'}</td><td class='num'>{fmt_num(r.get('Backtest Win Rate'),1)}</td><td class='subtle'>{div}</td><td class='buy'>{html.escape(str(r.get('Buy Area','—')))}</td><td class='num buy'>{n(r.get('Buy Trigger'))}</td><td class='num sell'>{n(r.get('Target 1'))}</td><td class='num sell'>{n(r.get('Target 2'))}</td><td class='num sl'>{n(r.get('Stop Loss'))}</td><td title='{reason}'>{short}</td></tr>")
-    table="<div class='table-shell'><table class='bions-table'><thead><tr><th>#</th><th>Kode</th><th>Nama Saham</th><th>Harga</th><th>1D</th><th>Decision</th><th>Status</th><th>Confidence</th><th>Entry Readiness</th><th>Risk</th><th>RS 3M</th><th>Setup</th><th>Weekly Trend</th><th>R:R T1</th><th>Avg Value 20D<br>(Rp M)</th><th>Liquidity Score</th><th>5D/20D</th><th>Foreign Bias</th><th>Foreign Net 5D<br>(Rp M)</th><th>Foreign Net 10D<br>(Rp M)</th><th>Sector</th><th>Fund. Score</th><th>PE</th><th>PB</th><th>ROE</th><th>BT Win%</th><th>Divergence</th><th>Buy Area</th><th>Buy Trigger</th><th>Target 1</th><th>Target 2</th><th>Stop Loss</th><th>Alasan Singkat</th></tr></thead><tbody>"+"".join(rows)+"</tbody></table></div>"
+        rows.append(f"<tr><td class='rank'>{i+1}</td><td class='ticker'>{code}</td><td>{name}</td><td class='num'>{p(r.get('Price'))}</td><td class='num {change_cls}'>{fmt_pct(change)}</td><td class='num score'>{fmt_num(r.get('Decision Score'),1)}</td><td><span class='table-pill {status_table_class(status)}'>{status}</span></td><td><span class='table-pill {confidence_class(conf)}'>{conf}</span></td><td>{fmt_num(r.get('Entry Readiness'),0)} · {html.escape(str(r.get('Entry Readiness Stage','—')))}</td><td class='num'>{fmt_num(r.get('Risk Score'),0)}</td><td class='num'>{fmt_pct(r.get('RS 3M vs IHSG'))}</td><td>{setup}</td><td>{mtf}</td><td class='num'>{fmt_num(rr,2)}x</td><td class='num'>{fmt_num(liq/1e9 if pd.notna(liq) else np.nan,1)}</td><td class='num'>{fmt_num(liq_score,0)}</td><td class='num'>{fmt_num(liq_accel,2)}x</td><td>{html.escape(str(r.get('Sector','Unknown')))}</td><td class='num score'>{fmt_num(r.get('Fundamental Score'),1)}</td><td class='num'>{fmt_num(r.get('PE'),1)}</td><td class='num'>{fmt_num(r.get('PB'),2)}</td><td class='num'>{fmt_pct(r.get('ROE')*100) if pd.notna(r.get('ROE')) else '—'}</td><td class='num'>{fmt_num(r.get('Backtest Win Rate'),1)}</td><td class='subtle'>{div}</td><td class='buy'>{html.escape(str(r.get('Buy Area','—')))}</td><td class='num buy'>{n(r.get('Buy Trigger'))}</td><td class='num sell'>{n(r.get('Target 1'))}</td><td class='num sell'>{n(r.get('Target 2'))}</td><td class='num sl'>{n(r.get('Stop Loss'))}</td><td title='{reason}'>{short}</td></tr>")
+    table="<div class='table-shell'><table class='bions-table'><thead><tr><th>#</th><th>Kode</th><th>Nama Saham</th><th>Harga</th><th>1D</th><th>Decision</th><th>Status</th><th>Confidence</th><th>Entry Readiness</th><th>Risk</th><th>RS 3M</th><th>Setup</th><th>Weekly Trend</th><th>R:R T1</th><th>Avg Value 20D<br>(Rp M)</th><th>Liquidity Score</th><th>5D/20D</th><th>Sector</th><th>Fund. Score</th><th>PE</th><th>PB</th><th>ROE</th><th>BT Win%</th><th>Divergence</th><th>Buy Area</th><th>Buy Trigger</th><th>Target 1</th><th>Target 2</th><th>Stop Loss</th><th>Alasan Singkat</th></tr></thead><tbody>"+"".join(rows)+"</tbody></table></div>"
     st.markdown(table, unsafe_allow_html=True)
 
 # Sidebar
@@ -1052,54 +941,18 @@ low_liq = st.sidebar.number_input("Low-Price — Min transaksi 20D (Rp M)", min_
 min_liquidity = st.sidebar.number_input("Filter tabel utama (Rp M)", min_value=0.0, max_value=100.0, value=1.0, step=0.5, help="Filter tampilan utama. Gate tiap gaya memakai ambang adaptif.")
 low_score = st.sidebar.slider("Low-Price Opportunity Score minimum", 0, 100, 35, 5)
 
-st.sidebar.markdown("### 🌍 IDX Foreign Flow Intelligence")
-st.sidebar.caption("Prioritas: feed resmi IDX/berlisensi. CSV hanya fallback. Scanner tidak mengarang data asing.")
-foreign_source = st.sidebar.radio("Sumber Foreign Flow", ["IDX Direct (Official Feed)", "CSV Fallback"], index=0, help="IDX Direct membutuhkan endpoint/feed resmi yang Anda miliki. CSV dipakai jika feed belum tersedia.")
-FOREIGN_FLOW_DATA = pd.DataFrame()
-FOREIGN_FLOW_SOURCE_STATUS = "IDX Direct belum dikonfigurasi"
-if foreign_source == "IDX Direct (Official Feed)":
-    st.sidebar.info("Mode IDX Direct aktif. Konfigurasi endpoint resmi melalui Streamlit secrets/env: IDX_FOREIGN_FLOW_URL dan opsional IDX_API_TOKEN.")
-    try:
-        from idx_connector import load_idx_foreign_flow
-        FOREIGN_FLOW_DATA, FOREIGN_FLOW_SOURCE_STATUS = load_idx_foreign_flow()
-        if not FOREIGN_FLOW_DATA.empty:
-            st.sidebar.success(f"IDX Foreign Flow aktif: {len(FOREIGN_FLOW_DATA):,} baris")
-        else:
-            st.sidebar.warning(FOREIGN_FLOW_SOURCE_STATUS)
-    except Exception as exc:
-        FOREIGN_FLOW_SOURCE_STATUS = f"IDX Direct belum aktif: {exc}"
-        st.sidebar.warning(FOREIGN_FLOW_SOURCE_STATUS)
-else:
-    foreign_file = st.sidebar.file_uploader("Upload Foreign Flow CSV", type=["csv"], help="Kolom minimal: Code/Kode dan Date/Tanggal. Disarankan juga ForeignBuyValue, ForeignSellValue, ForeignBuyVolume, ForeignSellVolume.")
-    if foreign_file is not None:
-        try:
-            FOREIGN_FLOW_DATA = normalize_foreign_flow(pd.read_csv(foreign_file))
-            if FOREIGN_FLOW_DATA.empty:
-                FOREIGN_FLOW_SOURCE_STATUS = "CSV tidak terbaca"
-                st.sidebar.error("CSV foreign flow tidak terbaca. Periksa kolom Code/Kode dan Date/Tanggal.")
-            else:
-                FOREIGN_FLOW_SOURCE_STATUS = "CSV fallback"
-                st.sidebar.success(f"Foreign flow aktif: {len(FOREIGN_FLOW_DATA):,} baris")
-        except Exception as exc:
-            FOREIGN_FLOW_SOURCE_STATUS = f"CSV error: {exc}"
-            st.sidebar.error(f"Gagal membaca CSV foreign flow: {exc}")
 show_board_single = st.sidebar.checkbox(
     "Tampilkan Top 3 pada Analisis 1 Saham", True
 )
 universe_text = st.sidebar.text_area("🔴 Universe kode IDX", DEFAULT_UNIVERSE, height=145, help="Kode saham IDX yang akan dipindai. Teks dibuat merah agar lebih mudah dibaca.")
 tickers = clean_codes(universe_text)[:max_scan]
 
-st.markdown('<div class="hero-pro"><div class="hero-kicker">SANGGUL STOCK SCANNER · NEXT-GEN IDX DECISION DASHBOARD</div><div class="hero-title">V10.9.2 <span style="color:#5cc8ff">BIONS IDX Foreign Flow Intelligence</span></div><div class="hero-desc">Market + Sector + Technical + Fundamental + Liquidity Intelligence 2.0 + Foreign Flow + Entry Readiness + Risk Engine + Historical Signal Study</div><span class="mini-chip">⚡ Daily</span><span class="mini-chip">📊 Swing</span><span class="mini-chip">🌱 Investor</span><span class="mini-chip">🧠 Fundamental</span><span class="mini-chip">🛡 Risk Engine 2.0</span><span class="mini-chip">📈 Backtest</span><span class="mini-chip">🧭 Entry Readiness</span><span class="mini-chip">💎 Low-Price Radar</span></div>', unsafe_allow_html=True)
-st.markdown(
-    '<div class="info-box">Daily, Swing, dan Investor memakai aturan berbeda. '
-    'Foreign Flow per saham hanya aktif jika data valid tersedia dari feed resmi IDX/berlisensi atau CSV fallback; tanpa data, scanner tidak mengarang arus asing. CAUTION berarti kandidat belum memenuhi seluruh syarat PASS, bukan berarti data error. '
-    'FAIL digunakan untuk risiko atau struktur yang lebih kritis.</div>',
-    unsafe_allow_html=True
-)
+st.markdown('<div class="hero-pro"><div class="hero-kicker">SANGGUL STOCK SCANNER · NEXT-GEN IDX DECISION DASHBOARD</div><div class="hero-title">V10.9.2.1 <span style="color:#5cc8ff">BIONS Adaptive Decision Dashboard</span></div><div class="hero-desc">Market + Sector + Technical + Fundamental + Liquidity Intelligence 2.0 + Entry Readiness + Risk Engine + Historical Signal Study</div><span class="mini-chip">⚡ Daily</span><span class="mini-chip">📊 Swing</span><span class="mini-chip">🌱 Investor</span><span class="mini-chip">🧠 Fundamental</span><span class="mini-chip">🛡 Risk Engine 2.0</span><span class="mini-chip">📈 Backtest</span><span class="mini-chip">🧭 Entry Readiness</span><span class="mini-chip">💎 Low-Price Radar</span></div>', unsafe_allow_html=True)
+st.markdown('<div class="info-box">Daily, Swing, dan Investor memakai aturan berbeda. V10.9.2.1 fokus pada data yang dapat diverifikasi: harga, volume, likuiditas 20D, relative strength, sektor, fundamental, entry readiness, dan risk engine. CAUTION berarti kandidat belum memenuhi seluruh syarat PASS.</div>', unsafe_allow_html=True)
 
 regime_now = market_regime()
 st.markdown(f"**Market Regime IHSG:** `{regime_now["regime"]}` · RSI IHSG: `{fmt_num(regime_now["rsi"],1)}` · Threshold adaptif aktif", unsafe_allow_html=True)
-st.markdown(f"<div class='metric-grid'><div class='kpi glow-blue'><div class='kpi-label'>IHSG Regime</div><div class='kpi-value'>{regime_now["regime"]}</div><div class='kpi-note'>RSI {fmt_num(regime_now["rsi"],1)}</div></div><div class='kpi glow-green'><div class='kpi-label'>Scanner Engine</div><div class='kpi-value'>V10.9</div><div class='kpi-note'>Adaptive Decision Engine</div></div><div class='kpi glow-orange'><div class='kpi-label'>Data Horizon</div><div class='kpi-value'>2Y</div><div class='kpi-note'>Analisis 10D / 1M / 3M / 6M / 2Y</div></div><div class='kpi glow-red'><div class='kpi-label'>Foreign Flow</div><div class='kpi-value'>{'CONNECTED' if not FOREIGN_FLOW_DATA.empty else 'IDX READY'}</div><div class='kpi-note'>{FOREIGN_FLOW_SOURCE_STATUS}</div></div></div>", unsafe_allow_html=True)
+st.markdown(f"<div class='metric-grid'><div class='kpi glow-blue'><div class='kpi-label'>IHSG Regime</div><div class='kpi-value'>{regime_now["regime"]}</div><div class='kpi-note'>RSI {fmt_num(regime_now["rsi"],1)}</div></div><div class='kpi glow-green'><div class='kpi-label'>Scanner Engine</div><div class='kpi-value'>V10.9.2.1</div><div class='kpi-note'>Adaptive Decision Engine</div></div><div class='kpi glow-orange'><div class='kpi-label'>Data Horizon</div><div class='kpi-value'>10D → 2Y</div><div class='kpi-note'>10D / 1M / 3M / 6M / 1Y / 2Y</div></div><div class='kpi glow-blue'><div class='kpi-label'>Liquidity Engine</div><div class='kpi-value'>2.0</div><div class='kpi-note'>Average + Median + Consistency + Acceleration</div></div></div>", unsafe_allow_html=True)
 
 if not tickers:
     st.warning("Universe kosong. Masukkan minimal satu kode saham.")
@@ -1108,18 +961,18 @@ if not tickers:
 # Single-stock mode: individual analysis first, then Top 3 board.
 if mode == "Analisis 1 Saham":
     selected = st.sidebar.selectbox("Pilih saham", tickers)
-    data = analyze(selected, liquidity_floor=min_liquidity * 1e9, daily_floor=daily_liq*1e9, swing_floor=swing_liq*1e9, investor_floor=investor_liq*1e9, low_floor=low_liq*1e9, foreign_flow=FOREIGN_FLOW_DATA)
+    data = analyze(selected, liquidity_floor=min_liquidity * 1e9, daily_floor=daily_liq*1e9, swing_floor=swing_liq*1e9, investor_floor=investor_liq*1e9, low_floor=low_liq*1e9)
     if data is None:
         st.error("Data saham tidak tersedia atau histori belum cukup.")
         st.stop()
 
-    st.markdown('<div class="section-title">🔎 Analisis Individual</div>', unsafe_allow_html=True)
+    st.markdown(f"<div class='modern-stock-head'><div class='stock-identity'><div class='stock-code'>{html.escape(selected.upper())}</div><div class='stock-name'>Analisis individual · IDX</div><span class='stock-tag'>{html.escape(str(data['Market Regime']))}</span></div><div class='quote-card'><div class='quote-label'>Harga</div><div class='quote-value'>Rp {fmt_num(data['Price'],0)}</div><div class='quote-note'>{fmt_pct(data['Change 1D'])}</div></div><div class='quote-card'><div class='quote-label'>Decision</div><div class='quote-value'>{fmt_num(data['Decision Score'],1)}</div><div class='quote-note'>/ 100</div></div><div class='quote-card'><div class='quote-label'>Readiness</div><div class='quote-value'>{fmt_num(data['Entry Readiness'],0)}</div><div class='quote-note'>{html.escape(str(data['Entry Readiness Stage']))}</div></div><div class='quote-card'><div class='quote-label'>Liquidity</div><div class='quote-value'>{fmt_num(data['Liquidity Score'],0)}</div><div class='quote-note'>/ 100</div></div></div><div class='section-title'>🔎 Analisis Individual</div>", unsafe_allow_html=True)
     m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("Harga", f"Rp {fmt_num(data['Price'], 0)}")
     m2.metric("Daily Score", f"{data['Daily Score']:.1f}", data["Daily Gate"])
     m3.metric("Swing Score", f"{data['Swing Score']:.1f}", data["Swing Gate"])
     m4.metric("Investor Score", f"{data['Investor Score']:.1f}", data["Investor Gate"])
-    m5.metric("Primary Style", data["Primary Style"])
+    m5.markdown(f"<div class='primary-card'><div class='primary-label'>Primary Style</div><div class='primary-value'>{html.escape(str(data["Primary Style"]))}</div><div class='primary-note'>Style dengan score tertinggi</div></div>", unsafe_allow_html=True)
     q1, q2, q3, q4 = st.columns(4)
     q1.metric("R:R T1", f"{fmt_num(data['RR 1'],2)}x" if pd.notna(data['RR 1']) else "—")
     q2.metric("Avg Value 20D", f"Rp {fmt_num(data['Avg Value 20D']/1e9,1)} M" if pd.notna(data['Avg Value 20D']) else "—")
@@ -1133,8 +986,8 @@ if mode == "Analisis 1 Saham":
     f1, f2, f3, f4 = st.columns(4)
     f1.metric("Liquidity Score", f"{data['Liquidity Score']:.0f}/100")
     f2.metric("Median Value 20D", f"Rp {fmt_num(data['Median Value 20D']/1e9,1)} M" if pd.notna(data['Median Value 20D']) else "—")
-    f3.metric("Foreign Bias", str(data.get("Foreign Bias", data.get("Foreign Flow", "N/A"))))
-    f4.metric("Foreign Net 5D", f"Rp {fmt_num(data['Foreign Net Value 5D']/1e9,1)} M" if pd.notna(data['Foreign Net Value 5D']) else "—")
+    f3.metric("Vol Ratio", fmt_num(data["Vol Ratio"],2))
+    f4.metric("Return 10D", fmt_pct(data["Return 10D"]))
 
     days = {"10 Hari": 12, "1 Bulan": 22, "3 Bulan": 66, "6 Bulan": 132, "1 Tahun": 264, "2 Tahun": 520}
     plot_df = data["_df"].tail(days[period_label])
@@ -1152,7 +1005,7 @@ if mode == "Analisis 1 Saham":
         ))
     fig.update_layout(
         height=440, margin={"l": 8, "r": 8, "t": 35, "b": 8},
-        template="plotly_white", title=f"{selected.upper()} · {period_label}",
+        template="plotly_dark", title=f"{selected.upper()} · {period_label}",
         xaxis_rangeslider_visible=False,
         legend={"orientation": "h", "y": 1.02, "x": 0},
     )
@@ -1182,12 +1035,6 @@ if mode == "Analisis 1 Saham":
         "Vol Ratio": fmt_num(data["Vol Ratio"], 2),
         "Liquidity Score": fmt_num(data["Liquidity Score"], 0),
         "Liquidity Consistency 20D": fmt_num(data["Liquidity Consistency 20D %"], 0) + "%",
-        "Foreign Bias": data.get("Foreign Bias", data.get("Foreign Flow", "N/A")),
-        "Foreign Net 1D (Rp M)": fmt_num(data["Foreign Net Value 1D"]/1e9 if pd.notna(data["Foreign Net Value 1D"]) else np.nan, 1),
-        "Foreign Net 5D (Rp M)": fmt_num(data["Foreign Net Value 5D"]/1e9 if pd.notna(data["Foreign Net Value 5D"]) else np.nan, 1),
-        "Foreign Net 10D (Rp M)": fmt_num(data["Foreign Net Value 10D"]/1e9 if pd.notna(data["Foreign Net Value 10D"]) else np.nan, 1),
-        "Foreign Net 20D (Rp M)": fmt_num(data["Foreign Net Value 20D"]/1e9 if pd.notna(data["Foreign Net Value 20D"]) else np.nan, 1),
-        "Foreign Net Volume 5D (M)": fmt_num(data["Foreign Net Volume 5D"]/1e6 if pd.notna(data["Foreign Net Volume 5D"]) else np.nan, 2),
         "MA20": fmt_num(data["MA20"], 0),
         "MA50": fmt_num(data["MA50"], 0),
         "MA200": fmt_num(data["MA200"], 0),
@@ -1212,7 +1059,7 @@ if mode == "Analisis 1 Saham":
         with st.spinner("Menghitung Top 3 untuk seluruh universe..."):
             rows = []
             for code in tickers:
-                item = analyze(code, liquidity_floor=min_liquidity*1e9, daily_floor=daily_liq*1e9, swing_floor=swing_liq*1e9, investor_floor=investor_liq*1e9, low_floor=low_liq*1e9, foreign_flow=FOREIGN_FLOW_DATA)
+                item = analyze(code, liquidity_floor=min_liquidity*1e9, daily_floor=daily_liq*1e9, swing_floor=swing_liq*1e9, investor_floor=investor_liq*1e9, low_floor=low_liq*1e9)
                 if item:
                     rows.append({k: v for k, v in item.items() if not k.startswith("_")})
         board_df = pd.DataFrame(rows)
@@ -1226,7 +1073,7 @@ else:
     rows = []
     progress = st.progress(0, text="Mengambil data historis...")
     for index, code in enumerate(tickers):
-        item = analyze(code, liquidity_floor=min_liquidity*1e9, daily_floor=daily_liq*1e9, swing_floor=swing_liq*1e9, investor_floor=investor_liq*1e9, low_floor=low_liq*1e9, foreign_flow=FOREIGN_FLOW_DATA)
+        item = analyze(code, liquidity_floor=min_liquidity*1e9, daily_floor=daily_liq*1e9, swing_floor=swing_liq*1e9, investor_floor=investor_liq*1e9, low_floor=low_liq*1e9)
         if item:
             rows.append({k: v for k, v in item.items() if not k.startswith("_")})
         progress.progress(
@@ -1253,7 +1100,9 @@ else:
     b.metric("Daily PASS", int((result_df["Daily Gate"] == "PASS").sum()))
     c.metric("Swing PASS", int((result_df["Swing Gate"] == "PASS").sum()))
     d.metric("Investor PASS", int((result_df["Investor Gate"] == "PASS").sum()))
-    e.metric("Primary terbanyak", result_df["Primary Style"].value_counts().index[0])
+    primary_mode = result_df["Primary Style"].value_counts().index[0]
+    primary_count = int(result_df["Primary Style"].value_counts().iloc[0])
+    e.markdown(f"<div class='primary-card' style='min-height:0; padding:10px 12px;'><div class='primary-label'>Primary terbanyak</div><div class='primary-value'>{html.escape(str(primary_mode))}</div><div class='primary-note'>{primary_count} saham · style dominan</div></div>", unsafe_allow_html=True)
     st.metric("Actionable / Watchlist", int(result_df["Adaptive Status"].isin(["Actionable Buy","Watchlist – Strong Setup","Watchlist – Early Setup"]).sum()))
 
     # Sector-relative intelligence: descriptive ranking inside the scanned universe.
@@ -1307,3 +1156,6 @@ else:
         "Data Yahoo Finance dapat terlambat, tidak lengkap, atau gagal diambil. "
         f"Waktu pemindaian: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
     )
+
+
+st.markdown("<div class='footer-note'>Sanggul Stock Scanner V10.9.2.1 · Tanpa Foreign Flow · Fokus pada data harga, volume, likuiditas, relative strength, fundamental, sektor, dan risk engine · Decision-support, bukan jaminan hasil investasi.</div>", unsafe_allow_html=True)
