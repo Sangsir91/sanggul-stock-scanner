@@ -991,10 +991,19 @@ if not tickers:
 
 # Single-stock mode: individual analysis first, then Top 3 board.
 if mode == "Analisis 1 Saham":
+    # Keep the selector independent from scanner results so every symbol in the
+    # Universe can open a TradingView chart even when Sanggul's data provider
+    # cannot calculate the full indicator set for that symbol.
     selected = st.sidebar.selectbox("Pilih saham", tickers)
     data = analyze(selected, liquidity_floor=min_liquidity * 1e9, daily_floor=daily_liq*1e9, swing_floor=swing_liq*1e9, investor_floor=investor_liq*1e9, low_floor=low_liq*1e9)
     if data is None:
-        st.error("Data saham tidak tersedia atau histori belum cukup.")
+        st.markdown(f"<div class='modern-stock-head'><div class='stock-identity'><div class='stock-code'>{html.escape(selected.upper())}</div><div class='stock-name'>Analisis individual · IDX</div><span class='stock-tag'>CHART MODE</span></div></div>", unsafe_allow_html=True)
+        st.warning(f"Data analitik Sanggul untuk {selected.upper()} belum tersedia atau histori belum cukup. Grafik TradingView tetap ditampilkan secara independen.")
+        st.markdown("<div class='section-title'>📈 Advanced Chart · TradingView</div>", unsafe_allow_html=True)
+        st.caption("Mode fallback: chart tidak bergantung pada keberhasilan mesin analisis Sanggul. Simbol IDX dibentuk otomatis dari kode saham yang dipilih.")
+        render_tradingview_chart(selected, period_label)
+        st.markdown("<div class='app-shell-note'><span>🟢 Chart: TradingView Advanced Chart</span><span>Simbol aktif: <b>IDX:" + html.escape(selected.upper()) + "</b></span><span>Scanner: data belum cukup</span></div>", unsafe_allow_html=True)
+        st.info("Jika TradingView juga tidak menemukan simbol, berarti simbol tersebut tidak tersedia pada datafeed TradingView. Untuk saham IDX yang tersedia, chart akan tetap dapat dibuka meskipun analisis Sanggul belum lengkap.")
         st.stop()
 
     st.markdown(f"<div class='modern-stock-head'><div class='stock-identity'><div class='stock-code'>{html.escape(selected.upper())}</div><div class='stock-name'>Analisis individual · IDX</div><span class='stock-tag'>{html.escape(str(data['Market Regime']))}</span></div><div class='quote-card'><div class='quote-label'>Harga</div><div class='quote-value'>Rp {fmt_num(data['Price'],0)}</div><div class='quote-note'>{fmt_pct(data['Change 1D'])}</div></div><div class='quote-card'><div class='quote-label'>Decision</div><div class='quote-value'>{fmt_num(data['Decision Score'],1)}</div><div class='quote-note'>/ 100</div></div><div class='quote-card'><div class='quote-label'>Readiness</div><div class='quote-value'>{fmt_num(data['Entry Readiness'],0)}</div><div class='quote-note'>{html.escape(str(data['Entry Readiness Stage']))}</div></div><div class='quote-card'><div class='quote-label'>Liquidity</div><div class='quote-value'>{fmt_num(data['Liquidity Score'],0)}</div><div class='quote-note'>/ 100</div></div></div><div class='section-title'>🔎 Analisis Individual</div>", unsafe_allow_html=True)
