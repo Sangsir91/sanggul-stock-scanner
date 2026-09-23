@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 
 st.set_page_config(
-    page_title="Sanggul Stock Scanner V10.9.2.1 | BIONS Adaptive Decision Dashboard",
+    page_title="Sanggul Stock Scanner V10.9.2.2 | BIONS Adaptive Decision Dashboard",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -58,35 +58,34 @@ DEFAULT_UNIVERSE = (
     "BBCA,BBRI,BMRI,BBNI,BRIS,BBTN,ADRO,ANTM,INCO,PTBA,ITMG,MDKA,AKRA,"
     "ASII,TLKM,ISAT,EXCL,UNVR,ICBP,INDF,KLBF,MYOR,AMRT,ACES,ERAA,JPFA,"
     "CPIN,MAIN,SMGR,INTP,PGAS,MEDC,ELSA,PGEO,ESSA,MIKA,HEAL,BSDE,CTRA,"
-    "PWON,SCMA,EMTK,GOTO,BUKA,ARTO,AMMN,DEWA,AGII,ADES,ADMF,"
-    "AALI,ABMM,ACRO,ADCP,ADHI,ADMR,AGRO,AHAP,AKPI,ALDO,AMAN,ANJT,"
-    "APLN,ARCI,ARGO,ARNA,ARTI,ASLC,ASRI,ASSA,ATLA,AUTO,AVIA,"
-    "BBKP,BBLD,BBMS,BESS,BFIN,BGTG,BINA,BIRD,BISI,BJBR,BJTM,"
-    "BKSL,BLTZ,BMTR,BNGA,BNBR,BNLI,BOGA,BRPT,BUAH,CARS,CARE,"
-    "CBPE,CEKA,CINT,CLEO,CMRY,COCO,CPRO,CSAP,CUAN,DART,DAYA,"
-    "DCII,DEPO,DEST,DFAM,DKFT,DMAS,DOID,DSNG,DUCK,DUTI,ECII,"
-    "EDGE,EKAD,ELIT,EMDE,ENRG,ERAL,ESIP,ESTA,EURO,FIRE,FMII,"
-    "FORU,GEMA,GGRM,GJTL,GLVA,GOOD,GOLF,GRIA,HAIS,HATM,HEXA,"
-    "HITS,HRUM,HYGN,IBST,ICBP,IDPR,IFSH,IGAR,IMAS,IMPC,INAF,"
-    "INAI,INCF,INDS,INDY,INET,IPCC,IPCM,IPOL,IRRA,ISSP,ITMA,"
-    "JAST,JECC,JGLE,JKON,JMAS,JRPT,JSKY,KAEF,KBLV,KDSI,KEEN,"
-    "KINO,KLIN,KOKA,KOPI,KOTA,KRAS,LABA,LAND,LAPD,LCGP,LINK,"
-    "LION,LPKR,LRNA,MAPA,MAPI,MARK,MAYA,MBAP,MBSS,MCAS,MCOL,"
-    "MDIY,META,MFIN,MGRO,MIDI,MINA,MLBI,MLIA,MLPL,MNCN,MPMX,"
-    "MSIN,MTDL,MTEL,MTPS,MYOH,NANO,NETV,NFCX,NIRO,NISP,NOBU,"
-    "NRCA,OBMD,OCAP,OILS,OMED,OPMS,PACK,PAMG,PANI,PANS,PART,"
-    "PBID,PCAR,PDES,PEGE,PEHA,PGJO,PGUN,PKPK,PLIN,PNBN,PNBS,"
-    "POLI,PPRO,PRDA,PRIM,PSAB,PSDN,PSGO,PTBA,PTIS,PUDP,PURA,"
-    "PZZA,RALS,RANC,RELF,RIGS,RISE,RMKE,ROCK,ROTI,RSCH,RSGK,"
-    "RUIS,SAFE,SAME,SAME,SCNP,SDPC,SEMA,SERV,SILO,SIMP,SIPD,"
-    "SKBM,SKLT,SMBR,SMCB,SMDR,SMKL,SMKM,SMLE,SMRA,SMRU,SMSM,"
-    "SNLK,SOCI,SONA,SOSS,SOTS,SPMA,SQMI,SRIL,SRTG,SSIA,SSMS,"
-    "STAA,STTP,SUGI,SULI,SUNS,SURI,TALF,TAPG,TAYS,TCID,TCPI,"
-    "TEBE,TECH,TELE,TFAS,TFCO,TFII,TGKA,TINS,TIRA,TIRT,TLDN,"
-    "TMAS,TOBA,TOPS,TOTO,TOWR,TPIA,TRIM,TRIS,TRON,TRUK,TRUS,"
-    "TUGU,TYRE,UANG,UCID,ULTJ,UNIC,UNIT,UNIQ,UNTD,UVCR,VICI,"
-    "VISI,VOKS,VRNA,WAPO,WEHA,WIIM,WINS,WOOD,WSKT,WTON,YPAS,"
-    "ZATA,ZINC"
+    "PWON,SCMA,EMTK,GOTO,BUKA,ARTO,AMMN,DEWA,AGII,ADES,ADMF,AALI,ABMM,"
+    "ACRO,ADCP,ADHI,ADMR,AGRO,AHAP,AKPI,ALDO,AMAN,ANJT,APLN,ARCI,ARGO,"
+    "ARNA,ARTI,ASLC,ASRI,ASSA,ATLA,AUTO,AVIA,BBKP,BBLD,BBMS,BESS,BFIN,"
+    "BGTG,BINA,BIRD,BISI,BJBR,BJTM,BKSL,BLTZ,BMTR,BNGA,BNBR,BNLI,BOGA,"
+    "BRPT,BUAH,CARS,CARE,CBPE,CEKA,CINT,CLEO,CMRY,COCO,CPRO,CSAP,CUAN,"
+    "DART,DAYA,DCII,DEPO,DEST,DFAM,DKFT,DMAS,DOID,DSNG,DUCK,DUTI,ECII,"
+    "EDGE,EKAD,ELIT,EMDE,ENRG,ERAL,ESIP,ESTA,EURO,FIRE,FMII,FORU,GEMA,"
+    "GGRM,GJTL,GLVA,GOOD,GOLF,GRIA,HAIS,HATM,HEXA,HITS,HRUM,HYGN,IBST,"
+    "IDPR,IFSH,IGAR,IMAS,IMPC,INAF,INAI,INCF,INDS,INDY,INET,IPCC,IPCM,"
+    "IPOL,IRRA,ISSP,ITMA,JAST,JECC,JGLE,JKON,JMAS,JRPT,JSKY,KAEF,KBLV,"
+    "KDSI,KEEN,KINO,KLIN,KOKA,KOPI,KOTA,KRAS,LABA,LAND,LAPD,LCGP,LINK,"
+    "LION,LPKR,LRNA,MAPA,MAPI,MARK,MAYA,MBAP,MBSS,MCAS,MCOL,MDIY,META,"
+    "MFIN,MGRO,MIDI,MINA,MLBI,MLIA,MLPL,MNCN,MPMX,MSIN,MTDL,MTEL,MTPS,"
+    "MYOH,NANO,NETV,NFCX,NIRO,NISP,NOBU,NRCA,OBMD,OCAP,OILS,OMED,OPMS,"
+    "PACK,PAMG,PANI,PANS,PART,PBID,PCAR,PDES,PEGE,PEHA,PGJO,PGUN,PKPK,"
+    "PLIN,PNBN,PNBS,POLI,PPRO,PRDA,PRIM,PSAB,PSDN,PSGO,PTIS,PUDP,PURA,"
+    "PZZA,RALS,RANC,RELF,RIGS,RISE,RMKE,ROCK,ROTI,RSCH,RSGK,RUIS,SAFE,"
+    "SAME,SCNP,SDPC,SEMA,SERV,SILO,SIMP,SIPD,SKBM,SKLT,SMBR,SMCB,SMDR,"
+    "SMKL,SMKM,SMLE,SMRA,SMRU,SMSM,SNLK,SOCI,SONA,SOSS,SOTS,SPMA,SQMI,"
+    "SRIL,SRTG,SSIA,SSMS,STAA,STTP,SUGI,SULI,SUNS,SURI,TALF,TAPG,TAYS,"
+    "TCID,TCPI,TEBE,TECH,TELE,TFAS,TFCO,TFII,TGKA,TINS,TIRA,TIRT,TLDN,"
+    "TMAS,TOBA,TOPS,TOTO,TOWR,TPIA,TRIM,TRIS,TRON,TRUK,TRUS,TUGU,TYRE,"
+    "UANG,UCID,ULTJ,UNIC,UNIT,UNIQ,UNTD,UVCR,VICI,VISI,VOKS,VRNA,WAPO,"
+    "WEHA,WIIM,WINS,WOOD,WSKT,WTON,YPAS,ZATA,ZINC,AISA,ALMI,AMFG,APIC,"
+    "BALI,BAYU,BCAP,BDMN,BEST,BIPP,BLUE,BMAS,BNBA,BOLT,BRMS,BSIM,BTPS,"
+    "BULL,CAMP,CASA,CENT,CITY,CLAY,CNMA,DATA,DILD,DNET,EAST,FAST,FILM,"
+    "FREN,GIAA,HMSP,HOPE,IMJS,INKP,IPPE,JSMR,KICI,LSIP,MAPB,MBMA,MERK,"
+    "MPPA,NCKL,NELY,PNLF,POWR,PRAY,RAJA,SMIL,TBIG,TKIM"
 )
 
 STYLES = {
@@ -1030,7 +1029,7 @@ mode = st.sidebar.radio("Mode", ["Scanner Multi-Style", "Analisis 1 Saham"])
 period_label = st.sidebar.selectbox(
     "Periode grafik", ["10 Hari", "1 Bulan", "3 Bulan", "6 Bulan", "1 Tahun", "2 Tahun"], index=2
 )
-max_scan = st.sidebar.slider("Maksimum saham dipindai", 5, 200, 200, 5)
+max_scan = st.sidebar.slider("Maksimum saham dipindai", 5, 400, 400, 5)
 min_score = st.sidebar.slider("Minimum score shortlist", 0, 100, 60, 1)
 price_filter = st.sidebar.selectbox("Filter harga saham", ["Semua harga", "Di bawah Rp100", "Rp100–499", "Rp500–1.999", "Rp2.000–4.999", "Rp5.000 ke atas"], index=0)
 show_caution = st.sidebar.checkbox("Tampilkan CAUTION pada shortlist", True)
@@ -1051,12 +1050,12 @@ universe_codes = clean_codes(universe_text)
 tickers = universe_codes[:max_scan]
 st.sidebar.caption(f"Universe: {len(universe_codes)} kode · Dipindai: {len(tickers)} (maks. {max_scan})")
 
-st.markdown('<div class="hero-pro"><div class="hero-kicker">SANGGUL STOCK SCANNER · NEXT-GEN IDX DECISION DASHBOARD</div><div class="hero-title">V10.9.2.1 <span style="color:#5cc8ff">BIONS Adaptive Decision Dashboard</span></div><div class="hero-desc">Market + Sector + Technical + Fundamental + Liquidity Intelligence 2.0 + Entry Readiness + Risk Engine + Historical Signal Study</div><span class="mini-chip">⚡ Daily</span><span class="mini-chip">📊 Swing</span><span class="mini-chip">🌱 Investor</span><span class="mini-chip">🧠 Fundamental</span><span class="mini-chip">🛡 Risk Engine 2.0</span><span class="mini-chip">📈 Backtest</span><span class="mini-chip">🧭 Entry Readiness</span><span class="mini-chip">💎 Low-Price Radar</span></div>', unsafe_allow_html=True)
-st.markdown('<div class="info-box">Daily, Swing, dan Investor memakai aturan berbeda. V10.9.2.1 fokus pada data yang dapat diverifikasi: harga, volume, likuiditas 20D, relative strength, sektor, fundamental, entry readiness, dan risk engine. CAUTION berarti kandidat belum memenuhi seluruh syarat PASS.</div>', unsafe_allow_html=True)
+st.markdown('<div class="hero-pro"><div class="hero-kicker">SANGGUL STOCK SCANNER · NEXT-GEN IDX DECISION DASHBOARD</div><div class="hero-title">V10.9.2.2 <span style="color:#5cc8ff">BIONS Adaptive Decision Dashboard</span></div><div class="hero-desc">Market + Sector + Technical + Fundamental + Liquidity Intelligence 2.0 + Entry Readiness + Risk Engine + Historical Signal Study</div><span class="mini-chip">⚡ Daily</span><span class="mini-chip">📊 Swing</span><span class="mini-chip">🌱 Investor</span><span class="mini-chip">🧠 Fundamental</span><span class="mini-chip">🛡 Risk Engine 2.0</span><span class="mini-chip">📈 Backtest</span><span class="mini-chip">🧭 Entry Readiness</span><span class="mini-chip">💎 Low-Price Radar</span></div>', unsafe_allow_html=True)
+st.markdown('<div class="info-box">Daily, Swing, dan Investor memakai aturan berbeda. V10.9.2.2 fokus pada data yang dapat diverifikasi: harga, volume, likuiditas 20D, relative strength, sektor, fundamental, entry readiness, dan risk engine. CAUTION berarti kandidat belum memenuhi seluruh syarat PASS.</div>', unsafe_allow_html=True)
 
 regime_now = market_regime()
 st.markdown(f"**Market Regime IHSG:** `{regime_now["regime"]}` · RSI IHSG: `{fmt_num(regime_now["rsi"],1)}` · Threshold adaptif aktif", unsafe_allow_html=True)
-st.markdown(f"<div class='metric-grid'><div class='kpi glow-blue'><div class='kpi-label'>IHSG Regime</div><div class='kpi-value'>{regime_now["regime"]}</div><div class='kpi-note'>RSI {fmt_num(regime_now["rsi"],1)}</div></div><div class='kpi glow-green'><div class='kpi-label'>Scanner Engine</div><div class='kpi-value'>V10.9.2.1</div><div class='kpi-note'>Adaptive Decision Engine</div></div><div class='kpi glow-orange'><div class='kpi-label'>Data Horizon</div><div class='kpi-value'>10D → 2Y</div><div class='kpi-note'>10D / 1M / 3M / 6M / 1Y / 2Y</div></div><div class='kpi glow-blue'><div class='kpi-label'>Liquidity Engine</div><div class='kpi-value'>2.0</div><div class='kpi-note'>Average + Median + Consistency + Acceleration</div></div></div>", unsafe_allow_html=True)
+st.markdown(f"<div class='metric-grid'><div class='kpi glow-blue'><div class='kpi-label'>IHSG Regime</div><div class='kpi-value'>{regime_now["regime"]}</div><div class='kpi-note'>RSI {fmt_num(regime_now["rsi"],1)}</div></div><div class='kpi glow-green'><div class='kpi-label'>Scanner Engine</div><div class='kpi-value'>V10.9.2.2</div><div class='kpi-note'>Adaptive Decision Engine</div></div><div class='kpi glow-orange'><div class='kpi-label'>Data Horizon</div><div class='kpi-value'>10D → 2Y</div><div class='kpi-note'>10D / 1M / 3M / 6M / 1Y / 2Y</div></div><div class='kpi glow-blue'><div class='kpi-label'>Liquidity Engine</div><div class='kpi-value'>2.0</div><div class='kpi-note'>Average + Median + Consistency + Acceleration</div></div></div>", unsafe_allow_html=True)
 
 if not tickers:
     st.warning("Universe kosong. Masukkan minimal satu kode saham.")
@@ -1264,4 +1263,4 @@ else:
     )
 
 
-st.markdown("<div class='footer-note'>Sanggul Stock Scanner V10.9.2.1 · Tanpa Foreign Flow · Fokus pada data harga, volume, likuiditas, relative strength, fundamental, sektor, dan risk engine · Decision-support, bukan jaminan hasil investasi.</div>", unsafe_allow_html=True)
+st.markdown("<div class='footer-note'>Sanggul Stock Scanner V10.9.2.2 · Tanpa Foreign Flow · Fokus pada data harga, volume, likuiditas, relative strength, fundamental, sektor, dan risk engine · Decision-support, bukan jaminan hasil investasi.</div>", unsafe_allow_html=True)
