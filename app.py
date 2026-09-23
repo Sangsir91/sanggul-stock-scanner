@@ -227,46 +227,98 @@ def detect_latest_divergence(x, lookback=90):
     idx = d.index[c[0]]
     return {"type": c[1], "date": pd.Timestamp(idx).strftime("%Y-%m-%d"), "price": c[2], "indicator": c[3], "note": c[4]}
 
-def trading_areas(x, price, atr, divergence):
-    """Estimate support/resistance-based trading areas; confirmation remains required."""
-    recent = x.tail(20)
-    support = float(recent["Low"].min()) if not recent.empty else np.nan
-    resistance = float(recent["High"].max()) if not recent.empty else np.nan
-    atr_val = float(atr) if pd.notna(atr) and atr > 0 else max(price * 0.03, 1)
+def style_trading_areas(x, price, atr, ma20, ma50, ma200, divergence):
+    """Style-aware entry/exit engine.
 
-    buy_low = support
-    buy_high = support + 0.50 * atr_val
-    sell_low = resistance - 0.50 * atr_val
-    sell_high = resistance
-    trigger = resistance
-    stop = min(support - 0.50 * atr_val, price - 1.50 * atr_val)
-    target1 = resistance
-    target2 = price + 2.0 * max(price - stop, atr_val)
+    Daily is deliberately close to current price, Swing is pullback-oriented,
+    and Investor is accumulation-oriented. R:R is calculated from the
+    representative entry price (midpoint of the zone), not blindly from
+    today's price. This avoids misleading R:R when a zone is below price.
+    """
+    atr_val = float(atr) if pd.notna(atr) and atr > 0 else max(price * 0.03, 1.0)
+    recent5, recent20, recent60 = x.tail(5), x.tail(20), x.tail(60)
+    s5 = float(recent5["Low"].min()) if not recent5.empty else price
+    s20 = float(recent20["Low"].min()) if not recent20.empty else price
+    s60 = float(recent60["Low"].min()) if not recent60.empty else price
+    r20 = float(recent20["High"].max()) if not recent20.empty else price
+    r60 = float(recent60["High"].max()) if not recent60.empty else price
 
-    if divergence["type"] == "Bullish Regular":
-        buy_low = min(support, divergence["price"])
-        buy_high = max(support, divergence["price"]) + 0.30 * atr_val
-    elif divergence["type"] == "Bearish Regular":
-        sell_low = min(resistance, divergence["price"]) - 0.30 * atr_val
-        sell_high = max(resistance, divergence["price"])
+    # DAILY: close to market, with a narrow pullback/retest band.
+    daily_floor = max(price - 0.80 * atr_val, s5, (ma20 if pd.notna(ma20) else price - 0.8*atr_val))
+    d_low = min(price, daily_floor)
+    d_low = max(d_low, price * 0.96)  # normally no more than ~4% below spot
+    d_high = price + (0.20 * atr_val if price >= r20 else 0.05 * atr_val)
+    if divergence.get("type") == "Bullish Regular" and pd.notna(divergence.get("price")):
+        d_low = max(d_low, min(price, float(divergence["price"])))
+    d_low, d_high = min(d_low, d_high), max(d_low, d_high)
+    d_entry = (d_low + d_high) / 2
+    d_stop = max(d_low - 0.65 * atr_val, price - 1.60 * atr_val)
+    d_stop = min(d_stop, d_low * 0.985)
+    d_trigger = r20
+    d_t1 = max(r20, d_entry + 1.0 * atr_val)
+    d_t2 = max(d_t1, d_entry + 2.0 * max(d_entry - d_stop, atr_val))
 
-    def area(a, b):
+    # SWING: pullback around MA20/MA50 and 20D support, capped at a sensible distance.
+    swing_candidates = [v for v in [s20, ma20, ma50] if pd.notna(v) and v < price]
+    s_anchor = max(swing_candidates) if swing_candidates else price - 0.90 * atr_val
+    s_low = max(price - 2.0 * atr_val, s_anchor - 0.35 * atr_val)
+    s_high = min(price, s_anchor + 0.35 * atr_val)
+    s_low = max(s_low, price * 0.88)
+    if s_low > s_high: s_low, s_high = min(s_low, s_high), max(s_low, s_high)
+    s_entry = (s_low + s_high) / 2
+    s_stop = min(s_low - 0.75 * atr_val, s_entry - 1.50 * atr_val)
+    s_trigger = max(r20, ma20 if pd.notna(ma20) else r20)
+    s_t1 = max(r20, s_entry + 1.8 * atr_val)
+    s_t2 = max(s_t1, s_entry + 3.0 * max(s_entry - s_stop, atr_val))
+
+    # INVESTOR: accumulation around MA50/MA200/60D support, but not an unlimited fall.
+    inv_candidates = [v for v in [s60, ma50, ma200] if pd.notna(v) and v < price]
+    i_anchor = max(inv_candidates) if inv_candidates else price - 1.5 * atr_val
+    i_low = max(price * 0.80, i_anchor - 0.75 * atr_val)
+    i_high = min(price, i_anchor + 0.50 * atr_val)
+    if i_low > i_high: i_low, i_high = min(i_low, i_high), max(i_low, i_high)
+    i_entry = (i_low + i_high) / 2
+    i_stop = min(i_low - 1.0 * atr_val, i_entry * 0.82)
+    i_trigger = ma200 if pd.notna(ma200) else ma50 if pd.notna(ma50) else s60
+    i_t1 = max(r60, i_entry + 2.0 * atr_val)
+    i_t2 = max(i_t1, i_entry + 4.0 * max(i_entry - i_stop, atr_val))
+
+    def area(a,b):
         if pd.isna(a) or pd.isna(b): return "—"
         return f"Rp {min(a,b):,.0f}–Rp {max(a,b):,.0f}"
+    def dist(a,b):
+        if pd.isna(a) or pd.isna(b) or b == 0: return np.nan
+        return (a/b-1)*100
+    def rr(entry, stop, target):
+        risk = entry - stop
+        return (target-entry)/risk if risk > 0 else np.nan
+    def readiness(low, high):
+        if low <= price <= high: return "READY — dalam area beli"
+        if price > high:
+            gap=(price-high)/price*100
+            return "NEAR ENTRY — tunggu pullback" if gap <= 3 else "WAIT PULLBACK"
+        return "BELOW ZONE — tunggu konfirmasi"
 
+    d_rr, s_rr, i_rr = rr(d_entry,d_stop,d_t1), rr(s_entry,s_stop,s_t1), rr(i_entry,i_stop,i_t1)
     return {
-        "Support 20D": support,
-        "Resistance 20D": resistance,
-        "Buy Area": area(buy_low, buy_high),
-        "Buy Area Low": buy_low,
-        "Buy Area High": buy_high,
-        "Buy Trigger": trigger,
-        "Sell Area": area(sell_low, sell_high),
-        "Sell Area Low": sell_low,
-        "Sell Area High": sell_high,
-        "Stop Loss": stop,
-        "Target 1": target1,
-        "Target 2": target2,
+        "Support 20D": s20, "Resistance 20D": r20,
+        "Buy Area": area(d_low,d_high), "Buy Area Low": d_low, "Buy Area High": d_high,
+        "Buy Trigger": d_trigger, "Sell Area": area(r20-0.5*atr_val,r20),
+        "Stop Loss": d_stop, "Target 1": d_t1, "Target 2": d_t2,
+        "Daily Buy Low": d_low, "Daily Buy High": d_high, "Daily Entry": d_entry, "Daily Stop": d_stop,
+        "Daily Target 1": d_t1, "Daily Target 2": d_t2, "Daily RR": d_rr,
+        "Daily Distance Low %": dist(d_low,price), "Daily Distance High %": dist(d_high,price),
+        "Daily Readiness": readiness(d_low,d_high),
+        "Swing Buy Low": s_low, "Swing Buy High": s_high, "Swing Entry": s_entry, "Swing Stop": s_stop,
+        "Swing Target 1": s_t1, "Swing Target 2": s_t2, "Swing RR": s_rr,
+        "Swing Distance Low %": dist(s_low,price), "Swing Distance High %": dist(s_high,price),
+        "Swing Readiness": readiness(s_low,s_high),
+        "Investor Buy Low": i_low, "Investor Buy High": i_high, "Investor Entry": i_entry, "Investor Stop": i_stop,
+        "Investor Target 1": i_t1, "Investor Target 2": i_t2, "Investor RR": i_rr,
+        "Investor Distance Low %": dist(i_low,price), "Investor Distance High %": dist(i_high,price),
+        "Investor Readiness": readiness(i_low,i_high),
+        "Swing Trigger": s_trigger, "Investor Trigger": i_trigger,
+        "Resistance 60D": r60, "Support 60D": s60,
     }
 
 def latest(series):
@@ -517,13 +569,14 @@ def analyze(code, liquidity_floor=1.0e9, daily_floor=5.0e9, swing_floor=3.0e9, i
     atr = latest(x["ATR"])
     breakout = bool(x["Breakout20"].iloc[-1]) if pd.notna(x["Breakout20"].iloc[-1]) else False
     divergence = detect_latest_divergence(x)
-    areas = trading_areas(x, price, atr, divergence)
+    areas = style_trading_areas(x, price, atr, ma20, ma50, ma200, divergence)
     weekly_trend, weekly_vs_ma20 = weekly_trend_state(x)
     adv20_value, liquidity_ratio, median20_value, liquidity_consistency, liquidity_score = liquidity_metrics(x)
     fundamentals = fundamental_snapshot(code)
     backtest = simple_backtest(x)
     divergence_age = divergence_age_days(x, divergence)
     rr1, rr2 = rr_metrics(price, areas["Stop Loss"], areas["Target 1"], areas["Target 2"])
+    rr_daily, rr_swing, rr_investor = areas["Daily RR"], areas["Swing RR"], areas["Investor RR"]
     setup = setup_type(breakout, price, ma20, divergence, rsi)
     price_vs_ma20 = ((price/ma20)-1)*100 if pd.notna(ma20) and ma20 else np.nan
 
@@ -635,9 +688,9 @@ def analyze(code, liquidity_floor=1.0e9, daily_floor=5.0e9, swing_floor=3.0e9, i
     liquidity_ok = pd.notna(adv20_value) and adv20_value >= liquidity_floor
     mtf_ok = weekly_trend in ('Bullish','Mixed')
     readiness, readiness_stage = entry_readiness(price, ma20, breakout, vol_ratio, rsi, weekly_trend, rr1, areas['Buy Area Low'], areas['Buy Area High'], divergence['type'])
-    daily_core_v109 = daily_core and pd.notna(rr1) and rr1 >= 1.5
-    swing_core_v109 = swing_core and pd.notna(rr1) and rr1 >= 1.5
-    investor_core_v109 = investor_core and pd.notna(rr1) and rr1 >= 1.2
+    daily_core_v109 = daily_core and pd.notna(rr_daily) and rr_daily >= 1.5
+    swing_core_v109 = swing_core and pd.notna(rr_swing) and rr_swing >= 1.5
+    investor_core_v109 = investor_core and pd.notna(rr_investor) and rr_investor >= 1.2
     daily_gate = style_gate_v109('Trading Harian', daily_score, daily_core_v109, daily_hard_fail, rr1, daily_liquidity_ok, mtf_ok, regime, readiness)
     swing_gate = style_gate_v109('Swing Trading Mingguan', swing_score, swing_core_v109, swing_hard_fail, rr1, swing_liquidity_ok, mtf_ok, regime, readiness)
     investor_gate = style_gate_v109('Investor Jangka Panjang', investor_score, investor_core_v109, investor_hard_fail, rr1, investor_liquidity_ok, mtf_ok, regime, readiness)
@@ -741,6 +794,21 @@ def analyze(code, liquidity_floor=1.0e9, daily_floor=5.0e9, swing_floor=3.0e9, i
         "Resistance 20D": areas["Resistance 20D"],
         "Buy Area": areas["Buy Area"],
         "Buy Trigger": areas["Buy Trigger"],
+        "Daily Buy Area": f"Rp {areas["Daily Buy Low"]:,.0f}–Rp {areas["Daily Buy High"]:,.0f}",
+        "Daily Entry": areas["Daily Entry"], "Daily Readiness": areas["Daily Readiness"],
+        "Daily Buy Low": areas["Daily Buy Low"], "Daily Buy High": areas["Daily Buy High"],
+        "Daily Stop": areas["Daily Stop"], "Daily Target 1": areas["Daily Target 1"], "Daily Target 2": areas["Daily Target 2"], "Daily RR": rr_daily,
+        "Daily Distance Low %": areas["Daily Distance Low %"], "Daily Distance High %": areas["Daily Distance High %"],
+        "Swing Buy Area": f"Rp {areas["Swing Buy Low"]:,.0f}–Rp {areas["Swing Buy High"]:,.0f}",
+        "Swing Entry": areas["Swing Entry"], "Swing Readiness": areas["Swing Readiness"],
+        "Swing Buy Low": areas["Swing Buy Low"], "Swing Buy High": areas["Swing Buy High"],
+        "Swing Stop": areas["Swing Stop"], "Swing Target 1": areas["Swing Target 1"], "Swing Target 2": areas["Swing Target 2"], "Swing RR": rr_swing,
+        "Swing Distance Low %": areas["Swing Distance Low %"], "Swing Distance High %": areas["Swing Distance High %"],
+        "Investor Buy Area": f"Rp {areas["Investor Buy Low"]:,.0f}–Rp {areas["Investor Buy High"]:,.0f}",
+        "Investor Entry": areas["Investor Entry"], "Investor Readiness": areas["Investor Readiness"],
+        "Investor Buy Low": areas["Investor Buy Low"], "Investor Buy High": areas["Investor Buy High"],
+        "Investor Stop": areas["Investor Stop"], "Investor Target 1": areas["Investor Target 1"], "Investor Target 2": areas["Investor Target 2"], "Investor RR": rr_investor,
+        "Investor Distance Low %": areas["Investor Distance Low %"], "Investor Distance High %": areas["Investor Distance High %"],
         "Sell Area": areas["Sell Area"],
         "Stop Loss": areas["Stop Loss"],
         "Target 1": areas["Target 1"],
@@ -892,8 +960,8 @@ def render_card(row, style):
       <div class="meta"><b>{score_col}:</b> {fmt_num(row[score_col], 1)} / 100 · <b>{row["Adaptive Status"]}</b></div>
       <div class="meta">Confidence: {row["Confidence"]} · Trigger: {row["Trigger"]}</div>
       <div class="meta">{return_col}: {fmt_pct(row[return_col])} · RSI: {fmt_num(row["RSI"], 1)}</div>
-      <div class="meta">Buy area: {row["Buy Area"]} · Sell area: {row["Sell Area"]}</div>
-      <div class="meta">Stop: Rp {fmt_num(row["Stop"], 0)} · T1: Rp {fmt_num(row["Target 1"], 0)} · T2: Rp {fmt_num(row["Target 2"], 0)}</div>
+      <div class="meta">Buy area: {row.get("Daily Buy Area" if style=="Trading Harian" else "Swing Buy Area" if style=="Swing Trading Mingguan" else "Investor Buy Area","—")} · Entry: Rp {fmt_num(row.get("Daily Entry" if style=="Trading Harian" else "Swing Entry" if style=="Swing Trading Mingguan" else "Investor Entry"),0)} · {row.get("Daily Readiness" if style=="Trading Harian" else "Swing Readiness" if style=="Swing Trading Mingguan" else "Investor Readiness","—")}</div>
+      <div class="meta">Stop: Rp {fmt_num(row.get("Daily Stop" if style=="Trading Harian" else "Swing Stop" if style=="Swing Trading Mingguan" else "Investor Stop"), 0)} · T1: Rp {fmt_num(row.get("Daily Target 1" if style=="Trading Harian" else "Swing Target 1" if style=="Swing Trading Mingguan" else "Investor Target 1"), 0)} · T2: Rp {fmt_num(row.get("Daily Target 2" if style=="Trading Harian" else "Swing Target 2" if style=="Swing Trading Mingguan" else "Investor Target 2"), 0)}</div>
       <div class="meta">Divergence: {row["Divergence Terakhir"]} · {row["Divergence Date"]}</div>
       <div class="reason">{row[reason_col]}</div>
     </div>
@@ -1041,15 +1109,15 @@ if mode == "Analisis 1 Saham":
 
     st.markdown('<div class="section-title">🎯 Area Entry dan Exit</div>', unsafe_allow_html=True)
     st.info(f"Divergence terakhir: {data['Divergence Terakhir']} ({data['Divergence Date']}) · Area: {data['Divergence Area']} · {data['Divergence Note']}")
-    area_view = pd.DataFrame([{
-        "Buy Area / Pullback": data["Buy Area"],
-        "Buy Trigger": fmt_num(data["Buy Trigger"], 0),
-        "Sell Area / Take Profit": data["Sell Area"],
-        "Stop Loss": fmt_num(data["Stop Loss"], 0),
-        "Target 1": fmt_num(data["Target 1"], 0),
-        "Target 2": fmt_num(data["Target 2"], 0),
-    }])
-    st.dataframe(area_view, use_container_width=True, hide_index=True)
+    style_area_view = pd.DataFrame([
+        {"Style":"Trading Harian","Harga Saat Ini":data["Price"],"Buy Zone":data["Daily Buy Area"],"Entry":data["Daily Entry"],"Readiness":data["Daily Readiness"],"Stop Loss":data["Daily Stop"],"Target 1":data["Daily Target 1"],"Target 2":data["Daily Target 2"],"R:R":data["Daily RR"]},
+        {"Style":"Swing Trading Mingguan","Harga Saat Ini":data["Price"],"Buy Zone":data["Swing Buy Area"],"Entry":data["Swing Entry"],"Readiness":data["Swing Readiness"],"Stop Loss":data["Swing Stop"],"Target 1":data["Swing Target 1"],"Target 2":data["Swing Target 2"],"R:R":data["Swing RR"]},
+        {"Style":"Investor Jangka Panjang","Harga Saat Ini":data["Price"],"Buy Zone":data["Investor Buy Area"],"Entry":data["Investor Entry"],"Readiness":data["Investor Readiness"],"Stop Loss":data["Investor Stop"],"Target 1":data["Investor Target 1"],"Target 2":data["Investor Target 2"],"R:R":data["Investor RR"]},
+    ])
+    for c in ["Harga Saat Ini","Entry","Stop Loss","Target 1","Target 2"]:
+        style_area_view[c] = style_area_view[c].apply(lambda z: f"Rp {float(z):,.0f}" if pd.notna(z) else "—")
+    style_area_view["R:R"] = style_area_view["R:R"].apply(lambda z: f"{float(z):.2f}x" if pd.notna(z) else "—")
+    st.dataframe(style_area_view, use_container_width=True, hide_index=True)
 
     st.markdown('<div class="section-title">Ringkasan indikator</div>', unsafe_allow_html=True)
     summary = pd.DataFrame([{
