@@ -9,7 +9,7 @@ from urllib.parse import quote
 
 st.set_page_config(page_title="Sanggul Stock Scanner", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
 
-APP_VERSION = "V11.2.0"
+APP_VERSION = "V11.2.0.1"
 # GitHub / Streamlit Cloud safe universe loading.
 APP_DIR = Path(__file__).resolve().parent
 CWD = Path.cwd()
@@ -409,6 +409,10 @@ def inject_css():
 
 inject_css()
 def main():
+    # Initialize the current scan result before any sidebar/status component uses it.
+    # This fixes the V11.2.0 UnboundLocalError on first page load.
+    scan=st.session_state.get("scan",pd.DataFrame())
+
     st.sidebar.markdown("### 📡 DATA STATUS")
     fdf=load_official_fundamentals()
     st.sidebar.caption(f"Universe: {len(UNIVERSE)} saham")
@@ -419,7 +423,6 @@ def main():
     st.markdown(f'''<div class="hero"><div><div class="eyebrow">SANGGUL CAPITAL MARKETS • DECISION SUPPORT</div><h1>📈 SANGGUL STOCK SCANNER</h1><p>Professional Multi-Style Trading & Investment Dashboard • {APP_VERSION}</p></div><div class="hero-tag">IDX • 300 UNIVERSE</div></div>''', unsafe_allow_html=True)
 
     regime=market_regime()
-    scan=st.session_state.get("scan",pd.DataFrame())
 
     with st.sidebar:
         st.markdown("## ⚙️ Control Center")
