@@ -7,7 +7,9 @@ import streamlit.components.v1 as components
 from pathlib import Path
 from urllib.parse import quote
 
-APP_VERSION = "V11.1.3.6"
+st.set_page_config(page_title="Sanggul Stock Scanner", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
+
+APP_VERSION = "V11.1.3.7"
 # GitHub / Streamlit Cloud safe universe loading.
 APP_DIR = Path(__file__).resolve().parent
 CWD = Path.cwd()
@@ -323,193 +325,198 @@ def style_card(title, subtitle, kind):
     return f'<div class="card mode-card"><h3>{title}</h3><p>{subtitle}</p>{badge(kind[0],kind[1])}</div>'
 
 
+
+
+def inject_css():
+    st.markdown("""
+    <style>
+    .block-container{max-width:1500px;padding-top:1.1rem;padding-bottom:2rem}
+    [data-testid="stSidebar"]{background:#f4f7fb;border-right:1px solid #d9e2ef}
+    [data-testid="stSidebar"] .block-container{padding-top:1rem}
+    .hero{background:linear-gradient(135deg,#071a3a 0%,#0b2d5c 60%,#0e4f87 100%);border-radius:16px;padding:22px 26px;color:#fff;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 8px 24px rgba(7,26,58,.16)}
+    .hero h1{font-size:31px;letter-spacing:.4px;margin:2px 0 4px;font-weight:800}.hero p{margin:0;color:#d9e8ff;font-size:14px}.eyebrow{font-size:11px;letter-spacing:1.5px;color:#8fc7ff;font-weight:700}.hero-tag{border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.10);padding:10px 14px;border-radius:10px;font-size:12px;font-weight:700}
+    .section-title{font-size:22px;font-weight:800;color:#102a43;margin:18px 0 4px;border-left:5px solid #1d74d8;padding-left:10px}.section-subtitle{color:#64748b;margin-top:0}
+    .kpi{background:#fff;border:1px solid #d9e2ef;border-radius:12px;padding:14px 16px;min-height:92px;box-shadow:0 3px 10px rgba(15,35,60,.05)}.kpi-label{font-size:11px;letter-spacing:.8px;color:#64748b;font-weight:800}.kpi-value{font-size:28px;font-weight:800;color:#102a43;margin-top:4px}.small-value{font-size:21px}.kpi-unit{font-size:14px;color:#64748b}.kpi-sub{font-size:11px;color:#64748b;margin-top:4px}
+    .card,.action-card,.mini-card{background:#fff;border:1px solid #d9e2ef;border-radius:13px;padding:16px;box-shadow:0 3px 12px rgba(15,35,60,.05)}.action-card{min-height:235px;border-top:4px solid #1d74d8}.mini-card{min-height:185px;border-top:3px solid #1d74d8}.ticker{font-size:21px;font-weight:850;color:#0b2d5c}.score{font-size:28px;font-weight:850;color:#102a43;margin:9px 0}.score span{font-size:13px;color:#64748b;font-weight:600}.small{font-size:11px;color:#64748b}.rowline{display:flex;justify-content:space-between;gap:10px;font-size:12px;padding:4px 0;border-bottom:1px solid #edf2f7}.rowline span{color:#64748b}.danger{color:#d92d20!important}.hot-title{font-weight:800;margin-top:6px}.badge{display:inline-block;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:800}.badge-green{background:#dcfce7;color:#166534}.badge-yellow{background:#fef3c7;color:#92400e}.badge-red{background:#fee2e2;color:#991b1b}.badge-blue{background:#dbeafe;color:#1d4ed8}
+    .buy-box,.sl-box,.tp-box{border-radius:12px;padding:13px 14px;border:1px solid #d9e2ef;background:#fff}.buy-box{border-top:4px solid #16a34a}.sl-box{border-top:4px solid #dc2626}.tp-box{border-top:4px solid #2563eb}.buy-box h3,.sl-box h3,.tp-box h3{margin:4px 0 0;font-size:22px}.tv-shell{background:#f8fafc;border:1px solid #d9e2ef;border-radius:13px;padding:10px 14px;margin-top:16px}
+    [data-testid="stMetricValue"]{font-weight:800}.stButton>button{border-radius:9px;font-weight:700}.stExpander{border:1px solid #d9e2ef;border-radius:10px}.stDataFrame{border:1px solid #d9e2ef;border-radius:10px}
+    @media(max-width:900px){.hero{display:block}.hero-tag{display:inline-block;margin-top:12px}.hero h1{font-size:24px}}
+    </style>
+    """,unsafe_allow_html=True)
+
+inject_css()
 def main():
-    st.markdown(f'''<div class="hero"><h1>📈 SANGGUL STOCK SCANNER</h1><p>Professional Decision Dashboard • Multi-Style Engine • {APP_VERSION}</p></div>''', unsafe_allow_html=True)
+    st.markdown(f'''<div class="hero"><div><div class="eyebrow">SANGGUL CAPITAL MARKETS • DECISION SUPPORT</div><h1>📈 SANGGUL STOCK SCANNER</h1><p>Professional Multi-Style Trading & Investment Dashboard • {APP_VERSION}</p></div><div class="hero-tag">IDX • 300 UNIVERSE</div></div>''', unsafe_allow_html=True)
+
     regime=market_regime()
-    if regime:
-        c1,c2,c3,c4=st.columns(4)
-        c1.metric("IHSG",f"{regime['close']:,.0f}".replace(",","."))
-        c2.metric("Market Score",f"{regime['score']}/100")
-        c3.metric("Market Regime",regime["regime"])
-        c4.metric("Risk Gate",regime["gate"])
+    scan=st.session_state.get("scan",pd.DataFrame())
 
     with st.sidebar:
-        st.markdown("### ⚙️ Control Center")
+        st.markdown("## ⚙️ Control Center")
         st.caption(f"Universe aktif: **{len(UNIVERSE)} saham**")
+        st.markdown("### NAVIGATION")
+        pages=["🏠 Dashboard","⚡ Daily Trading","📈 Swing Weekly","🏦 Investor","📊 Sector Opportunity","🏆 Top 150 / 50 / 10","🔎 Single Stock","⚙️ System"]
+        requested=st.session_state.pop("nav_request",None)
+        page=st.radio("Pilih modul",pages,index=pages.index(requested) if requested in pages else 0,label_visibility="collapsed")
+        st.markdown("---")
         if st.button("🚀 RUN / REFRESH SCAN",use_container_width=True):
             with st.spinner(f"Scanning {len(UNIVERSE)} configured stocks..."):
                 st.session_state["scan"]=scan_all()
+            st.rerun()
         if st.button("🧹 CLEAR RESULT",use_container_width=True):
             st.session_state.pop("scan",None)
+            st.rerun()
         st.markdown("---")
-        st.markdown("**Mode keputusan**")
-        st.caption("Daily = 1–5 hari\nSwing = 1–6 minggu\nInvestor = 3–24 bulan")
+        st.markdown("**Decision Horizon**")
+        st.caption("⚡ Daily 1–5 hari\n\n📈 Swing 1–6 minggu\n\n🏦 Investor 3–24 bulan")
         st.markdown("---")
-        st.caption("Baseline OHLCV: yfinance. Chart Single Stock: TradingView widget resmi.")
+        st.caption("OHLCV baseline: yfinance • Single Stock chart: TradingView")
 
-    tabs=st.tabs(["🏠 Dashboard","⚡ Daily Trading","📈 Swing Weekly","🏦 Investor","📊 Sector Opportunity","🏆 Top 150 / 50 / 10","🔎 Single Stock","⚙️ System"])
-    scan=st.session_state.get("scan",pd.DataFrame())
-
-    with tabs[0]:
-        st.markdown('<div class="section-title">Decision Overview</div>',unsafe_allow_html=True)
-        cols=st.columns(3)
-        with cols[0]: st.markdown(style_card("⚡ Daily Trading","Fokus momentum, breakout/pullback, volume dan eksekusi 1–5 hari.",("SHORT HORIZON","blue")),unsafe_allow_html=True)
-        with cols[1]: st.markdown(style_card("📈 Swing Weekly","Fokus trend, struktur, risk/reward dan posisi 1–6 minggu.",("CORE MODE","green")),unsafe_allow_html=True)
-        with cols[2]: st.markdown(style_card("🏦 Investor","Fokus MA200, trend jangka panjang dan konfirmasi akumulasi.",("LONG HORIZON","yellow")),unsafe_allow_html=True)
-        if scan.empty:
-            st.info("Klik **RUN / REFRESH SCAN** di sidebar untuk mengisi dashboard.")
-        else:
-            p=scan[scan.Gate=="PASS"]; n=scan[scan.Gate=="NEAR PASS"]
-            m=st.columns(6)
-            m[0].metric("Stocks Scanned",len(scan)); m[1].metric("PASS",len(p)); m[2].metric("Near Pass",len(n)); m[3].metric("Top 10",min(10,len(scan))); m[4].metric("Top 3",min(3,len(p))); m[5].metric("Universe",len(UNIVERSE))
-            st.markdown('<div class="section-title">Top Actionable Across Styles</div>',unsafe_allow_html=True)
-            for style,title in [("DAILY","⚡ Daily Trading"),("SWING","📈 Swing Weekly"),("INVESTOR","🏦 Investor")]:
-                sdf=add_style_columns(scan,style)
-                sdf=sdf[sdf["Style Gate"].isin(["PASS","NEAR PASS"])].head(3)
-                st.markdown(f"**{title}**")
-                st.dataframe(vivid_style(money_cols(sdf[["Ticker","Sector","Price","Entry","Buy Low","Buy High","Stop Loss","TP1","TP2","Style Score","Style Gate","Style Action","Setup","Risk","R:R TP2"]])),use_container_width=True,hide_index=True)
+    # Institutional-style market strip
+    if regime:
+        rc=st.columns(4)
+        rc[0].markdown(f'<div class="kpi"><div class="kpi-label">IHSG</div><div class="kpi-value">{regime["close"]:,.0f}</div><div class="kpi-sub">Market level</div></div>',unsafe_allow_html=True)
+        rc[1].markdown(f'<div class="kpi"><div class="kpi-label">MARKET SCORE</div><div class="kpi-value">{regime["score"]}<span class="kpi-unit">/100</span></div><div class="kpi-sub">Regime strength</div></div>',unsafe_allow_html=True)
+        regime_kind="green" if regime["regime"]=="BULLISH" else "yellow" if regime["regime"]=="SIDEWAYS" else "red"
+        rc[2].markdown(f'<div class="kpi"><div class="kpi-label">MARKET REGIME</div><div class="kpi-value small-value">{regime["regime"]}</div><div class="kpi-sub">{badge(regime["gate"],regime_kind)}</div></div>',unsafe_allow_html=True)
+        rc[3].markdown(f'<div class="kpi"><div class="kpi-label">UNIVERSE</div><div class="kpi-value">{len(UNIVERSE)}</div><div class="kpi-sub">Configured stocks</div></div>',unsafe_allow_html=True)
 
     def style_page(style,title,desc):
-        st.markdown(f'<div class="section-title">{title}</div><p class="small">{desc}</p>',unsafe_allow_html=True)
+        st.markdown(f'<div class="section-title">{title}</div><p class="section-subtitle">{desc}</p>',unsafe_allow_html=True)
         if scan.empty:
             st.info("Run / Refresh Scan terlebih dahulu."); return
         sdf=add_style_columns(scan,style)
         p=sdf[sdf["Style Gate"]=="PASS"].head(3)
         near=sdf[sdf["Style Gate"]=="NEAR PASS"].head(10)
-        m=st.columns(5); m[0].metric("Universe",len(UNIVERSE)); m[1].metric("Scanned",len(sdf)); m[2].metric("PASS",len(sdf[sdf["Style Gate"]=="PASS"])); m[3].metric("Near Pass",len(sdf[sdf["Style Gate"]=="NEAR PASS"])); m[4].metric("Candidates",len(p)+len(near))
+        m=st.columns(5)
+        m[0].metric("Universe",len(UNIVERSE)); m[1].metric("Scanned",len(sdf)); m[2].metric("PASS",len(sdf[sdf["Style Gate"]=="PASS"])); m[3].metric("Near Pass",len(sdf[sdf["Style Gate"]=="NEAR PASS"])); m[4].metric("Candidates",len(p)+len(near))
         if p.empty: st.warning("Belum ada PASS untuk mode ini. Kandidat Near Pass tetap ditampilkan.")
         else:
-            st.markdown("**Top 3 Actionable**")
+            st.markdown("### Top Actionable")
             cc=st.columns(len(p))
             for col,(_,r) in zip(cc,p.iterrows()):
                 with col:
-                    st.markdown(f'<div class="card"><h3>{r.Ticker}</h3><div class="small">{r.Sector} • {r.Setup}</div><h2>{r["Style Score"]:.1f}/100</h2><div>Gate: <b>{r["Style Gate"]}</b></div><div>Action: <b>{r["Style Action"]}</b></div><div>R:R TP2: <b>1:{r["R:R TP2"]:.2f}</b></div></div>',unsafe_allow_html=True)
-        # Candidate table is intentionally collapsed so the dashboard stays clean.
-        # The user can expand it on demand or refresh the underlying scan from here.
-        st.markdown("<div style='padding:6px 0 2px 0;'>", unsafe_allow_html=True)
-        cbtn1, cbtn2, cbtn3 = st.columns([2, 1, 1])
-        with cbtn1:
-            st.caption(f"Candidate Table • {len(p)+len(near)} actionable/near-pass candidates • tampilkan saat diperlukan")
-        with cbtn2:
-            if st.button("🔄 Refresh Scan", key=f"refresh_{style.lower()}", use_container_width=True):
-                with st.spinner(f"Refreshing {style} candidates..."):
-                    st.session_state["scan"] = scan_all()
-                st.rerun()
-        with cbtn3:
-            st.caption("Klik panel untuk membuka")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        with st.expander(f"📋 Candidate Table — {title} • klik untuk tampilkan", expanded=False):
+                    st.markdown(f'''<div class="action-card"><div class="ticker">{r.Ticker}</div><div class="small">{r.Sector} • {r.Setup}</div><div class="score">{r["Style Score"]:.1f}<span>/100</span></div><div class="rowline"><span>Gate</span><b>{r["Style Gate"]}</b></div><div class="rowline"><span>Entry</span><b>{rupiah(r.Entry)}</b></div><div class="rowline"><span>Buy Range</span><b>{rupiah(r["Buy Low"])} – {rupiah(r["Buy High"])}</b></div><div class="rowline"><span>Stop Loss</span><b class="danger">{rupiah(r["Stop Loss"])}</b></div><div class="rowline"><span>R:R TP2</span><b>1:{r["R:R TP2"]:.2f}</b></div></div>''',unsafe_allow_html=True)
+                    if st.button(f"🔎 Analyze {r.Ticker}",key=f"quick_{style}_{r.Ticker}",use_container_width=True):
+                        st.session_state["single_ticker"]=r.Ticker
+                        st.session_state["nav_request"]="🔎 Single Stock"
+                        st.rerun()
+        with st.expander(f"📋 Candidate Table — {title} • klik untuk tampilkan",expanded=False):
             candidate_cols=["Ticker","Sector","Price","Entry","Buy Low","Buy High","Stop Loss","TP1","TP2","Style Score","Style Gate","Style Action","Horizon","Trend","Setup","Risk","R:R TP1","R:R TP2","RSI","VolumeRatio"]
-            candidate_df=sdf[candidate_cols].head(30)
-            st.dataframe(vivid_style(money_cols(candidate_df)),use_container_width=True,hide_index=True,height=520)
+            st.dataframe(vivid_style(money_cols(sdf[candidate_cols].head(50))),use_container_width=True,hide_index=True,height=560)
 
-    with tabs[1]: style_page("DAILY","⚡ DAILY TRADING","Momentum dan setup yang lebih cepat untuk horizon sekitar 1–5 hari.")
-    with tabs[2]: style_page("SWING","📈 SWING TRADING MINGGUAN","Trend-following, breakout/pullback, struktur support-resistance dan R:R untuk horizon 1–6 minggu.")
-    with tabs[3]: style_page("INVESTOR","🏦 INVESTOR JANGKA PANJANG","Filter trend jangka panjang berbasis MA200, struktur trend dan risk/reward; bukan sinyal intraday.")
-
-    with tabs[4]:
-        st.markdown('<div class="section-title">📊 Sector Opportunity — Dynamic</div>',unsafe_allow_html=True)
-        st.caption("Skor sektor dihitung dari saham yang berhasil discan: technical strength, opportunity score, bullish breadth, momentum 20D, volume dan pass rate. Ini adalah model screening, bukan jaminan kenaikan harga.")
+    if page=="🏠 Dashboard":
+        st.markdown('<div class="section-title">Decision Overview</div>',unsafe_allow_html=True)
         if scan.empty:
-            st.info("Run scanner terlebih dahulu.")
+            cards=st.columns(3)
+            cards[0].markdown(style_card("⚡ Daily Trading","Momentum, breakout/pullback dan eksekusi 1–5 hari.",("1–5 DAYS","blue")),unsafe_allow_html=True)
+            cards[1].markdown(style_card("📈 Swing Weekly","Trend, struktur, support/resistance dan R:R.",("1–6 WEEKS","green")),unsafe_allow_html=True)
+            cards[2].markdown(style_card("🏦 Investor","MA200, trend jangka panjang dan konfirmasi.",("3–24 MONTHS","yellow")),unsafe_allow_html=True)
+            st.info("Klik **RUN / REFRESH SCAN** di Control Center untuk mengisi dashboard.")
         else:
-            sec=sector_opportunity(scan)
-            if not sec.empty:
-                # Compact sector table with an explicit clickable action per sector.
-                # Streamlit dataframes do not provide reliable row-click callbacks, so each
-                # sector row gets a small native button that opens the stock list below.
-                st.markdown("**📊 Sector Ranking — klik `Lihat Saham` untuk membuka daftar saham per sektor**")
-                header=st.columns([2.2,0.6,1.0,1.0,0.9,1.0,0.9,1.0,1.0,0.9,0.9,0.9])
-                for h,label in zip(header,["Sector","Stocks","Avg Tech","Avg Opp.","Volume","Bullish","Mom.20D","Pass Rate","Sector Score","Status",""," "]):
-                    h.markdown(f"<div class='small'><b>{label}</b></div>",unsafe_allow_html=True)
-                for i,(_,r) in enumerate(sec.iterrows()):
-                    cols=st.columns([2.2,0.6,1.0,1.0,0.9,1.0,0.9,1.0,1.0,0.9,0.9,0.9])
-                    cols[0].markdown(f"**{r['Sector']}**")
-                    cols[1].write(int(r["Stocks"]))
-                    cols[2].write(f"{r['AvgTechnical']:.1f}")
-                    cols[3].write(f"{r['AvgOpportunity']:.1f}")
-                    cols[4].write(f"{r['AvgVolume']:.2f}x")
-                    cols[5].write(f"{r['BullishBreadth']:.1f}%")
-                    cols[6].write(f"{r['AvgMomentum20D']:.1f}%")
-                    cols[7].write(f"{r['PassRate']:.1f}%")
-                    cols[8].write(f"{r['Sector Score']:.1f}")
-                    status=str(r["Status"])
-                    status_kind="green" if "LEADING" in status else "yellow" if "WATCH" in status else "red"
-                    cols[9].markdown(badge(status,status_kind),unsafe_allow_html=True)
-                    if cols[10].button("🔎 Lihat", key=f"sector_view_{i}", use_container_width=True):
-                        st.session_state["selected_sector"] = str(r["Sector"])
-                    if cols[11].button("↻", key=f"sector_refresh_{i}", help="Refresh scanner", use_container_width=True):
-                        with st.spinner("Refreshing sector data..."):
-                            st.session_state["scan"] = scan_all()
-                        st.rerun()
+            p=scan[scan.Gate=="PASS"]; n=scan[scan.Gate=="NEAR PASS"]
+            m=st.columns(6)
+            for col,label,val in zip(m,["Stocks Scanned","PASS","Near Pass","Top 10","Top 3","Universe"],[len(scan),len(p),len(n),min(10,len(scan)),min(3,len(p)),len(UNIVERSE)]): col.metric(label,val)
+            st.markdown('<div class="section-title">Top Actionable Across Styles</div>',unsafe_allow_html=True)
+            for style,title in [("DAILY","⚡ Daily Trading"),("SWING","📈 Swing Weekly"),("INVESTOR","🏦 Investor")]:
+                sdf=add_style_columns(scan,style); sdf=sdf[sdf["Style Gate"].isin(["PASS","NEAR PASS"])].head(3)
+                st.markdown(f"### {title}")
+                if sdf.empty: st.caption("Belum ada candidate.")
+                else:
+                    cols=st.columns(len(sdf))
+                    for col,(_,r) in zip(cols,sdf.iterrows()):
+                        with col:
+                            st.markdown(f'''<div class="mini-card"><div class="ticker">{r.Ticker}</div><div class="small">{r.Sector} • {r.Setup}</div><div class="score">{r["Style Score"]:.1f}<span>/100</span></div><div>Entry <b>{rupiah(r.Entry)}</b></div><div>Buy <b>{rupiah(r["Buy Low"])} – {rupiah(r["Buy High"])}</b></div><div>SL <b class="danger">{rupiah(r["Stop Loss"])}</b></div><div>R:R <b>1:{r["R:R TP2"]:.2f}</b></div></div>''',unsafe_allow_html=True)
+                            if st.button(f"🔎 {r.Ticker}",key=f"dash_{style}_{r.Ticker}",use_container_width=True):
+                                st.session_state["single_ticker"]=r.Ticker
+                                st.session_state["nav_request"]="🔎 Single Stock"
+                                st.rerun()
+            st.markdown('<div class="section-title">Quick Single Stock</div>',unsafe_allow_html=True)
+            qcols=st.columns([3,1,1])
+            default_ticker=st.session_state.get("single_ticker", scan.iloc[0].Ticker if not scan.empty else "BBRI")
+            tickers=sorted(scan.Ticker.unique().tolist())
+            qcols[0].selectbox("Pilih saham dari hasil scanner",tickers,index=tickers.index(default_ticker) if default_ticker in tickers else 0,key="dashboard_stock_pick")
+            if qcols[1].button("🔎 Buka Single Stock",use_container_width=True):
+                st.session_state["single_ticker"]=st.session_state["dashboard_stock_pick"]
+                st.session_state["nav_request"]="🔎 Single Stock"
+                st.rerun()
+            qcols[2].caption("Chart utama: TradingView")
 
-                selected=st.session_state.get("selected_sector", "")
-                if selected:
-                    st.markdown("---")
-                    st.markdown(f"### 🔎 Saham dalam sektor: **{selected}**")
-                    sstocks=scan[scan["Sector"]==selected].copy()
-                    if not sstocks.empty:
-                        # Keep the detail compact: only show it after the user explicitly opens a sector.
-                        showcols=["Ticker","Price","Technical","Opportunity","Gate","Risk","Trend","Setup","Entry","Buy Low","Buy High","Stop Loss","TP1","TP2","R:R TP2"]
-                        available=[c for c in showcols if c in sstocks.columns]
-                        detail=sstocks.sort_values(["Opportunity","Technical"],ascending=False)[available].head(50)
-                        fundamental_note = "Fundamental Strength: belum tersedia pada baseline OHLCV; daftar di bawah memakai strength teknikal/opportunity scanner."
-                        st.caption(f"{len(sstocks)} saham berhasil discan • {fundamental_note}")
-                        st.dataframe(vivid_style(money_cols(detail)),use_container_width=True,hide_index=True,height=520)
-                    else:
-                        st.info("Belum ada saham yang berhasil discan pada sektor ini.")
-                    if st.button("✕ Tutup daftar sektor", key="close_sector"):
-                        st.session_state.pop("selected_sector", None)
-                        st.rerun()
-
-                lead=sec.head(3)
-                st.markdown("**🔥 Sector Focus berdasarkan hasil scanner**")
-                cc=st.columns(len(lead))
-                for col,(_,r) in zip(cc,lead.iterrows()):
-                    with col:
-                        st.markdown(f'<div class="card"><h3>{r["Sector"]}</h3><h2>{r["Sector Score"]:.1f}/100</h2><div class="hot-title">{r["Status"]}</div><div class="small">{int(r["Stocks"])} saham • Bullish breadth {r["BullishBreadth"]:.1f}% • Momentum 20D {r["AvgMomentum20D"]:.1f}%</div></div>',unsafe_allow_html=True)
-
-    with tabs[5]:
+    elif page=="⚡ Daily Trading":
+        style_page("DAILY","⚡ DAILY TRADING","Momentum dan setup cepat untuk horizon sekitar 1–5 hari.")
+    elif page=="📈 Swing Weekly":
+        style_page("SWING","📈 SWING TRADING MINGGUAN","Trend-following, breakout/pullback, support-resistance dan R:R untuk horizon 1–6 minggu.")
+    elif page=="🏦 Investor":
+        style_page("INVESTOR","🏦 INVESTOR JANGKA PANJANG","Filter MA200, struktur trend dan risk/reward untuk horizon 3–24 bulan.")
+    elif page=="📊 Sector Opportunity":
+        st.markdown('<div class="section-title">📊 Sector Opportunity — Dynamic</div>',unsafe_allow_html=True)
+        st.caption("Sektor dihitung dari technical strength, opportunity, bullish breadth, momentum 20D, volume dan pass rate.")
         if scan.empty: st.info("Run scanner terlebih dahulu.")
         else:
-            top150=scan.sort_values("Opportunity",ascending=False).head(150); top50=top150.head(50)
-            top10=scan[scan.Gate.isin(["PASS","NEAR PASS"])].sort_values(["Opportunity","Technical","R:R TP2"],ascending=False).head(10)
-            st.markdown(f"**Top 150 Enrich:** {len(top150)}"); st.dataframe(vivid_style(money_cols(top150)),use_container_width=True,hide_index=True)
-            st.markdown(f"**Top 50 Focus:** {len(top50)}"); st.dataframe(vivid_style(money_cols(top50)),use_container_width=True,hide_index=True)
-            st.markdown(f"**Top 10 Opportunity:** {len(top10)}"); st.dataframe(vivid_style(money_cols(top10)),use_container_width=True,hide_index=True)
+            sec=sector_opportunity(scan)
+            st.markdown("### Sector Ranking")
+            header=st.columns([2.2,0.6,1,1,0.9,1,0.9,1,1,0.9,0.9])
+            for h,label in zip(header,["Sector","Stocks","Avg Tech","Avg Opp.","Volume","Bullish","Mom.20D","Pass Rate","Score","Status"," "]): h.markdown(f"<div class='small'><b>{label}</b></div>",unsafe_allow_html=True)
+            for i,(_,r) in enumerate(sec.iterrows()):
+                cols=st.columns([2.2,0.6,1,1,0.9,1,0.9,1,1,0.9,0.9]); cols[0].markdown(f"**{r['Sector']}**"); cols[1].write(int(r["Stocks"])); cols[2].write(f"{r['AvgTechnical']:.1f}"); cols[3].write(f"{r['AvgOpportunity']:.1f}"); cols[4].write(f"{r['AvgVolume']:.2f}x"); cols[5].write(f"{r['BullishBreadth']:.1f}%"); cols[6].write(f"{r['AvgMomentum20D']:.1f}%"); cols[7].write(f"{r['PassRate']:.1f}%"); cols[8].write(f"{r['Sector Score']:.1f}"); status=str(r["Status"]); kind="green" if "LEADING" in status else "yellow" if "WATCH" in status else "red"; cols[9].markdown(badge(status,kind),unsafe_allow_html=True)
+                if cols[10].button("🔎 Saham",key=f"sector_view_{i}",use_container_width=True): st.session_state["selected_sector"]=str(r["Sector"]); st.rerun()
+            selected=st.session_state.get("selected_sector","")
+            if selected:
+                with st.expander(f"🔎 Saham dalam sektor: {selected}",expanded=True):
+                    sstocks=scan[scan.Sector==selected].copy(); showcols=["Ticker","Price","Technical","Opportunity","Gate","Risk","Trend","Setup","Entry","Buy Low","Buy High","Stop Loss","TP1","TP2","R:R TP2"]; avail=[c for c in showcols if c in sstocks.columns]
+                    st.dataframe(vivid_style(money_cols(sstocks.sort_values(["Opportunity","Technical"],ascending=False)[avail].head(50))),use_container_width=True,hide_index=True,height=560)
+                if st.button("✕ Tutup daftar sektor",key="close_sector"): st.session_state.pop("selected_sector",None); st.rerun()
+            st.markdown("### 🔥 Sector Focus")
+            lead=sec.head(3); cc=st.columns(len(lead))
+            for col,(_,r) in zip(cc,lead.iterrows()):
+                with col: st.markdown(f'<div class="action-card"><div class="ticker">{r["Sector"]}</div><div class="score">{r["Sector Score"]:.1f}<span>/100</span></div><div>{badge(r["Status"],"green" if "LEADING" in str(r["Status"]) else "yellow" if "WATCH" in str(r["Status"]) else "red")}</div><div class="small">{int(r["Stocks"])} saham • Breadth {r["BullishBreadth"]:.1f}% • Momentum {r["AvgMomentum20D"]:.1f}%</div></div>',unsafe_allow_html=True)
 
-    with tabs[6]:
-        ticker=st.text_input("Kode saham IDX","BBRI").upper().strip().replace(".JK","")
-        interval=st.selectbox("TradingView timeframe",["D","W","240","60"],index=0)
-        if st.button("ANALYZE SINGLE STOCK",use_container_width=True):
-            d=get_data(ticker)
+    elif page=="🏆 Top 150 / 50 / 10":
+        if scan.empty: st.info("Run scanner terlebih dahulu.")
+        else:
+            for title,df in [("Top 150 Enrich",scan.sort_values("Opportunity",ascending=False).head(150)),("Top 50 Focus",scan.sort_values("Opportunity",ascending=False).head(50)),("Top 10 Opportunity",scan[scan.Gate.isin(["PASS","NEAR PASS"])].sort_values(["Opportunity","Technical","R:R TP2"],ascending=False).head(10))]:
+                with st.expander(f"{title} • {len(df)} saham",expanded=False): st.dataframe(vivid_style(money_cols(df)),use_container_width=True,hide_index=True,height=520)
+
+    elif page=="🔎 Single Stock":
+        st.markdown('<div class="section-title">🔎 SINGLE STOCK ANALYSIS</div>',unsafe_allow_html=True)
+        st.caption("Analisis satu saham dengan trading plan dan TradingView Advanced Chart.")
+        available=sorted(scan.Ticker.unique().tolist()) if not scan.empty else []
+        preset=st.session_state.get("single_ticker","BBRI")
+        left,right=st.columns([2,1])
+        with left:
+            ticker_input=st.text_input("Kode saham IDX",preset).upper().strip().replace(".JK","")
+        with right:
+            interval=st.selectbox("Timeframe",["D","W","240","60"],index=0)
+        if available:
+            pick=st.selectbox("Pilih cepat dari hasil scanner",available,index=available.index(preset) if preset in available else 0)
+            if st.button("Gunakan saham terpilih",use_container_width=True): ticker_input=pick; st.session_state["single_ticker"]=pick; st.rerun()
+        if st.button("ANALYZE SINGLE STOCK",use_container_width=True): st.session_state["single_ticker"]=ticker_input; st.session_state["single_analyze"]=True
+        if st.session_state.get("single_analyze",False):
+            ticker=st.session_state.get("single_ticker",ticker_input); d=get_data(ticker)
             if d.empty: st.error("Data analisis tidak tersedia untuk ticker tersebut.")
             else:
                 a,x=analyze(d)
                 if a:
-                    m=st.columns(6)
-                    m[0].metric("Price",rupiah(a["price"])); m[1].metric("Technical",f"{a['score']}/100"); m[2].metric("Opportunity",f"{a['opportunity']:.1f}/100"); m[3].metric("R:R TP2",f"1:{a['rr2']:.2f}"); m[4].metric("Gate",a["gate"]); m[5].metric("Risk",a["risk_level"])
+                    m=st.columns(6); m[0].metric("Price",rupiah(a["price"])); m[1].metric("Technical",f"{a['score']}/100"); m[2].metric("Opportunity",f"{a['opportunity']:.1f}/100"); m[3].metric("R:R TP2",f"1:{a['rr2']:.2f}"); m[4].metric("Gate",a["gate"]); m[5].metric("Risk",a["risk_level"])
                     st.markdown('<div class="section-title">Trading Plan</div>',unsafe_allow_html=True)
-                    p=st.columns(5); p[0].markdown(f'<div class="buy-box"><b>BUY LOW</b><h3>{rupiah(a["entry_low"])}</h3></div>',unsafe_allow_html=True); p[1].markdown(f'<div class="buy-box"><b>ENTRY / BUY HIGH</b><h3>{rupiah(a["entry_high"])}</h3></div>',unsafe_allow_html=True); p[2].markdown(f'<div class="sl-box"><b>STOP LOSS</b><h3>{rupiah(a["stop"])}</h3></div>',unsafe_allow_html=True); p[3].markdown(f'<div class="tp-box"><b>TP1</b><h3>{rupiah(a["tp1"])}</h3></div>',unsafe_allow_html=True); p[4].markdown(f'<div class="tp-box"><b>TP2</b><h3>{rupiah(a["tp2"])}</h3></div>',unsafe_allow_html=True)
-                    st.markdown(f'**Buy Range:** {rupiah(a["entry_low"])} – {rupiah(a["entry_high"])} &nbsp; | &nbsp; **Risk per share:** {rupiah(a["price"]-a["stop"])} &nbsp; | &nbsp; **R:R TP2:** 1:{a["rr2"]:.2f}',unsafe_allow_html=True)
+                    p=st.columns(5); p[0].markdown(f'<div class="buy-box"><b>BUY LOW</b><h3>{rupiah(a["entry_low"])}</h3></div>',unsafe_allow_html=True); p[1].markdown(f'<div class="buy-box"><b>BUY HIGH / ENTRY</b><h3>{rupiah(a["entry_high"])}</h3></div>',unsafe_allow_html=True); p[2].markdown(f'<div class="sl-box"><b>STOP LOSS</b><h3>{rupiah(a["stop"])}</h3></div>',unsafe_allow_html=True); p[3].markdown(f'<div class="tp-box"><b>TP1</b><h3>{rupiah(a["tp1"])}</h3></div>',unsafe_allow_html=True); p[4].markdown(f'<div class="tp-box"><b>TP2</b><h3>{rupiah(a["tp2"])}</h3></div>',unsafe_allow_html=True)
+                    st.markdown(f'**Buy Range:** {rupiah(a["entry_low"])} – {rupiah(a["entry_high"])} &nbsp; | &nbsp; **Risk/share:** {rupiah(a["price"]-a["stop"])} &nbsp; | &nbsp; **R:R TP2:** 1:{a["rr2"]:.2f}',unsafe_allow_html=True)
                     st.write(f"**Setup:** {a['setup']}  •  **Action:** {a['action']}  •  **Confidence:** {a['confidence']}")
                     st.write(f"**Invalidation:** {a['invalidation']}")
-                    st.markdown('<div class="section-title">TradingView Advanced Chart</div>',unsafe_allow_html=True)
-                    st.caption("Chart visual menggunakan widget resmi TradingView; scanner numeriknya tetap berasal dari data OHLCV engine.")
-                    tradingview_chart(ticker,interval=interval,height=900)
+                    st.markdown('<div class="tv-shell"><div class="section-title">📊 TradingView Advanced Chart</div><div class="small">Chart utama menggunakan widget resmi TradingView. Gunakan toolbar, timeframe, indikator dan drawing tools langsung pada chart.</div></div>',unsafe_allow_html=True)
+                    tradingview_chart(ticker,interval=interval,height=820)
 
-    with tabs[7]:
-        st.markdown("### System configuration")
+    elif page=="⚙️ System":
+        st.markdown('<div class="section-title">⚙️ System Configuration</div>',unsafe_allow_html=True)
         st.write(f"Configured universe: **{len(UNIVERSE)}** tickers (target 300)")
-        st.write("Universe file: `data/universe.csv`")
-        st.info("Universe aktif versi ini berisi **300 ticker kandidat** dengan pemetaan sektor IDX-IC. Ketersediaan data tiap ticker tetap bergantung pada sumber OHLCV; ticker tanpa data valid akan dilewati.")
+        st.write("Universe file: `data/universe.csv` with embedded fallback.")
+        st.info("Universe loader dirancang untuk GitHub/Streamlit Cloud dan akan memakai embedded 300-ticker fallback bila file lokal tidak tersedia.")
         st.write("### TradingView")
-        st.write("Single Stock memakai TradingView Advanced Chart Widget dengan symbol dinamis `IDX:<TICKER>`, interval dan studies yang dapat dikonfigurasi.")
+        st.write("Single Stock memakai TradingView Advanced Chart Widget dengan symbol dinamis `IDX:<TICKER>`. Widget resmi mendukung konfigurasi symbol, interval, studies, toolbar dan ukuran chart.")
         st.write("### Data source")
         st.warning("Baseline OHLCV scanner memakai yfinance untuk pengujian. Untuk produksi, gunakan data pasar yang sesuai lisensi dan kebutuhan operasional.")
         st.write("### Multi-Style")
-        st.write("Daily Trading, Swing Weekly dan Investor kini memakai layer scoring/gate masing-masing; ketiganya tetap bersumber dari engine indikator yang sama sehingga hasil dapat dibandingkan tanpa menghilangkan mode lain.")
+        st.write("Daily Trading, Swing Weekly dan Investor memakai layer scoring/gate masing-masing." )
 
 
 if __name__ == "__main__":
