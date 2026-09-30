@@ -375,18 +375,18 @@ def show_top3(action,meta):
     st.markdown('<div class="section-title">🏆 Top 3 Actionable Picks — Risk-Gated</div>',unsafe_allow_html=True)
     st.caption("Hanya kandidat READY dari Top 10. Tetap ikuti Entry, Stop Loss, dan market gate.")
     if action is None or action.empty: st.warning("Belum ada setup READY pada snapshot ini."); return
-    cols=["Ticker","Setup","Timing","Close","RSI","MACD","VolumeRatio","Support","Resistance","Entry","SL","TP1","TP2","RR","RiskPct","OpportunityScore","Status"]
+    cols=["Ticker","Setup","Timing","Close","MA20","RSI","MACD","VolumeRatio","Support","Resistance","Entry","SL","TP1","TP2","RR","RiskPct","OpportunityScore","Status"]
     show_table(action,cols)
     for _,r in action.iterrows():
         st.markdown(f'<div class="card"><b>{r.Ticker}</b> &nbsp; {status_badge(r.Status)} &nbsp; Setup: <b>{r.Setup}</b> &nbsp; Entry <b>{fmt(r.Entry)}</b> · SL <b>{fmt(r.SL)}</b> · TP1 <b>{fmt(r.TP1)}</b> · TP2 <b>{fmt(r.TP2)}</b> · R/R <b>{fmt(r.RR,2)}</b><br><span class="small-note">Chart: <a href="{tv_link(r.Ticker)}" target="_blank">TradingView</a></span></div>',unsafe_allow_html=True)
 
 def show_top10(opp):
     st.markdown('<div class="section-title">🟩 Top 10 Opportunity — Opportunity Now</div>',unsafe_allow_html=True)
-    show_table(opp,["Ticker","Setup","Timing","OpportunityScore","Close","RSI","MACD","VolumeRatio","Support","Resistance","Entry","SL","TP1","TP2","RR","Status","Candle"])
+    show_table(opp,["Ticker","Setup","Timing","OpportunityScore","Close","MA20","RSI","MACD","VolumeRatio","Support","Resistance","Entry","SL","TP1","TP2","RR","Status","Candle"])
 
 def show_top50(focus):
     st.markdown('<div class="section-title">🟨 Top 50 Focus — Focus List</div>',unsafe_allow_html=True)
-    show_table(focus,["Ticker","Setup","SetupScore","QualityScore","Close","RSI","MACD","VolumeRatio","Support","Resistance","Entry","SL","TP1","TP2","RR","Status","Timing"])
+    show_table(focus,["Ticker","Setup","SetupScore","QualityScore","Close","MA20","RSI","MACD","VolumeRatio","Support","Resistance","Entry","SL","TP1","TP2","RR","Status","Timing"])
 
 def show_top150(enrich):
     st.markdown('<div class="section-title">🟦 Top 150 Enrich — Quality Pool</div>',unsafe_allow_html=True)
@@ -503,11 +503,11 @@ elif mode=="⚡ Trading Harian":
     if d.empty: st.info("Belum ada kandidat trading harian yang memenuhi filter.")
     else:
         metric_strip([("Kandidat",str(len(d))), ("Ready",str((d.Status=="READY").sum())), ("Breakout",str((d.Setup=="BREAKOUT").sum())), ("Pullback",str((d.Setup=="PULLBACK").sum()))])
-        show_table(d,["Ticker","TradingMode","Setup","Timing","Status","Close","RSI","MACD","VolumeRatio","Support","Resistance","Entry","SL","TP1","TP2","RR","OpportunityScore"])
+        show_table(d,["Ticker","TradingMode","Setup","Timing","Status","Close","MA20","MA50","MA200","RSI","MACD","VolumeRatio","Support","Resistance","Entry","SL","TP1","TP2","RR","OpportunityScore"])
         st.markdown("#### 🔗 TradingView — Daily / Tactical")
         ticker=st.selectbox("Pilih saham",d.Ticker.tolist(),key="daily_ticker")
         row=d[d.Ticker==ticker].iloc[0]
-        st.markdown(f'<div class="card"><b>{ticker}</b> · {row.Setup} · {status_badge(row.Status)} · Entry <b>{fmt(row.Entry)}</b> · SL <b>{fmt(row.SL)}</b> · TP1 <b>{fmt(row.TP1)}</b> · TP2 <b>{fmt(row.TP2)}</b> · R/R <b>{fmt(row.RR,2)}</b></div>',unsafe_allow_html=True)
+        st.markdown(f'<div class="card"><b>{ticker}</b> · {row.Setup} · {status_badge(row.Status)} · MA20 <b>{fmt(row.MA20)}</b> · Entry <b>{fmt(row.Entry)}</b> · SL <b>{fmt(row.SL)}</b> · TP1 <b>{fmt(row.TP1)}</b> · TP2 <b>{fmt(row.TP2)}</b> · R/R <b>{fmt(row.RR,2)}</b></div>',unsafe_allow_html=True)
         st.link_button("📈 Buka Chart TradingView Penuh — Daily ↗", tv_link(ticker)+"&interval=1D", use_container_width=False)
 
 elif mode=="📅 Swing Trading Mingguan":
@@ -541,7 +541,7 @@ elif mode=="🔎 Saham Individu":
         st.markdown('<div class="card"><b>Periode data EOD yang dipilih:</b> '+{"1mo":"1 Bulan","3mo":"3 Bulan","6mo":"6 Bulan","2y":"2 Tahun"}.get(period,period)+'<br><span class="small-note">Mesin indikator tetap mengambil minimal 2 tahun secara internal agar MA200, RSI dan MACD tetap valid; periode di atas menentukan jendela historis EOD yang dipakai sebagai acuan review.</span></div>',unsafe_allow_html=True)
     with right:
         st.markdown("#### Ringkasan Teknis")
-        st.markdown(f'<div class="card">Trend MA20/50/200: <b>{"Bullish" if a["MA20"]>a["MA50"] else "Mixed"}</b><br>RSI: <b>{fmt(a["RSI"],1)}</b><br>MACD: <b>{fmt(a["MACD"],2)}</b><br>Volume ratio: <b>{fmt(a["VolumeRatio"],2)}x</b><br>Support: <b>{fmt(a["Support"])}</b><br>Resistance: <b>{fmt(a["Resistance"])}</b><br>Candle: <b>{a["Candle"]}</b></div>',unsafe_allow_html=True)
+        st.markdown(f'<div class="card">Trend MA20/50/200: <b>{"Bullish" if a["MA20"]>a["MA50"] else "Mixed"}</b><br>MA20: <b>{fmt(a["MA20"])}</b><br>MA50: <b>{fmt(a["MA50"])}</b><br>MA200: <b>{fmt(a["MA200"])}</b><br>Price vs MA20: <b>{fmt((a["Close"]-a["MA20"])/a["MA20"]*100,1)}%</b><br>RSI: <b>{fmt(a["RSI"],1)}</b><br>MACD: <b>{fmt(a["MACD"],2)}</b><br>Volume ratio: <b>{fmt(a["VolumeRatio"],2)}x</b><br>Support: <b>{fmt(a["Support"])}</b><br>Resistance: <b>{fmt(a["Resistance"])}</b><br>Candle: <b>{a["Candle"]}</b></div>',unsafe_allow_html=True)
         st.markdown("#### Trade Plan")
         st.markdown(f'<div class="card">Setup <b>{a["Setup"]}</b><br>Entry <b>{fmt(a["Entry"])}</b><br>Stop Loss <b>{fmt(a["SL"])}</b><br>TP1 <b>{fmt(a["TP1"])}</b><br>TP2 <b>{fmt(a["TP2"])}</b><br>R/R <b>{fmt(a["RR"],2)}</b><br>Status {status_badge(a["Status"])}</div>',unsafe_allow_html=True)
         st.markdown(f"[Buka chart TradingView penuh ↗]({tv_link(ticker)})")
