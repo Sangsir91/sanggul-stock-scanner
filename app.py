@@ -289,7 +289,13 @@ def tradingview_chart(ticker, interval="D", height=860, theme="light", studies=N
     </div>"""
     components.html(html,height=height+18,scrolling=False)
 
-def tv_link(t): return f"https://www.tradingview.com/symbols/{t}/?exchange=IDX"
+def tv_link(t, interval="1D"):
+    """Open TradingView Supercharts directly for an IDX symbol.
+    The full TradingView chart is intentionally used instead of an embedded chart.
+    Symbol/interval are passed in the URL; indicator templates are managed by TradingView itself.
+    """
+    sym = tv_symbol(t)
+    return f"https://www.tradingview.com/chart/?symbol={sym}&interval={interval}"
 
 # =========================================================
 # SECTOR OPPORTUNITY
@@ -508,7 +514,7 @@ elif mode=="⚡ Trading Harian":
         ticker=st.selectbox("Pilih saham",d.Ticker.tolist(),key="daily_ticker")
         row=d[d.Ticker==ticker].iloc[0]
         st.markdown(f'<div class="card"><b>{ticker}</b> · {row.Setup} · {status_badge(row.Status)} · MA20 <b>{fmt(row.MA20)}</b> · Entry <b>{fmt(row.Entry)}</b> · SL <b>{fmt(row.SL)}</b> · TP1 <b>{fmt(row.TP1)}</b> · TP2 <b>{fmt(row.TP2)}</b> · R/R <b>{fmt(row.RR,2)}</b></div>',unsafe_allow_html=True)
-        st.link_button("📈 Buka Chart TradingView Penuh — Daily ↗", tv_link(ticker)+"&interval=1D", use_container_width=False)
+        st.link_button("📈 Buka Chart TradingView Penuh — Daily ↗", tv_link(ticker,"1D"), use_container_width=False)
 
 elif mode=="📅 Swing Trading Mingguan":
     header("📅 Swing Trading Mingguan","Horizon beberapa hari hingga beberapa minggu · daily setup + weekly trend confirmation.")
@@ -522,7 +528,7 @@ elif mode=="📅 Swing Trading Mingguan":
         ticker=st.selectbox("Pilih saham weekly",w.Ticker.tolist(),key="weekly_ticker")
         row=w[w.Ticker==ticker].iloc[0]
         st.markdown(f'<div class="card"><b>{ticker}</b> · Weekly {row.WeeklySetup} · {status_badge(row.WeeklyStatus)} · Entry <b>{fmt(row.WeeklyEntry)}</b> · SL <b>{fmt(row.WeeklySL)}</b> · TP1 <b>{fmt(row.WeeklyTP1)}</b> · TP2 <b>{fmt(row.WeeklyTP2)}</b> · R/R <b>{fmt(row.WeeklyRR,2)}</b></div>',unsafe_allow_html=True)
-        st.link_button("📈 Buka Chart TradingView Penuh — Weekly ↗", tv_link(ticker)+"&interval=1W", use_container_width=False)
+        st.link_button("📈 Buka Chart TradingView Penuh — Weekly ↗", tv_link(ticker,"1W"), use_container_width=False)
 
 elif mode=="🔎 Saham Individu":
     header("🔎 Saham Individu","Terminal analisis per saham dengan quote teknikal + chart TradingView.")
@@ -534,17 +540,17 @@ elif mode=="🔎 Saham Individu":
     left,right=st.columns([1.25,1])
     with left:
         st.markdown("#### 🔗 TradingView Penuh")
-        st.caption("Chart embedded dihilangkan agar dashboard lebih ringkas. Buka TradingView penuh untuk melihat candle, Bollinger Bands, Volume, MACD, RSI, dan indikator lainnya.")
+        st.caption("Chart embedded dihilangkan agar dashboard tetap ringkas. Tombol di bawah langsung membuka TradingView Supercharts. Gunakan layout candle dan indikator MA20, Bollinger Bands, Volume, MACD, serta RSI seperti template analisis Sanggul.")
         c1,c2=st.columns(2)
-        with c1: st.link_button("📈 Daily ↗", tv_link(ticker)+"&interval=1D", use_container_width=True)
-        with c2: st.link_button("📅 Weekly ↗", tv_link(ticker)+"&interval=1W", use_container_width=True)
+        with c1: st.link_button("📈 Daily — Supercharts ↗", tv_link(ticker,"1D"), use_container_width=True)
+        with c2: st.link_button("📅 Weekly — Supercharts ↗", tv_link(ticker,"1W"), use_container_width=True)
         st.markdown('<div class="card"><b>Periode data EOD yang dipilih:</b> '+{"1mo":"1 Bulan","3mo":"3 Bulan","6mo":"6 Bulan","2y":"2 Tahun"}.get(period,period)+'<br><span class="small-note">Mesin indikator tetap mengambil minimal 2 tahun secara internal agar MA200, RSI dan MACD tetap valid; periode di atas menentukan jendela historis EOD yang dipakai sebagai acuan review.</span></div>',unsafe_allow_html=True)
     with right:
         st.markdown("#### Ringkasan Teknis")
         st.markdown(f'<div class="card">Trend MA20/50/200: <b>{"Bullish" if a["MA20"]>a["MA50"] else "Mixed"}</b><br>MA20: <b>{fmt(a["MA20"])}</b><br>MA50: <b>{fmt(a["MA50"])}</b><br>MA200: <b>{fmt(a["MA200"])}</b><br>Price vs MA20: <b>{fmt((a["Close"]-a["MA20"])/a["MA20"]*100,1)}%</b><br>RSI: <b>{fmt(a["RSI"],1)}</b><br>MACD: <b>{fmt(a["MACD"],2)}</b><br>Volume ratio: <b>{fmt(a["VolumeRatio"],2)}x</b><br>Support: <b>{fmt(a["Support"])}</b><br>Resistance: <b>{fmt(a["Resistance"])}</b><br>Candle: <b>{a["Candle"]}</b></div>',unsafe_allow_html=True)
         st.markdown("#### Trade Plan")
         st.markdown(f'<div class="card">Setup <b>{a["Setup"]}</b><br>Entry <b>{fmt(a["Entry"])}</b><br>Stop Loss <b>{fmt(a["SL"])}</b><br>TP1 <b>{fmt(a["TP1"])}</b><br>TP2 <b>{fmt(a["TP2"])}</b><br>R/R <b>{fmt(a["RR"],2)}</b><br>Status {status_badge(a["Status"])}</div>',unsafe_allow_html=True)
-        st.markdown(f"[Buka chart TradingView penuh ↗]({tv_link(ticker)})")
+        st.link_button("📊 Buka TradingView Supercharts — Daily ↗", tv_link(ticker,"1D"), use_container_width=True)
 
 elif mode=="🏭 Sector Opportunity":
     header("🏭 Sector Opportunity","Klik nama sektor untuk melihat daftar saham di dalam sektor tersebut. Ini adalah alat pemetaan peluang, bukan sinyal BUY otomatis.")
