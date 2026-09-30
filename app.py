@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.1.3.8 PRO FIX4"
+APP_VERSION = "V11.1.3.8 PRO FIX6"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SNAP_DIR = os.path.join(BASE_DIR, "snapshots")
 os.makedirs(SNAP_DIR, exist_ok=True)
@@ -101,7 +101,23 @@ def analyze(df):
 # =========================================================
 @st.cache_data(ttl=900,show_spinner=False)
 def load_universe():
-    return pd.read_csv(os.path.join(BASE_DIR,"universe.csv"))["Ticker"].astype(str).str.upper().tolist()
+    # Robust path resolution for local, GitHub, and Streamlit Cloud deployments.
+    candidates = [
+        os.path.join(BASE_DIR, "universe.csv"),
+        os.path.join(BASE_DIR, "sanggul_v1138", "universe.csv"),
+        os.path.join(os.getcwd(), "universe.csv"),
+        os.path.join(os.getcwd(), "sanggul_v1138", "universe.csv"),
+    ]
+    for path in candidates:
+        if os.path.isfile(path):
+            df = pd.read_csv(path)
+            if "Ticker" not in df.columns:
+                raise ValueError(f"universe.csv ditemukan tetapi kolom 'Ticker' tidak ada: {path}")
+            return df["Ticker"].astype(str).str.upper().str.strip().tolist()
+    raise FileNotFoundError(
+        "universe.csv tidak ditemukan. Letakkan universe.csv satu folder dengan app.py "
+        "(root repository Streamlit), lalu Redeploy/Reboot app."
+    )
 
 @st.cache_data(ttl=900,show_spinner=False)
 def load_data(ticker,period="2y",interval="1d"):
