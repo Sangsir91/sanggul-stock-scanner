@@ -1,523 +1,571 @@
-import json
+import os, json, glob
+from datetime import datetime
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import yfinance as yf
-import streamlit.components.v1 as components
-from pathlib import Path
-from urllib.parse import quote
 
-st.set_page_config(page_title="Sanggul Stock Scanner", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
+APP_VERSION = "V11.1.3.8 PRO FIX4"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SNAP_DIR = os.path.join(BASE_DIR, "snapshots")
+os.makedirs(SNAP_DIR, exist_ok=True)
 
-APP_VERSION = "V11.1.3.7"
-# GitHub / Streamlit Cloud safe universe loading.
-APP_DIR = Path(__file__).resolve().parent
-CWD = Path.cwd()
-UNIVERSE_CANDIDATES = [
-    APP_DIR / "data" / "universe.csv",
-    CWD / "data" / "universe.csv",
-    APP_DIR / "universe.csv",
-    CWD / "universe.csv",
-]
-UNIVERSE_FILE = next((p for p in UNIVERSE_CANDIDATES if p.exists()), APP_DIR / "data" / "universe.csv")
-UNIVERSE_SOURCE = ""
-EMBEDDED_UNIVERSE_ROWS = [{'ticker': 'BBCA', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'BBRI', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'BMRI', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'BBNI', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'BRIS', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'BDMN', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'ADRO', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'PTBA', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'ITMG', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'PGAS', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'ANTM', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'INCO', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'MDKA', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'SMGR', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'ICBP', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'INDF', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'UNVR', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'MYOR', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'TLKM', 'sector': 'Infrastructures', 'enabled': 1}, {'ticker': 'ISAT', 'sector': 'Infrastructures', 'enabled': 1}, {'ticker': 'EXCL', 'sector': 'Infrastructures', 'enabled': 1}, {'ticker': 'JSMR', 'sector': 'Infrastructures', 'enabled': 1}, {'ticker': 'WIKA', 'sector': 'Infrastructures', 'enabled': 1}, {'ticker': 'WSKT', 'sector': 'Infrastructures', 'enabled': 1}, {'ticker': 'PGEO', 'sector': 'Infrastructures', 'enabled': 1}, {'ticker': 'KLBF', 'sector': 'Healthcare', 'enabled': 1}, {'ticker': 'MIKA', 'sector': 'Healthcare', 'enabled': 1}, {'ticker': 'SILO', 'sector': 'Healthcare', 'enabled': 1}, {'ticker': 'GOTO', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'EMTK', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'BUKA', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'ASII', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'UNTR', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'AUTO', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'AADI', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'ADMR', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'AIMS', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'AKRA', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'APEX', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'ARII', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'BOSS', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'BSSR', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'BYAN', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'CNKO', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'COAL', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'DEWA', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'DOID', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'DSSA', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'ELSA', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'ENRG', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'GEMS', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'GTBO', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'HRUM', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'INDY', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'KKGI', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'MBAP', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'MEDC', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'PTRO', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'RAJA', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'SMMT', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'SMRU', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'TOBA', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'TPMA', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'TBSM', 'sector': 'Energy', 'enabled': 1}, {'ticker': 'ARCI', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'BRMS', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'BTON', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'CITA', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'CKRA', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'CLPI', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'DKFT', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'DMAS', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'EMAS', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'INKP', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'IPCC', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'IPOL', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'ISSP', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'JATF', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'JKON', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'KICI', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'LION', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'LMAX', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'MDKI', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'MINE', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'NCKL', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'NICL', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'PBSA', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'SMBR', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'SMCB', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'SMKL', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'TINS', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'TKIM', 'sector': 'Basic Materials', 'enabled': 1}, {'ticker': 'BOLT', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'BRAM', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'GJTL', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'IMAS', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'INDS', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'JECC', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'KBLI', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'KBLM', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'KIAS', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'KRAH', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'MASA', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'MFIN', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'MLBI', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'MPMX', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'NIKL', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'PBRX', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'PRAS', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'SMSM', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'SRIL', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'TOTO', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'TRIS', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'VOKS', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'WTON', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'WSBP', 'sector': 'Industrials', 'enabled': 1}, {'ticker': 'AISA', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'ALTO', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'AMRT', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'BUDI', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'CEKA', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'CLEO', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'DLTA', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'DMND', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'FOOD', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'GOOD', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'GGRM', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'HMSP', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'KINO', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'MBTO', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'PSDN', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'ROTI', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'SKBM', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'SKLT', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'STTP', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'TCID', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'TGKA', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'TAYS', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'ULTJ', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'WIIM', 'sector': 'Consumer Non-Cyclicals', 'enabled': 1}, {'ticker': 'ACES', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'ARGO', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'BABP', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'BCAP', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'BELL', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'BIMA', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'BIRD', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'BOGA', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'CARS', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'CINTA', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'DART', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'FAST', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'GLOB', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'GOLF', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'GWSA', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'HRTA', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'MAPA', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'MAPI', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'MAPB', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'MCAS', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'MNCN', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'PANR', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'PNSE', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'SCMA', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'SONA', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'SOTS', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'TKGA', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'TOYS', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'VICI', 'sector': 'Consumer Cyclicals', 'enabled': 1}, {'ticker': 'BMHS', 'sector': 'Healthcare', 'enabled': 1}, {'ticker': 'HEAL', 'sector': 'Healthcare', 'enabled': 1}, {'ticker': 'INAF', 'sector': 'Healthcare', 'enabled': 1}, {'ticker': 'IRRA', 'sector': 'Healthcare', 'enabled': 1}, {'ticker': 'KAEF', 'sector': 'Healthcare', 'enabled': 1}, {'ticker': 'PEHA', 'sector': 'Healthcare', 'enabled': 1}, {'ticker': 'PRDA', 'sector': 'Healthcare', 'enabled': 1}, {'ticker': 'PRIM', 'sector': 'Healthcare', 'enabled': 1}, {'ticker': 'RSGK', 'sector': 'Healthcare', 'enabled': 1}, {'ticker': 'SAME', 'sector': 'Healthcare', 'enabled': 1}, {'ticker': 'SCPI', 'sector': 'Healthcare', 'enabled': 1}, {'ticker': 'SRAJ', 'sector': 'Healthcare', 'enabled': 1}, {'ticker': 'TSPC', 'sector': 'Healthcare', 'enabled': 1}, {'ticker': 'DVLA', 'sector': 'Healthcare', 'enabled': 1}, {'ticker': 'MERK', 'sector': 'Healthcare', 'enabled': 1}, {'ticker': 'CARE', 'sector': 'Healthcare', 'enabled': 1}, {'ticker': 'DGNS', 'sector': 'Healthcare', 'enabled': 1}, {'ticker': 'AGRO', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'ARTO', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'BBTN', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'BFIN', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'BJBR', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'BJTM', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'BNGA', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'BNII', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'BNLI', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'BSIM', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'BTPS', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'BVIC', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'CASA', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'CFIN', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'COMI', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'DNAR', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'INPC', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'JMAS', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'MAYA', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'MEGA', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'NISP', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'PNBN', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'PNBS', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'PNLF', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'SDRA', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'TUGU', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'BBYB', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'BBHI', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'BBKP', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'BACA', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'TRIM', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'VINS', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'NOBU', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'MREI', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'APLN', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'ASRI', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'BKSL', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'BSDE', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'CTRA', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'DILD', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'DUTI', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'ELTY', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'EMDE', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'GPRA', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'INPP', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'JRPT', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'KIJA', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'LPKR', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'MDLN', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'MKPI', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'MTLA', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'PLIN', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'RDTX', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'SMRA', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'TARA', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'TRIN', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'TRUE', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'URBN', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'VAST', 'sector': 'Properties & Real Estate', 'enabled': 1}, {'ticker': 'DCII', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'DMMX', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'EDGE', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'IOTF', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'KREN', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'MLPT', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'MTDL', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'NFCX', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'WIFI', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'WIRG', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'ZYRX', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'AVTE', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'DATA', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'DIVA', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'DNET', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'LINK', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'LUCK', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'TFAS', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'TECH', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'ERAA', 'sector': 'Technology', 'enabled': 1}, {'ticker': 'ADHI', 'sector': 'Infrastructures', 'enabled': 1}, {'ticker': 'CMNP', 'sector': 'Infrastructures', 'enabled': 1}, {'ticker': 'FREN', 'sector': 'Infrastructures', 'enabled': 1}, {'ticker': 'META', 'sector': 'Infrastructures', 'enabled': 1}, {'ticker': 'MTEL', 'sector': 'Infrastructures', 'enabled': 1}, {'ticker': 'POWR', 'sector': 'Infrastructures', 'enabled': 1}, {'ticker': 'PURA', 'sector': 'Infrastructures', 'enabled': 1}, {'ticker': 'RIGS', 'sector': 'Infrastructures', 'enabled': 1}, {'ticker': 'TOWR', 'sector': 'Infrastructures', 'enabled': 1}, {'ticker': 'WEGE', 'sector': 'Infrastructures', 'enabled': 1}, {'ticker': 'CENT', 'sector': 'Infrastructures', 'enabled': 1}, {'ticker': 'ASSA', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'BESS', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'BLTA', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'CMPP', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'DEAL', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'GIAA', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'HELI', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'JAYA', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'KJEN', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'LRNA', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'MBSS', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'MIRA', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'MITI', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'NELY', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'PSSI', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'PTIS', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'SOCI', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'TAXI', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'TMAS', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'TRJA', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'WEHA', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'CASS', 'sector': 'Transportation & Logistics', 'enabled': 1}, {'ticker': 'BBLD', 'sector': 'Financials', 'enabled': 1}, {'ticker': 'KBLF', 'sector': 'Industrials', 'enabled': 1}]
+st.set_page_config(page_title=f"Sanggul Stock Scanner {APP_VERSION}", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
 
-def _read_universe(path=None):
-    global UNIVERSE_SOURCE
-    if path is not None and Path(path).exists():
-        try:
-            df = pd.read_csv(path)
-            UNIVERSE_SOURCE = str(Path(path))
-            return df
-        except Exception:
-            pass
-    UNIVERSE_SOURCE = "embedded fallback in app.py"
-    return pd.DataFrame(EMBEDDED_UNIVERSE_ROWS)
+# =========================================================
+# PROFESSIONAL UI — inspired by modern brokerage terminals
+# =========================================================
+st.markdown("""
+<style>
+:root { --navy:#08264d; --blue:#0b63ce; --blue2:#eaf3ff; --line:#d9e2ef; --ink:#172235; --muted:#66758a; --green:#11844b; --red:#c53636; --orange:#e58a00; }
+.block-container { padding-top: 1rem; padding-bottom: 2rem; max-width: 1500px; }
+section[data-testid="stSidebar"] { border-right:1px solid #dfe7f2; }
+section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
+.hero { background:linear-gradient(100deg,#08264d 0%,#0b63ce 72%,#176fd2 100%); color:white; padding:18px 22px; border-radius:14px; margin-bottom:14px; box-shadow:0 8px 24px rgba(8,38,77,.14); }
+.hero h1 { margin:0; font-size:28px; letter-spacing:-.4px; }
+.hero p { margin:4px 0 0; opacity:.88; font-size:13px; }
+.section-title { font-size:18px; font-weight:700; color:var(--ink); margin:10px 0 8px; }
+.card { background:white; border:1px solid var(--line); border-radius:12px; padding:13px 15px; box-shadow:0 2px 10px rgba(20,40,80,.045); }
+.metric-card { background:white; border:1px solid var(--line); border-radius:11px; padding:12px 14px; min-height:80px; }
+.metric-label { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.4px; }
+.metric-value { color:var(--ink); font-size:21px; font-weight:750; margin-top:4px; }
+.badge { display:inline-block; padding:4px 9px; border-radius:999px; font-size:11px; font-weight:700; }
+.badge-blue { background:#eaf3ff; color:#0b63ce; }
+.badge-green { background:#e8f7ef; color:#11844b; }
+.badge-yellow { background:#fff5dc; color:#9a6500; }
+.badge-red { background:#fdeaea; color:#b42d2d; }
+.small-note { color:var(--muted); font-size:12px; }
+.tv-wrap { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#fff; }
+div[data-testid="stDataFrame"] { border:1px solid var(--line); border-radius:10px; }
+button[kind="primary"] { border-radius:8px; }
+hr { border-color:#e6ebf2; }
+</style>
+""", unsafe_allow_html=True)
 
+# =========================================================
+# CORE INDICATORS
+# =========================================================
+def rsi(s, p=14):
+    d=s.diff(); g=d.clip(lower=0).ewm(alpha=1/p,adjust=False).mean(); l=(-d.clip(upper=0)).ewm(alpha=1/p,adjust=False).mean()
+    rs=g/l.replace(0,np.nan); return 100-100/(1+rs)
+
+def macd(s):
+    e12=s.ewm(span=12,adjust=False).mean(); e26=s.ewm(span=26,adjust=False).mean(); m=e12-e26; sig=m.ewm(span=9,adjust=False).mean(); return m,sig,m-sig
+
+def tick(p):
+    if p < 200: step=1
+    elif p < 500: step=2
+    elif p < 2000: step=5
+    elif p < 5000: step=10
+    else: step=25
+    return int(round(p/step)*step)
+
+def candle_label(o,h,l,c,po,pc):
+    body=abs(c-o); rng=max(h-l,1e-9); upper=h-max(o,c); lower=min(o,c)-l
+    if body/rng<.25 and lower>body*1.8: return "Hammer / rejection bawah"
+    if body/rng<.25 and upper>body*1.8: return "Shooting star / rejection atas"
+    if c>o and pc<po and c>=po and o<=pc: return "Bullish engulfing"
+    if c<o and pc>po and o>=pc and c<=po: return "Bearish engulfing"
+    if body/rng<.12: return "Doji / indecision"
+    return "Bullish candle" if c>o else "Bearish candle"
+
+def analyze(df):
+    if df is None or len(df)<220: return None
+    d=df.copy().dropna(); c=d["Close"]
+    d["MA20"]=c.rolling(20).mean(); d["MA50"]=c.rolling(50).mean(); d["MA200"]=c.rolling(200).mean()
+    d["RSI"]=rsi(c); d["MACD"],d["MACDsig"],d["MACDh"]=macd(c); d["V20"]=d["Volume"].rolling(20).mean()
+    x,p=d.iloc[-1],d.iloc[-2]; close=float(x.Close); ma20,ma50,ma200=map(float,(x.MA20,x.MA50,x.MA200))
+    support=float(d["Low"].rolling(20).min().iloc[-2]); resistance=float(d["High"].rolling(20).max().iloc[-2])
+    vr=float(x.Volume/x.V20) if x.V20 and pd.notna(x.V20) else 0; candle=candle_label(x.Open,x.High,x.Low,x.Close,p.Open,p.Close)
+    trend=int(close>ma20)+int(ma20>ma50)+int(ma50>ma200)
+    momentum=(2 if 50<=x.RSI<=65 else (1 if 45<=x.RSI<50 or 65<x.RSI<=70 else 0))+(2 if x.MACD>x.MACDsig else 0)+(1 if x.MACDh>p.MACDh else 0)
+    near_support=abs(close-support)/max(close,1)<=.05; breakout=close>resistance and vr>=1.25
+    pullback=close>=ma20*.96 and close<=ma20*1.04 and x.MACD>x.MACDsig
+    rejection=any(k in candle.lower() for k in ["hammer","rejection bawah","bullish engulfing"])
+    entry=tick(resistance*1.005) if breakout else tick(max(support*1.005,min(close,ma20*1.01)))
+    sl=tick(min(support*.985,entry*.955)); risk=entry-sl
+    if risk<=0: return None
+    tp1=tick(max(resistance*.995,entry+2*risk)); tp2=tick(max(resistance*1.03,entry+3*risk)); rr=(tp1-entry)/risk
+    quality=trend*8+(4 if ma50>ma200 else 0)+(3 if close>ma20 else 0)+(2 if vr>=1.1 else 0)
+    setup=momentum*6+(5 if near_support else 0)+(4 if pullback else 0)+(4 if rejection else 0)+(3 if breakout else 0)+(3 if rr>=2 else 0)
+    opportunity=setup+(5 if near_support else 0)+(5 if breakout else 0)+(4 if pullback else 0)+(3 if 50<=x.RSI<=65 else 0)+(3 if 1.25<=vr<=3 else 0)+(4 if rr>=2 else 0)
+    ready=trend>=2 and momentum>=3 and rr>=2 and (near_support or breakout or pullback or rejection) and close>=ma20*.96 and close>=ma50*.98
+    setup_type="BREAKOUT" if breakout else ("PULLBACK" if pullback and near_support else ("REJECTION SUPPORT" if rejection and near_support else "WAIT"))
+    status="AVOID" if close<ma50 and x.MACD<x.MACDsig else ("READY" if ready else "WAIT")
+    timing="SORE / CLOSE CONFIRM" if breakout else ("PAGI CONFIRM" if near_support or pullback else "WATCH")
+    return {"Close":close,"MA20":ma20,"MA50":ma50,"MA200":ma200,"RSI":float(x.RSI),"MACD":float(x.MACD),"VolumeRatio":vr,"Support":support,"Resistance":resistance,"Entry":entry,"SL":sl,"TP1":tp1,"TP2":tp2,"RR":rr,"RiskPct":risk/entry*100,"QualityScore":quality,"SetupScore":setup,"OpportunityScore":opportunity,"Status":status,"Setup":setup_type,"Timing":timing,"Candle":candle}
+
+# =========================================================
+# DATA / PERSISTENCE
+# =========================================================
+@st.cache_data(ttl=900,show_spinner=False)
 def load_universe():
-    u = _read_universe(UNIVERSE_FILE if UNIVERSE_FILE.exists() else None)
-    required = {"ticker", "sector", "enabled"}
-    if not required.issubset(u.columns):
-        raise ValueError("Universe harus memiliki kolom: ticker, sector, enabled")
-    u["ticker"] = u["ticker"].astype(str).str.upper().str.strip()
-    u["sector"] = u["sector"].astype(str).str.strip()
-    u["enabled"] = pd.to_numeric(u["enabled"], errors="coerce").fillna(0).astype(int)
-    u = u[(u["enabled"] == 1) & (u["ticker"] != "")].drop_duplicates("ticker").copy()
-    if u.empty:
-        UNIVERSE_SOURCE = "embedded fallback in app.py"
-        u = pd.DataFrame(EMBEDDED_UNIVERSE_ROWS)
-    return u
+    return pd.read_csv(os.path.join(BASE_DIR,"universe.csv"))["Ticker"].astype(str).str.upper().tolist()
 
-UNIVERSE = load_universe()
-
-
-def rupiah(x):
-    if pd.isna(x):
-        return "-"
-    return f"Rp {float(x):,.0f}".replace(",", ".")
-
-
-def symbol(kode):
-    kode = str(kode).upper().strip()
-    return kode if kode.endswith(".JK") else kode + ".JK"
-
-
-@st.cache_data(ttl=300)
-def get_data(kode):
+@st.cache_data(ttl=900,show_spinner=False)
+def load_data(ticker,period="2y",interval="1d"):
+    """Download and normalize Yahoo Finance data so single/multi-index columns behave identically."""
     try:
-        d = yf.download(symbol(kode), period="2y", interval="1d", auto_adjust=True, progress=False, threads=False)
+        symbol = ticker if str(ticker).startswith("^") else str(ticker).upper().replace(".JK", "") + ".JK"
+        d=yf.download(symbol,period=period,interval=interval,auto_adjust=False,progress=False,threads=False,group_by="column")
+        if d is None or d.empty:
+            return pd.DataFrame()
+        if isinstance(d.columns,pd.MultiIndex):
+            lvl0=set(map(str,d.columns.get_level_values(0)))
+            needed={"Open","High","Low","Close","Volume"}
+            if needed.intersection(lvl0):
+                d.columns=d.columns.get_level_values(0)
+            else:
+                d.columns=d.columns.get_level_values(1)
+        d.columns=[str(c) for c in d.columns]
+        keep=[c for c in ["Open","High","Low","Close","Adj Close","Volume"] if c in d.columns]
+        d=d[keep].copy()
+        if "Close" not in d.columns:
+            return pd.DataFrame()
+        return d.dropna(subset=["Close"])
     except Exception:
         return pd.DataFrame()
-    if d.empty:
-        return pd.DataFrame()
-    if isinstance(d.columns, pd.MultiIndex):
-        d.columns = d.columns.get_level_values(0)
-    d.columns = [str(c).title() for c in d.columns]
-    for c in ["Open", "High", "Low", "Close", "Volume"]:
-        if c in d.columns:
-            d[c] = pd.to_numeric(d[c], errors="coerce")
-    need = ["Open", "High", "Low", "Close"]
-    if any(c not in d.columns for c in need):
-        return pd.DataFrame()
-    return d.dropna(subset=need)
 
+def snapshot_dirs(): return sorted([p for p in glob.glob(os.path.join(SNAP_DIR,"*")) if os.path.isdir(p)],reverse=True)
 
-def indicators(d):
-    x = d.copy()
-    x["MA20"] = x["Close"].rolling(20).mean()
-    x["MA50"] = x["Close"].rolling(50).mean()
-    x["MA200"] = x["Close"].rolling(200).mean()
-    delta = x["Close"].diff()
-    gain = delta.clip(lower=0).rolling(14).mean()
-    loss = (-delta.clip(upper=0)).rolling(14).mean()
-    rs = gain / loss.replace(0, np.nan)
-    x["RSI"] = 100 - 100 / (1 + rs)
-    ema12 = x["Close"].ewm(span=12, adjust=False).mean()
-    ema26 = x["Close"].ewm(span=26, adjust=False).mean()
-    x["MACD"] = ema12 - ema26
-    x["MACDSignal"] = x["MACD"].ewm(span=9, adjust=False).mean()
-    x["MACDHist"] = x["MACD"] - x["MACDSignal"]
-    mid = x["Close"].rolling(20).mean()
-    sd = x["Close"].rolling(20).std()
-    x["BBUpper"] = mid + 2 * sd
-    x["BBLower"] = mid - 2 * sd
-    prev = x["Close"].shift(1)
-    tr = pd.concat([(x["High"]-x["Low"]), (x["High"]-prev).abs(), (x["Low"]-prev).abs()], axis=1).max(axis=1)
-    x["ATR"] = tr.rolling(14).mean()
-    x["VolumeMA20"] = x["Volume"].rolling(20).mean()
-    x["VolumeRatio"] = x["Volume"] / x["VolumeMA20"]
-    x["Support20"] = x["Low"].rolling(20).min()
-    x["Resistance20"] = x["High"].rolling(20).max()
-    x["Support60"] = x["Low"].rolling(60).min()
-    x["Resistance60"] = x["High"].rolling(60).max()
-    x["PrevResistance20"] = x["Resistance20"].shift(1)
-    return x
+def save_snapshot(result,enrich,focus,opp,action,meta):
+    stamp=datetime.now().strftime("%Y%m%d_%H%M%S"); path=os.path.join(SNAP_DIR,stamp); os.makedirs(path,exist_ok=True)
+    result.to_csv(os.path.join(path,"full_scan.csv"),index=False); enrich.to_csv(os.path.join(path,"top150.csv"),index=False); focus.to_csv(os.path.join(path,"top50.csv"),index=False); opp.to_csv(os.path.join(path,"top10.csv"),index=False); action.to_csv(os.path.join(path,"top3.csv"),index=False)
+    with open(os.path.join(path,"meta.json"),"w",encoding="utf-8") as f: json.dump(meta,f,ensure_ascii=False,indent=2)
+    with open(os.path.join(SNAP_DIR,"latest.txt"),"w",encoding="utf-8") as f: f.write(stamp)
+    return path
 
+def latest_snapshot():
+    marker=os.path.join(SNAP_DIR,"latest.txt")
+    if os.path.exists(marker):
+        stamp=open(marker,encoding="utf-8").read().strip(); p=os.path.join(SNAP_DIR,stamp)
+        if os.path.isdir(p): return p
+    ds=snapshot_dirs(); return ds[0] if ds else None
 
-def analyze(d):
-    x = indicators(d)
-    req = ["MA20","MA50","MA200","RSI","MACD","MACDSignal","ATR","VolumeRatio","Support20","Resistance20","Support60","Resistance60","PrevResistance20"]
-    x = x.dropna(subset=req)
-    if x.empty:
-        return None, x
-    last = x.iloc[-1]
-    close = float(last.Close)
-    atr = max(float(last.ATR), close * 0.005)
-    score = 0
-    reasons = []
-    checks = [
-        ("Harga > MA20", close > last.MA20, 10),
-        ("Harga > MA50", close > last.MA50, 10),
-        ("Harga > MA200", close > last.MA200, 15),
-        ("MA20 > MA50 > MA200", last.MA20 > last.MA50 > last.MA200, 15),
-        ("RSI 50–70", 50 <= last.RSI <= 70, 15),
-        ("MACD bullish", last.MACD > last.MACDSignal, 10),
-        ("Volume Ratio >= 1.2x", last.VolumeRatio >= 1.2, 10),
-        ("Higher recent close", close >= float(x.Close.iloc[-6:-1].max()), 5),
-    ]
-    for label, ok, pts in checks:
-        if ok:
-            score += pts
-            reasons.append(label)
-    supports = [float(v) for v in [last.Support20, last.Support60] if np.isfinite(v) and v < close]
-    resistances = [float(v) for v in [last.Resistance20, last.Resistance60] if np.isfinite(v) and v > close]
-    support = max(supports) if supports else close - 1.5*atr
-    resistance = min(resistances) if resistances else close + 2*atr
-    prev_r20 = float(last.PrevResistance20)
-    breakout = close > prev_r20 and float(last.VolumeRatio) >= 1.2
-    pullback = (not breakout and close > support and (close-support)/close <= 0.07 and close > last.MA50)
-    structural_stop = support - 0.25*atr
-    atr_stop = close - 1.50*atr
-    stop = max(structural_stop, atr_stop)
-    if stop >= close:
-        stop = close - 1.25*atr
-    risk = max(close-stop, 0.01)
-    tp1 = resistance if resistance > close else close + 1.5*atr
-    tp2 = max(close + 2*risk, close + 2.5*atr, tp1 + 0.5*atr)
-    tp3 = max(close + 3*risk, tp2 + 0.75*atr)
-    rr1 = (tp1-close)/risk
-    rr2 = (tp2-close)/risk
-    if breakout:
-        setup = "BREAKOUT"
-    elif pullback:
-        setup = "PULLBACK"
-    elif close > last.MA20 > last.MA50:
-        setup = "TREND FOLLOWING"
-    else:
-        setup = "WATCH"
-    setup_quality = 20 if breakout else 17 if pullback else 10 if setup == "TREND FOLLOWING" else 0
-    rr_quality = min(max(rr2/2.0, 0), 1)*20
-    market_compatibility = 10 if close > last.MA50 else 4
-    opportunity = min(round(0.55*score + setup_quality + rr_quality + market_compatibility, 1), 100)
-    risk_pct = (close-stop)/close*100
-    if float(last.VolumeRatio) < 0.70 or risk_pct > 12 or rr2 < 1.5:
-        risk_level = "HIGH"
-    elif risk_pct > 8 or rr2 < 2:
-        risk_level = "MEDIUM"
-    else:
-        risk_level = "LOW"
-    hard_pass = score >= 70 and rr2 >= 2.0 and np.isfinite(stop) and stop < close and setup in ["BREAKOUT","PULLBACK","TREND FOLLOWING"]
-    if hard_pass and risk_level == "LOW":
-        gate = "PASS"
-        action = "BUY ON BREAKOUT" if breakout else "BUY ON PULLBACK" if pullback else "BUY ON CONFIRMATION"
-    elif score >= 65 and rr2 >= 1.5 and setup != "WATCH":
-        gate = "NEAR PASS"
-        action = "WAIT"
-    elif score >= 55:
-        gate = "WATCH"
-        action = "WATCH"
-    else:
-        gate = "FAIL"
-        action = "AVOID"
-    confidence = "HIGH" if hard_pass and risk_level == "LOW" else "MEDIUM" if score >= 65 else "LOW"
-    trend = "BULLISH" if score >= 75 else "SIDEWAYS" if score >= 55 else "BEARISH"
-    return {
-        "price": close, "score": score, "opportunity": opportunity, "trend": trend, "setup": setup,
-        "action": action, "risk_level": risk_level, "gate": gate, "confidence": confidence,
-        "support": support, "resistance": resistance, "entry_low": max(support, close-0.75*atr),
-        "entry_high": close, "stop": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3, "rr1": rr1, "rr2": rr2,
-        "rsi": float(last.RSI), "volume_ratio": float(last.VolumeRatio), "ret_20d": float((close / x.Close.iloc[-21] - 1) * 100) if len(x) >= 21 else np.nan, "ret_60d": float((close / x.Close.iloc[-61] - 1) * 100) if len(x) >= 61 else np.nan, "atr": atr, "breakout": breakout,
-        "pullback": pullback, "reasons": reasons, "date": x.index[-1],
-        "invalidation": f"Daily close di bawah {rupiah(stop)} atau setup kehilangan struktur bullish."
-    }, x
+def read_snapshot(path):
+    if not path:return None
+    try:
+        meta=json.load(open(os.path.join(path,"meta.json"),encoding="utf-8"))
+        data={k:pd.read_csv(os.path.join(path,f)) for k,f in [("full","full_scan.csv"),("top150","top150.csv"),("top50","top50.csv"),("top10","top10.csv"),("top3","top3.csv")]}
+        return {"meta":meta,**data}
+    except Exception:return None
 
+def build_layers(result,min_rr):
+    enrich=result.sort_values(["QualityScore","SetupScore","RR"],ascending=[False,False,False]).head(150).copy(); enrich["Layer"]="TOP 150 ENRICH"
+    focus=result[result.RR>=min_rr].sort_values(["SetupScore","QualityScore","OpportunityScore"],ascending=[False,False,False]).head(50).copy(); focus["Layer"]="TOP 50 FOCUS"
+    opp=result[result.RR>=min_rr].sort_values(["OpportunityScore","SetupScore","QualityScore"],ascending=[False,False,False]).head(10).copy(); opp["Layer"]="TOP 10 OPPORTUNITY"
+    action=opp[opp.Status=="READY"].sort_values(["OpportunityScore","RR","SetupScore"],ascending=[False,False,False]).head(3).copy(); action["Layer"]="TOP 3 ACTIONABLE"
+    return enrich,focus,opp,action
 
-# ---------- Multi-style engine ----------
-def style_view(a, style):
-    score = a["score"]
-    setup = a["setup"]
-    rr = a["rr2"]
-    vol = a["volume_ratio"]
-    rsi = a["rsi"]
-    trend = a["trend"]
-    if style == "DAILY":
-        bonus = (7 if a["breakout"] else 4 if a["pullback"] else 0) + (5 if vol >= 1.3 else 0) + (3 if 45 <= rsi <= 65 else 0)
-        ss = min(100, round(0.78*score + bonus, 1))
-        gate = "PASS" if ss >= 68 and rr >= 1.5 and setup != "WATCH" and a["risk_level"] != "HIGH" else "NEAR PASS" if ss >= 60 and setup != "WATCH" else "WATCH"
-        action = "DAY TRADE CONFIRMATION" if gate == "PASS" else "WAIT" if gate == "NEAR PASS" else "WATCH"
-        horizon = "1–5 hari"
-    elif style == "SWING":
-        ss = min(100, round(a["opportunity"], 1))
-        gate = a["gate"]
-        action = a["action"]
-        horizon = "1–6 minggu"
-    else:
-        bonus = (10 if trend == "BULLISH" else 5 if trend == "SIDEWAYS" else 0) + (8 if a["price"] > a["support"] and a["price"] > a["stop"] else 0)
-        ss = min(100, round(0.72*score + bonus, 1))
-        gate = "PASS" if ss >= 65 and trend == "BULLISH" and rr >= 2 else "NEAR PASS" if ss >= 55 and trend != "BEARISH" else "WATCH"
-        action = "ACCUMULATION / CONFIRMATION" if gate == "PASS" else "WAIT" if gate == "NEAR PASS" else "WATCH"
-        horizon = "3–24 bulan"
-    return ss, gate, action, horizon
+def run_full_scan(period,n,min_rr):
+    # Keep enough history internally for MA200/RSI/MACD, while the selected
+    # period controls the EOD review window saved in the snapshot.
+    engine_period="2y"
+    uni=load_universe()[:n]; rows=[]; prog=st.progress(0,text=f"Scanning 0/{len(uni)}")
+    for i,t in enumerate(uni,1):
+        d=load_data(t,engine_period,"1d")
+        r=analyze(d)
+        if r:
+            r["Ticker"]=t; r["EODWindow"]=period; r["TradingView"]=tv_link(t); rows.append(r)
+        prog.progress(i/len(uni),text=f"Scanning {i}/{len(uni)} • berhasil {len(rows)}")
+    prog.empty(); result=pd.DataFrame(rows)
+    if result.empty:return None
+    enrich,focus,opp,action=build_layers(result,min_rr); ih=load_data("^JKSE",engine_period,"1d")
+    if len(ih)>=220:
+        ic=ih.Close; ihsg=float(ic.iloc[-1]); ih20=float(ic.rolling(20).mean().iloc[-1]); ih50=float(ic.rolling(50).mean().iloc[-1]); regime="RISK-ON" if ihsg>ih20>ih50 else ("NEUTRAL / SIDEWAYS" if ihsg>=ih50 else "RISK-OFF")
+    else: ihsg=ih20=ih50=np.nan; regime="DATA INSUFFICIENT"
+    meta={"timestamp":datetime.now().isoformat(timespec="seconds"),"period":period,"engine_period":engine_period,"universe":n,"analyzed":len(result),"min_rr":min_rr,"ihsg":ihsg,"ihsg_ma20":ih20,"ihsg_ma50":ih50,"regime":regime}
+    return save_snapshot(result,enrich,focus,opp,action,meta)
 
+def market_metrics(period):
+    """Return clean market metrics; fall back to the latest EOD snapshot when live Yahoo data is unavailable."""
+    ih=load_data("^JKSE","2y","1d")
+    if len(ih)>=50:
+        c=pd.to_numeric(ih["Close"],errors="coerce").dropna()
+        if len(c)>=50:
+            a=float(c.iloc[-1]); b=float(c.rolling(20).mean().iloc[-1]); d=float(c.rolling(50).mean().iloc[-1])
+            regime="🟢 RISK-ON" if a>b>d else ("🟡 NEUTRAL / SIDEWAYS" if a>=d else "🔴 RISK-OFF")
+            return a,b,d,regime
+    try:
+        sp=latest_snapshot()
+        if sp:
+            meta=json.load(open(os.path.join(sp,"meta.json"),encoding="utf-8"))
+            a=float(meta.get("ihsg")); b=float(meta.get("ihsg_ma20")); d=float(meta.get("ihsg_ma50"))
+            if all(np.isfinite([a,b,d])):
+                rg=str(meta.get("regime","DATA INSUFFICIENT")).upper()
+                return a,b,d,("🟢 RISK-ON" if "RISK-ON" in rg else ("🔴 RISK-OFF" if "RISK-OFF" in rg else "🟡 NEUTRAL / SIDEWAYS"))
+    except Exception:
+        pass
+    return None,None,None,"🟡 DATA INSUFFICIENT"
 
-@st.cache_data(ttl=300)
-def market_regime():
-    d = get_data("^JKSE")
-    if d.empty:
-        return None
-    x = d.copy()
-    x["MA20"] = x.Close.rolling(20).mean(); x["MA50"] = x.Close.rolling(50).mean(); x["MA200"] = x.Close.rolling(200).mean()
-    x = x.dropna()
-    if x.empty: return None
-    a = x.iloc[-1]
-    score = sum([25 if a.Close>a.MA20 else 0,25 if a.Close>a.MA50 else 0,25 if a.Close>a.MA200 else 0,15 if a.MA20>a.MA50 else 0,10 if a.MA50>a.MA200 else 0])
-    regime = "BULLISH" if score>=75 else "SIDEWAYS" if score>=50 else "BEARISH"
-    gate = "GREEN" if score>=75 else "YELLOW" if score>=50 else "RED"
-    return {"close":float(a.Close),"score":score,"regime":regime,"gate":gate,"date":x.index[-1]}
-
-
-@st.cache_data(ttl=300)
-def scan_all():
+def morning_confirm(top10,period):
     rows=[]
-    for _,r in UNIVERSE.iterrows():
-        ticker=str(r.ticker).strip().upper(); d=get_data(ticker)
-        if d.empty or len(d)<220: continue
-        a,x=analyze(d)
-        if not a: continue
-        rows.append({
-            "Ticker":ticker,"Sector":r.sector,"Price":a["price"],"Technical":a["score"],"Opportunity":a["opportunity"],
-            "Trend":a["trend"],"Setup":a["setup"],"Action":a["action"],"Risk":a["risk_level"],"Gate":a["gate"],
-            "Confidence":a["confidence"],"Entry":a["entry_high"],"Buy Low":a["entry_low"],"Buy High":a["entry_high"],"Stop Loss":a["stop"],"TP1":a["tp1"],"TP2":a["tp2"],"R:R TP1":a["rr1"],"R:R TP2":a["rr2"],"RSI":a["rsi"],"VolumeRatio":a["volume_ratio"],"Momentum 20D %":a["ret_20d"],
-            "Breakout":"YES" if a["breakout"] else "NO","Date":a["date"].strftime("%Y-%m-%d")
-        })
-    if not rows: return pd.DataFrame()
-    return pd.DataFrame(rows).sort_values(["Opportunity","Technical","R:R TP2"],ascending=[False,False,False])
+    for _,r in top10.iterrows():
+        t=r.Ticker; d=load_data(t,"2y","1d")
+        if d.empty:continue
+        close=float(d.Close.iloc[-1]); openp=float(d.Open.iloc[-1]); eod_entry=float(r.Entry); sl=float(r.SL); gap=(openp-close)/max(close,1)*100
+        status="CANCEL" if close<sl else ("WAIT — TOO HIGH" if close>eod_entry*1.025 else ("CONFIRM" if close>=eod_entry*.985 else "WAIT — BELOW ENTRY"))
+        x=r.to_dict(); x.update({"Current":close,"Open":openp,"GapVsCurrentPct":gap,"MorningStatus":status}); rows.append(x)
+    return pd.DataFrame(rows)
 
+# =========================================================
+# TRADINGVIEW
+# =========================================================
+def tv_symbol(ticker): return f"IDX:{ticker.upper().replace('.JK','')}"
 
-def add_style_columns(df, style):
-    if df.empty: return df.copy()
-    out=df.copy(); vals=out.apply(lambda r: style_view({
-        "score":r.Technical,"setup":r.Setup,"rr2":r["R:R TP2"],"volume_ratio":r.VolumeRatio,
-        "rsi":r.RSI,"trend":r.Trend,"breakout":r.Breakout=="YES","pullback":r.Setup=="PULLBACK",
-        "opportunity":r.Opportunity,"gate":r.Gate,"action":r.Action,"risk_level":r.Risk,"price":r.Price,"support":0,"stop":0
-    }, style), axis=1)
-    out["Style Score"]=[v[0] for v in vals]; out["Style Gate"]=[v[1] for v in vals]; out["Style Action"]=[v[2] for v in vals]; out["Horizon"]=[v[3] for v in vals]
-    return out.sort_values(["Style Gate","Style Score"], key=lambda s: s.map({"PASS":0,"NEAR PASS":1,"WATCH":2,"FAIL":3}) if s.name=="Style Gate" else s, ascending=[True,False])
+def tradingview_chart(ticker, interval="D", height=860, theme="light", studies=None):
+    """Large TradingView Advanced Chart with the core Sanggul indicator stack."""
+    studies=studies or [
+        "MASimple@tv-basicstudies",
+        "BB@tv-basicstudies",
+        "Volume@tv-basicstudies",
+        "MACD@tv-basicstudies",
+        "RSI@tv-basicstudies",
+    ]
+    symbol=tv_symbol(ticker)
+    config={
+        "autosize":True,
+        "symbol":symbol,
+        "interval":interval,
+        "timezone":"Asia/Jakarta",
+        "theme":theme,
+        "style":"1",
+        "withdateranges":True,
+        "hide_side_toolbar":False,
+        "allow_symbol_change":True,
+        "save_image":False,
+        "hide_top_toolbar":False,
+        "hide_legend":False,
+        "hide_volume":False,
+        "locale":"en",
+        "studies":studies,
+        "calendar":False,
+        "support_host":"https://www.tradingview.com",
+        "show_popup_button":True,
+        "popup_width":"1000",
+        "popup_height":str(max(650,height)),
+    }
+    html=f"""
+    <div class=\"tradingview-widget-container\" style=\"height:{height}px;width:100%;border:1px solid #d9e2ef;border-radius:14px;overflow:hidden;background:#fff\">
+      <div class=\"tradingview-widget-container__widget\" style=\"height:100%;width:100%\"></div>
+      <script type=\"text/javascript\" src=\"https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js\" async>
+      {json.dumps(config)}
+      </script>
+    </div>"""
+    components.html(html,height=height+18,scrolling=False)
 
+def tv_link(t): return f"https://www.tradingview.com/symbols/{t}/?exchange=IDX"
+
+# =========================================================
+# SECTOR OPPORTUNITY
+# =========================================================
+SECTOR_MAP = {
+    # Financials
+    "BBCA":"Financials","BBRI":"Financials","BMRI":"Financials","BBNI":"Financials","BRIS":"Financials","BBTN":"Financials","BDMN":"Financials","BNGA":"Financials","NISP":"Financials","PNBN":"Financials","BJBR":"Financials","BJTM":"Financials","MEGA":"Financials","BBHI":"Financials","BTPN":"Financials","AGRO":"Financials","BANK":"Financials","BACA":"Financials","BBYB":"Financials","BBKP":"Financials","BBLD":"Financials","BEKS":"Financials","BVIC":"Financials","NOBU":"Financials","ARTO":"Financials","AMAR":"Financials","BANK":"Financials",
+    # Energy
+    "ADRO":"Energy","AADI":"Energy","PTBA":"Energy","ITMG":"Energy","INDY":"Energy","MEDC":"Energy","PGAS":"Energy","AKRA":"Energy","GEMS":"Energy","BSSR":"Energy","HRUM":"Energy","BYAN":"Energy","DEWA":"Energy","DOID":"Energy","DSSA":"Energy","BUMI":"Energy","TOBA":"Energy","MBAP":"Energy","MYOH":"Energy","SMMT":"Energy","TPMA":"Energy","CUAN":"Energy","BREN":"Energy",
+    # Basic Materials / Chemicals / Metals
+    "ANTM":"Basic Materials","INCO":"Basic Materials","TINS":"Basic Materials","MDKA":"Basic Materials","AMMN":"Basic Materials","SMGR":"Basic Materials","INTP":"Basic Materials","WTON":"Basic Materials","WIKA":"Basic Materials","WSBP":"Basic Materials","SMBR":"Basic Materials","KRAS":"Basic Materials","BRPT":"Basic Materials","TPIA":"Basic Materials","FPNI":"Basic Materials","INKP":"Basic Materials","TKIM":"Basic Materials","ALDO":"Basic Materials","ARNA":"Basic Materials","MARK":"Basic Materials","MINE":"Basic Materials","MBSS":"Basic Materials","ESSA":"Basic Materials","SCCO":"Basic Materials",
+    # Industrials / Infrastructure
+    "ASII":"Industrials","AUTO":"Industrials","GJTL":"Industrials","IMAS":"Industrials","SMSM":"Industrials","UNTR":"Industrials","HEXA":"Industrials","DRMA":"Industrials","MMLP":"Industrials","KOBX":"Industrials","TRJA":"Industrials","BIRD":"Industrials","ASSA":"Industrials","JSMR":"Infrastructure","TLKM":"Infrastructure","EXCL":"Infrastructure","ISAT":"Infrastructure","MTEL":"Infrastructure","TOWR":"Infrastructure","TBIG":"Infrastructure","MORA":"Infrastructure","CMNP":"Infrastructure","WIFI":"Infrastructure","LINK":"Infrastructure","CENT":"Infrastructure",
+    # Consumer
+    "ICBP":"Consumer","INDF":"Consumer","MYOR":"Consumer","UNVR":"Consumer","HMSP":"Consumer","GGRM":"Consumer","SIDO":"Consumer","KLBF":"Consumer","KAEF":"Consumer","MIKA":"Consumer","ERAA":"Consumer","ACES":"Consumer","AMRT":"Consumer","MAPI":"Consumer","MAPA":"Consumer","RALS":"Consumer","MIDI":"Consumer","ULTJ":"Consumer","ROTI":"Consumer","GOOD":"Consumer","CLEO":"Consumer","CPIN":"Consumer","JPFA":"Consumer","MAIN":"Consumer","WTON":"Industrials",
+    # Property / Real Estate
+    "BSDE":"Property","CTRA":"Property","PWON":"Property","SMRA":"Property","LPKR":"Property","ASRI":"Property","APLN":"Property","DMAS":"Property","MKPI":"Property","DILD":"Property","KIJA":"Property","BEST":"Property","EMDE":"Property","PPRO":"Property","BKSL":"Property",
+    # Technology / Digital
+    "GOTO":"Technology","BUKA":"Technology","EMTK":"Technology","DCII":"Technology","DMMX":"Technology","WIRG":"Technology","MCAS":"Technology","MLPT":"Technology","MLPL":"Technology","DNET":"Technology","EDGE":"Technology","TECH":"Technology","CYBR":"Technology","NFCX":"Technology","WIFI":"Infrastructure",
+    # Healthcare
+    "SILO":"Healthcare","MIKA":"Healthcare","HEAL":"Healthcare","PRDA":"Healthcare","PRAY":"Healthcare","DGNS":"Healthcare","KLBF":"Healthcare","KAEF":"Healthcare","SIDO":"Healthcare",
+    # Transportation / Logistics
+    "GIAA":"Transportation","ASSA":"Transportation","BIRD":"Transportation","SMDR":"Transportation","TMAS":"Transportation","SOCI":"Transportation","HAIS":"Transportation","ELPI":"Transportation","PSSI":"Transportation","TRUK":"Transportation",
+    # Agriculture / Plantation
+    "AALI":"Agriculture","LSIP":"Agriculture","SIMP":"Agriculture","SSMS":"Agriculture","DSNG":"Agriculture","TBLA":"Agriculture","TAPG":"Agriculture","SMAR":"Agriculture","BWPT":"Agriculture","SGRO":"Agriculture","CPRO":"Agriculture","BISI":"Agriculture",
+}
+
+def sector_of(ticker):
+    return SECTOR_MAP.get(str(ticker).upper().replace('.JK',''), 'Other / Belum Dipetakan')
 
 def sector_opportunity(df):
-    if df.empty or "Sector" not in df.columns:
-        return pd.DataFrame()
-    g = df.groupby("Sector", dropna=False)
-    out = g.agg(Stocks=("Ticker","count"), AvgTechnical=("Technical","mean"), AvgOpportunity=("Opportunity","mean"), AvgVolume=("VolumeRatio","mean"), BullishBreadth=("Trend", lambda s: (s=="BULLISH").mean()*100), AvgMomentum20D=("Momentum 20D %","mean"), PassRate=("Gate", lambda s: (s=="PASS").mean()*100)).reset_index()
-    out["Momentum Score"] = np.clip(50 + out["AvgMomentum20D"].fillna(0)*2, 0, 100)
-    out["Volume Score"] = np.clip(out["AvgVolume"].fillna(0)/1.5*100, 0, 100)
-    out["Sector Score"] = (0.30*out["AvgTechnical"] + 0.25*out["AvgOpportunity"] + 0.20*out["BullishBreadth"] + 0.10*out["Momentum Score"] + 0.10*out["Volume Score"] + 0.05*out["PassRate"]).round(1)
-    out["Status"] = np.select([out["Sector Score"]>=70, out["Sector Score"]>=55], ["🔥 LEADING","👀 WATCH"], default="⚠️ WEAK")
-    return out.sort_values(["Sector Score","AvgMomentum20D"], ascending=False)
+    if df is None or df.empty:return pd.DataFrame()
+    x=df.copy(); x['Sector']=x['Ticker'].map(sector_of)
+    # Composite opportunity summary; not a buy ranking.
+    g=x.groupby('Sector',dropna=False).agg(
+        Stocks=('Ticker','count'),
+        Ready=('Status',lambda s:int((s.astype(str).str.upper()=='READY').sum())),
+        AvgOpportunity=('OpportunityScore','mean'),
+        AvgSetup=('SetupScore','mean'),
+        AvgQuality=('QualityScore','mean'),
+        AvgRR=('RR','mean'),
+        AvgRSI=('RSI','mean'),
+    ).reset_index()
+    g['ReadyPct']=np.where(g['Stocks']>0,g['Ready']/g['Stocks']*100,0)
+    g['SectorOpportunityScore']=g['AvgOpportunity']*0.45+g['AvgSetup']*0.25+g['AvgQuality']*0.20+g['AvgRR']*2*0.10
+    return g.sort_values(['SectorOpportunityScore','ReadyPct'],ascending=False)
 
+# =========================================================
+# PRESENTATION HELPERS
+# =========================================================
+def fmt(x,d=0):
+    try:
+        v=float(x)
+        if not np.isfinite(v): return "—"
+        return f"{v:,.{d}f}"
+    except:return "—"
 
-def money_cols(df):
-    if df.empty: return df
-    out=df.copy()
-    for c in ["Price","Entry","Buy Low","Buy High","Stop Loss","TP1","TP2"]:
-        if c in out.columns: out[c]=out[c].map(lambda v: rupiah(v) if pd.notna(v) else "-")
-    return out
+def status_badge(s):
+    s=str(s).upper(); cls="badge-green" if s in ["READY","CONFIRM"] else ("badge-red" if s in ["AVOID","CANCEL"] else "badge-yellow")
+    return f'<span class="badge {cls}">{s}</span>'
 
+def header(title,subtitle=""):
+    st.markdown(f'<div class="hero"><h1>{title}</h1><p>{subtitle}</p></div>',unsafe_allow_html=True)
 
-def vivid_style(df):
-    if df.empty: return df
-    def gate(v):
-        return "background-color:#16a34a;color:white;font-weight:800" if v=="PASS" else "background-color:#f59e0b;color:#111827;font-weight:800" if v=="NEAR PASS" else "background-color:#ef4444;color:white;font-weight:800" if v=="FAIL" else "background-color:#fde68a;color:#78350f;font-weight:700"
-    def risk(v):
-        return "background-color:#22c55e;color:white;font-weight:800" if v=="LOW" else "background-color:#f59e0b;color:#111827;font-weight:800" if v=="MEDIUM" else "background-color:#ef4444;color:white;font-weight:800"
-    sty=df.style
-    if "Gate" in df: sty=sty.map(gate, subset=["Gate"])
-    if "Style Gate" in df: sty=sty.map(gate, subset=["Style Gate"])
-    if "Risk" in df: sty=sty.map(risk, subset=["Risk"])
-    if "Status" in df: sty=sty.map(lambda v: "background-color:#dc2626;color:white;font-weight:800" if "WEAK" in str(v) else "background-color:#f59e0b;color:#111827;font-weight:800" if "WATCH" in str(v) else "background-color:#16a34a;color:white;font-weight:800", subset=["Status"])
-    return sty
+def metric_strip(items):
+    cols=st.columns(len(items))
+    for col,(lab,val) in zip(cols,items):
+        with col: st.markdown(f'<div class="metric-card"><div class="metric-label">{lab}</div><div class="metric-value">{val}</div></div>',unsafe_allow_html=True)
 
-def tradingview_chart(ticker, interval="D", height=900, theme="light"):
-    tv_symbol=f"IDX:{ticker.upper().replace('.JK','')}"
-    config={"autosize":False,"height":height,"width":"100%","symbol":tv_symbol,"interval":interval,"timezone":"exchange","theme":theme,"style":"1","withdateranges":True,"hide_side_toolbar":False,"allow_symbol_change":True,"save_image":True,"details":True,"hide_top_toolbar":False,"hide_legend":False,"hide_volume":False,"calendar":False,"studies":["MASimple@tv-basicstudies","RSI@tv-basicstudies","MACD@tv-basicstudies"],"locale":"id","support_host":"https://www.tradingview.com"}
-    payload=json.dumps(config)
-    html=f'''<div class="tradingview-widget-container" style="height:{height}px;width:100%;min-height:{height}px;"><div class="tradingview-widget-container__widget" style="height:{height-32}px;width:100%;min-height:{height-32}px;"></div><div class="tradingview-widget-copyright" style="font-size:11px;height:24px;line-height:24px;"><a href="https://www.tradingview.com/symbols/{quote(tv_symbol)}/" target="_blank" rel="noopener">{tv_symbol} chart</a> by TradingView</div><script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>{payload}</script></div>'''
-    components.html(html,height=height+36,scrolling=False)
+def show_table(df,cols,expand_label="📋 Buka Tabel"):
+    if df is None or df.empty: st.info("Belum ada data pada menu ini."); return
+    use=[c for c in cols if c in df.columns]
+    with st.expander(expand_label,expanded=False):
+        st.dataframe(df[use],use_container_width=True,hide_index=True)
 
+def show_table_open(df,cols,expand_label="📋 Buka Tabel"):
+    if df is None or df.empty: st.info("Belum ada data pada menu ini."); return
+    use=[c for c in cols if c in df.columns]
+    with st.expander(expand_label,expanded=True):
+        st.dataframe(df[use],use_container_width=True,hide_index=True)
 
-def badge(text, kind="blue"):
-    return f'<span class="badge badge-{kind}">{text}</span>'
+def show_top3(action,meta):
+    st.markdown('<div class="section-title">🏆 Top 3 Actionable Picks — Risk-Gated</div>',unsafe_allow_html=True)
+    st.caption("Hanya kandidat READY dari Top 10. Tetap ikuti Entry, Stop Loss, dan market gate.")
+    if action is None or action.empty: st.warning("Belum ada setup READY pada snapshot ini."); return
+    cols=["Ticker","Setup","Timing","Close","RSI","MACD","VolumeRatio","Support","Resistance","Entry","SL","TP1","TP2","RR","RiskPct","OpportunityScore","Status"]
+    show_table(action,cols)
+    for _,r in action.iterrows():
+        st.markdown(f'<div class="card"><b>{r.Ticker}</b> &nbsp; {status_badge(r.Status)} &nbsp; Setup: <b>{r.Setup}</b> &nbsp; Entry <b>{fmt(r.Entry)}</b> · SL <b>{fmt(r.SL)}</b> · TP1 <b>{fmt(r.TP1)}</b> · TP2 <b>{fmt(r.TP2)}</b> · R/R <b>{fmt(r.RR,2)}</b><br><span class="small-note">Chart: <a href="{tv_link(r.Ticker)}" target="_blank">TradingView</a></span></div>',unsafe_allow_html=True)
 
+def show_top10(opp):
+    st.markdown('<div class="section-title">🟩 Top 10 Opportunity — Opportunity Now</div>',unsafe_allow_html=True)
+    show_table(opp,["Ticker","Setup","Timing","OpportunityScore","Close","RSI","MACD","VolumeRatio","Support","Resistance","Entry","SL","TP1","TP2","RR","Status","Candle"])
 
-def style_card(title, subtitle, kind):
-    return f'<div class="card mode-card"><h3>{title}</h3><p>{subtitle}</p>{badge(kind[0],kind[1])}</div>'
+def show_top50(focus):
+    st.markdown('<div class="section-title">🟨 Top 50 Focus — Focus List</div>',unsafe_allow_html=True)
+    show_table(focus,["Ticker","Setup","SetupScore","QualityScore","Close","RSI","MACD","VolumeRatio","Support","Resistance","Entry","SL","TP1","TP2","RR","Status","Timing"])
 
+def show_top150(enrich):
+    st.markdown('<div class="section-title">🟦 Top 150 Enrich — Quality Pool</div>',unsafe_allow_html=True)
+    show_table(enrich,["Ticker","QualityScore","SetupScore","OpportunityScore","Close","RSI","MACD","MA20","MA50","MA200","Support","Resistance","Status","Setup"])
 
+def show_rules():
+    with st.expander("📋 Execution Rule",expanded=False):
+        st.markdown("- **READY** = lolos risk gate dan masuk tahap eksekusi.\n- **WAIT** = kandidat bagus tetapi belum di area entry.\n- **AVOID** = struktur trend/momentum tidak mendukung.\n- **Top 150 ≠ BUY · Top 50 ≠ BUY · Top 10 ≠ BUY.**\n- Breakout divalidasi menjelang penutupan; pullback/support divalidasi setelah pembukaan.")
 
+# =========================================================
+# NEW: DAILY / WEEKLY / INDIVIDUAL STOCK
+# =========================================================
+def daily_table(full):
+    if full is None or full.empty:return pd.DataFrame()
+    d=full.copy(); d["DailyScore"]=d["OpportunityScore"]+d["SetupScore"]
+    d=d[(d["Status"]!="AVOID") & ((d["Setup"].isin(["BREAKOUT","PULLBACK","REJECTION SUPPORT"])) | (d["RSI"].between(48,68)))].sort_values(["DailyScore","RR"],ascending=False).head(30)
+    d["TradingMode"]="HARIAN"; return d
 
-def inject_css():
-    st.markdown("""
-    <style>
-    .block-container{max-width:1500px;padding-top:1.1rem;padding-bottom:2rem}
-    [data-testid="stSidebar"]{background:#f4f7fb;border-right:1px solid #d9e2ef}
-    [data-testid="stSidebar"] .block-container{padding-top:1rem}
-    .hero{background:linear-gradient(135deg,#071a3a 0%,#0b2d5c 60%,#0e4f87 100%);border-radius:16px;padding:22px 26px;color:#fff;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 8px 24px rgba(7,26,58,.16)}
-    .hero h1{font-size:31px;letter-spacing:.4px;margin:2px 0 4px;font-weight:800}.hero p{margin:0;color:#d9e8ff;font-size:14px}.eyebrow{font-size:11px;letter-spacing:1.5px;color:#8fc7ff;font-weight:700}.hero-tag{border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.10);padding:10px 14px;border-radius:10px;font-size:12px;font-weight:700}
-    .section-title{font-size:22px;font-weight:800;color:#102a43;margin:18px 0 4px;border-left:5px solid #1d74d8;padding-left:10px}.section-subtitle{color:#64748b;margin-top:0}
-    .kpi{background:#fff;border:1px solid #d9e2ef;border-radius:12px;padding:14px 16px;min-height:92px;box-shadow:0 3px 10px rgba(15,35,60,.05)}.kpi-label{font-size:11px;letter-spacing:.8px;color:#64748b;font-weight:800}.kpi-value{font-size:28px;font-weight:800;color:#102a43;margin-top:4px}.small-value{font-size:21px}.kpi-unit{font-size:14px;color:#64748b}.kpi-sub{font-size:11px;color:#64748b;margin-top:4px}
-    .card,.action-card,.mini-card{background:#fff;border:1px solid #d9e2ef;border-radius:13px;padding:16px;box-shadow:0 3px 12px rgba(15,35,60,.05)}.action-card{min-height:235px;border-top:4px solid #1d74d8}.mini-card{min-height:185px;border-top:3px solid #1d74d8}.ticker{font-size:21px;font-weight:850;color:#0b2d5c}.score{font-size:28px;font-weight:850;color:#102a43;margin:9px 0}.score span{font-size:13px;color:#64748b;font-weight:600}.small{font-size:11px;color:#64748b}.rowline{display:flex;justify-content:space-between;gap:10px;font-size:12px;padding:4px 0;border-bottom:1px solid #edf2f7}.rowline span{color:#64748b}.danger{color:#d92d20!important}.hot-title{font-weight:800;margin-top:6px}.badge{display:inline-block;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:800}.badge-green{background:#dcfce7;color:#166534}.badge-yellow{background:#fef3c7;color:#92400e}.badge-red{background:#fee2e2;color:#991b1b}.badge-blue{background:#dbeafe;color:#1d4ed8}
-    .buy-box,.sl-box,.tp-box{border-radius:12px;padding:13px 14px;border:1px solid #d9e2ef;background:#fff}.buy-box{border-top:4px solid #16a34a}.sl-box{border-top:4px solid #dc2626}.tp-box{border-top:4px solid #2563eb}.buy-box h3,.sl-box h3,.tp-box h3{margin:4px 0 0;font-size:22px}.tv-shell{background:#f8fafc;border:1px solid #d9e2ef;border-radius:13px;padding:10px 14px;margin-top:16px}
-    [data-testid="stMetricValue"]{font-weight:800}.stButton>button{border-radius:9px;font-weight:700}.stExpander{border:1px solid #d9e2ef;border-radius:10px}.stDataFrame{border:1px solid #d9e2ef;border-radius:10px}
-    @media(max-width:900px){.hero{display:block}.hero-tag{display:inline-block;margin-top:12px}.hero h1{font-size:24px}}
-    </style>
-    """,unsafe_allow_html=True)
+@st.cache_data(ttl=900,show_spinner=False)
+def weekly_analysis(ticker):
+    d=load_data(ticker,"5y","1wk"); return analyze(d)
 
-inject_css()
-def main():
-    st.markdown(f'''<div class="hero"><div><div class="eyebrow">SANGGUL CAPITAL MARKETS • DECISION SUPPORT</div><h1>📈 SANGGUL STOCK SCANNER</h1><p>Professional Multi-Style Trading & Investment Dashboard • {APP_VERSION}</p></div><div class="hero-tag">IDX • 300 UNIVERSE</div></div>''', unsafe_allow_html=True)
+def weekly_candidates(focus):
+    if focus is None or focus.empty:return pd.DataFrame()
+    rows=[]
+    for _,r in focus.head(30).iterrows():
+        w=weekly_analysis(r.Ticker)
+        if w:
+            x={"Ticker":r.Ticker,"WeeklySetup":w["Setup"],"WeeklyStatus":w["Status"],"WeeklyScore":w["OpportunityScore"],"WeeklyRSI":w["RSI"],"WeeklyMA20":w["MA20"],"WeeklyMA50":w["MA50"],"WeeklyMA200":w["MA200"],"WeeklyEntry":w["Entry"],"WeeklySL":w["SL"],"WeeklyTP1":w["TP1"],"WeeklyTP2":w["TP2"],"WeeklyRR":w["RR"],"DailySetup":r.Setup,"DailyRR":r.RR,"Close":r.Close}
+            rows.append(x)
+    out=pd.DataFrame(rows)
+    if out.empty:return out
+    out["SwingScore"]=out["WeeklyScore"]+out["DailyRR"].clip(upper=4)*4
+    return out.sort_values(["SwingScore","WeeklyRR"],ascending=False).head(20)
 
-    regime=market_regime()
-    scan=st.session_state.get("scan",pd.DataFrame())
+# =========================================================
+# HEADER + SIDEBAR
+# =========================================================
+header("Sanggul Stock Scanner",f"{APP_VERSION} · 400 IDX · EOD Snapshot Persistent · Morning Confirmation · TradingView")
 
-    with st.sidebar:
-        st.markdown("## ⚙️ Control Center")
-        st.caption(f"Universe aktif: **{len(UNIVERSE)} saham**")
-        st.markdown("### NAVIGATION")
-        pages=["🏠 Dashboard","⚡ Daily Trading","📈 Swing Weekly","🏦 Investor","📊 Sector Opportunity","🏆 Top 150 / 50 / 10","🔎 Single Stock","⚙️ System"]
-        requested=st.session_state.pop("nav_request",None)
-        page=st.radio("Pilih modul",pages,index=pages.index(requested) if requested in pages else 0,label_visibility="collapsed")
-        st.markdown("---")
-        if st.button("🚀 RUN / REFRESH SCAN",use_container_width=True):
-            with st.spinner(f"Scanning {len(UNIVERSE)} configured stocks..."):
-                st.session_state["scan"]=scan_all()
-            st.rerun()
-        if st.button("🧹 CLEAR RESULT",use_container_width=True):
-            st.session_state.pop("scan",None)
-            st.rerun()
-        st.markdown("---")
-        st.markdown("**Decision Horizon**")
-        st.caption("⚡ Daily 1–5 hari\n\n📈 Swing 1–6 minggu\n\n🏦 Investor 3–24 bulan")
-        st.markdown("---")
-        st.caption("OHLCV baseline: yfinance • Single Stock chart: TradingView")
+with st.sidebar:
+    st.markdown("### 🧭 MENU UTAMA")
+    mode=st.radio("Navigasi",[
+        "📊 Dashboard","⚡ Trading Harian","📅 Swing Trading Mingguan","🔎 Saham Individu","🏭 Sector Opportunity","🏆 Top 3 Actionable","🟩 Top 10 Opportunity","🟨 Top 50 Focus","🟦 Top 150 Enrich","🌅 Morning Confirmation","🌆 EOD Full Scan","📜 EOD Scan History"],index=0)
+    st.divider(); st.markdown("### ⚙️ PENGATURAN")
+    period=st.selectbox("Data historis EOD",["1mo","3mo","6mo","2y"],index=3, format_func=lambda x: {"1mo":"1 Bulan","3mo":"3 Bulan","6mo":"6 Bulan","2y":"2 Tahun"}[x])
+    n=st.slider("Jumlah saham saat EOD scan",50,400,400,50)
+    min_rr=st.number_input("Minimum R/R",1.5,4.0,2.0,0.5)
+    st.divider(); st.caption("📌 EOD = screening utama · Pagi = konfirmasi · Harian = tactical · Mingguan = swing")
+    st.caption("Periode EOD: 1B / 3B / 6B / 2T · engine indikator minimum 2T")
+    scan_now=st.button("🔄 Scan 400 Saham / Update EOD",type="primary",use_container_width=True)
 
-    # Institutional-style market strip
-    if regime:
-        rc=st.columns(4)
-        rc[0].markdown(f'<div class="kpi"><div class="kpi-label">IHSG</div><div class="kpi-value">{regime["close"]:,.0f}</div><div class="kpi-sub">Market level</div></div>',unsafe_allow_html=True)
-        rc[1].markdown(f'<div class="kpi"><div class="kpi-label">MARKET SCORE</div><div class="kpi-value">{regime["score"]}<span class="kpi-unit">/100</span></div><div class="kpi-sub">Regime strength</div></div>',unsafe_allow_html=True)
-        regime_kind="green" if regime["regime"]=="BULLISH" else "yellow" if regime["regime"]=="SIDEWAYS" else "red"
-        rc[2].markdown(f'<div class="kpi"><div class="kpi-label">MARKET REGIME</div><div class="kpi-value small-value">{regime["regime"]}</div><div class="kpi-sub">{badge(regime["gate"],regime_kind)}</div></div>',unsafe_allow_html=True)
-        rc[3].markdown(f'<div class="kpi"><div class="kpi-label">UNIVERSE</div><div class="kpi-value">{len(UNIVERSE)}</div><div class="kpi-sub">Configured stocks</div></div>',unsafe_allow_html=True)
+# Market strip
+ihsg,ih20,ih50,regime=market_metrics(period)
+metric_strip([("IHSG",fmt(ihsg)),("MA20",fmt(ih20)),("MA50",fmt(ih50)),("Market Gate",regime)])
 
-    def style_page(style,title,desc):
-        st.markdown(f'<div class="section-title">{title}</div><p class="section-subtitle">{desc}</p>',unsafe_allow_html=True)
-        if scan.empty:
-            st.info("Run / Refresh Scan terlebih dahulu."); return
-        sdf=add_style_columns(scan,style)
-        p=sdf[sdf["Style Gate"]=="PASS"].head(3)
-        near=sdf[sdf["Style Gate"]=="NEAR PASS"].head(10)
-        m=st.columns(5)
-        m[0].metric("Universe",len(UNIVERSE)); m[1].metric("Scanned",len(sdf)); m[2].metric("PASS",len(sdf[sdf["Style Gate"]=="PASS"])); m[3].metric("Near Pass",len(sdf[sdf["Style Gate"]=="NEAR PASS"])); m[4].metric("Candidates",len(p)+len(near))
-        if p.empty: st.warning("Belum ada PASS untuk mode ini. Kandidat Near Pass tetap ditampilkan.")
-        else:
-            st.markdown("### Top Actionable")
-            cc=st.columns(len(p))
-            for col,(_,r) in zip(cc,p.iterrows()):
-                with col:
-                    st.markdown(f'''<div class="action-card"><div class="ticker">{r.Ticker}</div><div class="small">{r.Sector} • {r.Setup}</div><div class="score">{r["Style Score"]:.1f}<span>/100</span></div><div class="rowline"><span>Gate</span><b>{r["Style Gate"]}</b></div><div class="rowline"><span>Entry</span><b>{rupiah(r.Entry)}</b></div><div class="rowline"><span>Buy Range</span><b>{rupiah(r["Buy Low"])} – {rupiah(r["Buy High"])}</b></div><div class="rowline"><span>Stop Loss</span><b class="danger">{rupiah(r["Stop Loss"])}</b></div><div class="rowline"><span>R:R TP2</span><b>1:{r["R:R TP2"]:.2f}</b></div></div>''',unsafe_allow_html=True)
-                    if st.button(f"🔎 Analyze {r.Ticker}",key=f"quick_{style}_{r.Ticker}",use_container_width=True):
-                        st.session_state["single_ticker"]=r.Ticker
-                        st.session_state["nav_request"]="🔎 Single Stock"
+snap=read_snapshot(latest_snapshot())
+
+# Preserve manual scan from V11.1.3.7
+if scan_now:
+    with st.spinner(f"Menjalankan EOD scan {n} saham dan menyimpan snapshot..."):
+        path=run_full_scan(period,n,min_rr)
+    if path: st.success(f"Snapshot EOD tersimpan: {os.path.basename(path)}"); st.rerun()
+    else: st.error("Tidak ada data yang berhasil dianalisis.")
+
+# =========================================================
+# SPECIAL MENUS
+# =========================================================
+if mode=="🌆 EOD Full Scan":
+    header("🌆 EOD Full Scan","Bangun snapshot baru setelah market close. Snapshot lama tetap tersimpan.")
+    st.info("Gunakan setelah candle harian selesai. Hasil ini menjadi baseline untuk Dashboard dan Morning Confirmation.")
+    if st.button("🚀 Jalankan EOD Full Scan",type="primary"):
+        path=run_full_scan(period,n,min_rr)
+        if path: st.success(f"Snapshot EOD tersimpan: {os.path.basename(path)}"); st.rerun()
+        else: st.error("Tidak ada data yang berhasil dianalisis.")
+    st.stop()
+
+if mode=="🌅 Morning Confirmation":
+    header("🌅 Morning Confirmation","Validasi Top 10 EOD dengan kondisi harga pagi. Tidak melakukan reranking 400 saham.")
+    if not snap: st.warning("Belum ada EOD Snapshot."); st.stop()
+    m=snap["meta"]; st.success(f"Baseline EOD: {m.get('timestamp','—')} · Top 10 tetap dipertahankan.")
+    conf=morning_confirm(snap["top10"],period)
+    show_table(conf,["Ticker","Setup","Timing","MorningStatus","Current","Open","Entry","SL","TP1","TP2","RR","RSI","MACD","VolumeRatio"])
+    st.caption("🟢 CONFIRM = dekat area entry · 🟡 WAIT = belum/terlalu tinggi · 🔴 CANCEL = di bawah SL.")
+    st.stop()
+
+if mode=="📜 EOD Scan History":
+    header("📜 EOD Scan History","Riwayat snapshot screening untuk menjaga konsistensi keputusan dari hari ke hari.")
+    dirs=snapshot_dirs(); rows=[]
+    for p in dirs[:30]:
+        s=read_snapshot(p)
+        if not s:continue
+        rows.append({"Snapshot":os.path.basename(p),"Timestamp":s["meta"].get("timestamp"),"Regime":s["meta"].get("regime"),"Universe":s["meta"].get("universe"),"Analyzed":s["meta"].get("analyzed"),"Top 3":", ".join(s["top3"].Ticker.astype(str).tolist()) if not s["top3"].empty else "—"})
+    show_table(pd.DataFrame(rows),["Snapshot","Timestamp","Regime","Universe","Analyzed","Top 3"])
+    st.stop()
+
+if not snap:
+    st.warning("Belum ada EOD Snapshot."); st.info("Gunakan **🔄 Scan 400 Saham / Update EOD** setelah market close."); st.stop()
+
+m=snap["meta"]; action,opp,focus,enrich=snap["top3"],snap["top10"],snap["top50"],snap["top150"]
+
+# =========================================================
+# DASHBOARD / OLD MENUS
+# =========================================================
+if mode=="📊 Dashboard":
+    header("📊 Dashboard","Last EOD Snapshot · Risk-Gated · persistent")
+    metric_strip([("Snapshot",m.get("timestamp","—").replace("T"," ")), ("EOD Window",{"1mo":"1 Bulan","3mo":"3 Bulan","6mo":"6 Bulan","2y":"2 Tahun"}.get(m.get("period"),m.get("period","—"))), ("Regime",m.get("regime","—")), ("Pipeline","400 → 150 → 50 → 10 → 3")])
+    show_top3(action,m); show_top150(enrich); show_top50(focus); show_top10(opp); show_rules()
+    st.download_button("📥 Export Full Scan CSV",snap["full"].to_csv(index=False).encode("utf-8"),"sanggul_v11_1_3_8_full_scan.csv","text/csv")
+
+elif mode=="⚡ Trading Harian":
+    header("⚡ Trading Harian","Tactical setup untuk horizon 1–5 hari · menggunakan hasil EOD sebagai starting universe.")
+    d=daily_table(snap["full"])
+    if d.empty: st.info("Belum ada kandidat trading harian yang memenuhi filter.")
+    else:
+        metric_strip([("Kandidat",str(len(d))), ("Ready",str((d.Status=="READY").sum())), ("Breakout",str((d.Setup=="BREAKOUT").sum())), ("Pullback",str((d.Setup=="PULLBACK").sum()))])
+        show_table(d,["Ticker","TradingMode","Setup","Timing","Status","Close","RSI","MACD","VolumeRatio","Support","Resistance","Entry","SL","TP1","TP2","RR","OpportunityScore"])
+        st.markdown("#### 🔗 TradingView — Daily / Tactical")
+        ticker=st.selectbox("Pilih saham",d.Ticker.tolist(),key="daily_ticker")
+        row=d[d.Ticker==ticker].iloc[0]
+        st.markdown(f'<div class="card"><b>{ticker}</b> · {row.Setup} · {status_badge(row.Status)} · Entry <b>{fmt(row.Entry)}</b> · SL <b>{fmt(row.SL)}</b> · TP1 <b>{fmt(row.TP1)}</b> · TP2 <b>{fmt(row.TP2)}</b> · R/R <b>{fmt(row.RR,2)}</b></div>',unsafe_allow_html=True)
+        st.link_button("📈 Buka Chart TradingView Penuh — Daily ↗", tv_link(ticker)+"&interval=1D", use_container_width=False)
+
+elif mode=="📅 Swing Trading Mingguan":
+    header("📅 Swing Trading Mingguan","Horizon beberapa hari hingga beberapa minggu · daily setup + weekly trend confirmation.")
+    st.info("Untuk menjaga kecepatan, validasi weekly dilakukan pada kandidat Top 50 EOD, bukan mengunduh ulang 400 saham.")
+    w=weekly_candidates(focus)
+    if w.empty: st.warning("Belum ada kandidat weekly. Pastikan EOD snapshot tersedia dan data weekly dapat diambil.")
+    else:
+        metric_strip([("Weekly candidates",str(len(w))), ("Weekly READY",str((w.WeeklyStatus=="READY").sum())), ("Weekly breakout",str((w.WeeklySetup=="BREAKOUT").sum())), ("Avg R/R",fmt(w.WeeklyRR.mean(),2))])
+        show_table(w,["Ticker","WeeklySetup","WeeklyStatus","WeeklyScore","WeeklyRSI","WeeklyMA20","WeeklyMA50","WeeklyMA200","WeeklyEntry","WeeklySL","WeeklyTP1","WeeklyTP2","WeeklyRR","DailySetup","DailyRR","Close"])
+        st.caption("Grafik tidak ditampilkan di dalam aplikasi. Gunakan chart TradingView penuh agar ruang dashboard tetap ringkas.")
+        ticker=st.selectbox("Pilih saham weekly",w.Ticker.tolist(),key="weekly_ticker")
+        row=w[w.Ticker==ticker].iloc[0]
+        st.markdown(f'<div class="card"><b>{ticker}</b> · Weekly {row.WeeklySetup} · {status_badge(row.WeeklyStatus)} · Entry <b>{fmt(row.WeeklyEntry)}</b> · SL <b>{fmt(row.WeeklySL)}</b> · TP1 <b>{fmt(row.WeeklyTP1)}</b> · TP2 <b>{fmt(row.WeeklyTP2)}</b> · R/R <b>{fmt(row.WeeklyRR,2)}</b></div>',unsafe_allow_html=True)
+        st.link_button("📈 Buka Chart TradingView Penuh — Weekly ↗", tv_link(ticker)+"&interval=1W", use_container_width=False)
+
+elif mode=="🔎 Saham Individu":
+    header("🔎 Saham Individu","Terminal analisis per saham dengan quote teknikal + chart TradingView.")
+    universe=load_universe()
+    ticker=st.selectbox("Pilih saham IDX",universe,index=universe.index("BBCA") if "BBCA" in universe else 0)
+    d=load_data(ticker,"2y","1d"); a=analyze(d)
+    if a is None: st.warning("Data teknikal belum cukup untuk dianalisis."); st.stop()
+    metric_strip([("Ticker",ticker),("Last",fmt(a["Close"])),("RSI",fmt(a["RSI"],1)),("R/R",fmt(a["RR"],2)),("Setup",a["Setup"]),("Status",a["Status"])])
+    left,right=st.columns([1.25,1])
+    with left:
+        st.markdown("#### 🔗 TradingView Penuh")
+        st.caption("Chart embedded dihilangkan agar dashboard lebih ringkas. Buka TradingView penuh untuk melihat candle, Bollinger Bands, Volume, MACD, RSI, dan indikator lainnya.")
+        c1,c2=st.columns(2)
+        with c1: st.link_button("📈 Daily ↗", tv_link(ticker)+"&interval=1D", use_container_width=True)
+        with c2: st.link_button("📅 Weekly ↗", tv_link(ticker)+"&interval=1W", use_container_width=True)
+        st.markdown('<div class="card"><b>Periode data EOD yang dipilih:</b> '+{"1mo":"1 Bulan","3mo":"3 Bulan","6mo":"6 Bulan","2y":"2 Tahun"}.get(period,period)+'<br><span class="small-note">Mesin indikator tetap mengambil minimal 2 tahun secara internal agar MA200, RSI dan MACD tetap valid; periode di atas menentukan jendela historis EOD yang dipakai sebagai acuan review.</span></div>',unsafe_allow_html=True)
+    with right:
+        st.markdown("#### Ringkasan Teknis")
+        st.markdown(f'<div class="card">Trend MA20/50/200: <b>{"Bullish" if a["MA20"]>a["MA50"] else "Mixed"}</b><br>RSI: <b>{fmt(a["RSI"],1)}</b><br>MACD: <b>{fmt(a["MACD"],2)}</b><br>Volume ratio: <b>{fmt(a["VolumeRatio"],2)}x</b><br>Support: <b>{fmt(a["Support"])}</b><br>Resistance: <b>{fmt(a["Resistance"])}</b><br>Candle: <b>{a["Candle"]}</b></div>',unsafe_allow_html=True)
+        st.markdown("#### Trade Plan")
+        st.markdown(f'<div class="card">Setup <b>{a["Setup"]}</b><br>Entry <b>{fmt(a["Entry"])}</b><br>Stop Loss <b>{fmt(a["SL"])}</b><br>TP1 <b>{fmt(a["TP1"])}</b><br>TP2 <b>{fmt(a["TP2"])}</b><br>R/R <b>{fmt(a["RR"],2)}</b><br>Status {status_badge(a["Status"])}</div>',unsafe_allow_html=True)
+        st.markdown(f"[Buka chart TradingView penuh ↗]({tv_link(ticker)})")
+
+elif mode=="🏭 Sector Opportunity":
+    header("🏭 Sector Opportunity","Klik nama sektor untuk melihat daftar saham di dalam sektor tersebut. Ini adalah alat pemetaan peluang, bukan sinyal BUY otomatis.")
+    full=snap["full"].copy()
+    sec=sector_opportunity(full)
+    if sec.empty:
+        st.info("Belum ada data sektor pada snapshot ini.")
+    else:
+        metric_strip([("Sektor",str(len(sec))), ("READY",str(int(sec.Ready.sum()))), ("Saham",str(int(sec.Stocks.sum()))), ("Sektor teratas",str(sec.iloc[0].Sector))])
+
+        # Sector selector: each sector is a real clickable button.
+        st.markdown("#### 🏭 Pilih Sektor")
+        sectors=sec["Sector"].astype(str).tolist()
+        if "selected_sector" not in st.session_state or st.session_state.selected_sector not in sectors:
+            st.session_state.selected_sector=sectors[0] if sectors else None
+        for start in range(0,len(sectors),3):
+            cols=st.columns(3)
+            for j,sector_name in enumerate(sectors[start:start+3]):
+                with cols[j]:
+                    prefix="✓ " if st.session_state.selected_sector==sector_name else ""
+                    if st.button(prefix+sector_name,key="sector_btn_"+str(start+j),use_container_width=True):
+                        st.session_state.selected_sector=sector_name
                         st.rerun()
-        with st.expander(f"📋 Candidate Table — {title} • klik untuk tampilkan",expanded=False):
-            candidate_cols=["Ticker","Sector","Price","Entry","Buy Low","Buy High","Stop Loss","TP1","TP2","Style Score","Style Gate","Style Action","Horizon","Trend","Setup","Risk","R:R TP1","R:R TP2","RSI","VolumeRatio"]
-            st.dataframe(vivid_style(money_cols(sdf[candidate_cols].head(50))),use_container_width=True,hide_index=True,height=560)
 
-    if page=="🏠 Dashboard":
-        st.markdown('<div class="section-title">Decision Overview</div>',unsafe_allow_html=True)
-        if scan.empty:
-            cards=st.columns(3)
-            cards[0].markdown(style_card("⚡ Daily Trading","Momentum, breakout/pullback dan eksekusi 1–5 hari.",("1–5 DAYS","blue")),unsafe_allow_html=True)
-            cards[1].markdown(style_card("📈 Swing Weekly","Trend, struktur, support/resistance dan R:R.",("1–6 WEEKS","green")),unsafe_allow_html=True)
-            cards[2].markdown(style_card("🏦 Investor","MA200, trend jangka panjang dan konfirmasi.",("3–24 MONTHS","yellow")),unsafe_allow_html=True)
-            st.info("Klik **RUN / REFRESH SCAN** di Control Center untuk mengisi dashboard.")
-        else:
-            p=scan[scan.Gate=="PASS"]; n=scan[scan.Gate=="NEAR PASS"]
-            m=st.columns(6)
-            for col,label,val in zip(m,["Stocks Scanned","PASS","Near Pass","Top 10","Top 3","Universe"],[len(scan),len(p),len(n),min(10,len(scan)),min(3,len(p)),len(UNIVERSE)]): col.metric(label,val)
-            st.markdown('<div class="section-title">Top Actionable Across Styles</div>',unsafe_allow_html=True)
-            for style,title in [("DAILY","⚡ Daily Trading"),("SWING","📈 Swing Weekly"),("INVESTOR","🏦 Investor")]:
-                sdf=add_style_columns(scan,style); sdf=sdf[sdf["Style Gate"].isin(["PASS","NEAR PASS"])].head(3)
-                st.markdown(f"### {title}")
-                if sdf.empty: st.caption("Belum ada candidate.")
-                else:
-                    cols=st.columns(len(sdf))
-                    for col,(_,r) in zip(cols,sdf.iterrows()):
-                        with col:
-                            st.markdown(f'''<div class="mini-card"><div class="ticker">{r.Ticker}</div><div class="small">{r.Sector} • {r.Setup}</div><div class="score">{r["Style Score"]:.1f}<span>/100</span></div><div>Entry <b>{rupiah(r.Entry)}</b></div><div>Buy <b>{rupiah(r["Buy Low"])} – {rupiah(r["Buy High"])}</b></div><div>SL <b class="danger">{rupiah(r["Stop Loss"])}</b></div><div>R:R <b>1:{r["R:R TP2"]:.2f}</b></div></div>''',unsafe_allow_html=True)
-                            if st.button(f"🔎 {r.Ticker}",key=f"dash_{style}_{r.Ticker}",use_container_width=True):
-                                st.session_state["single_ticker"]=r.Ticker
-                                st.session_state["nav_request"]="🔎 Single Stock"
-                                st.rerun()
-            st.markdown('<div class="section-title">Quick Single Stock</div>',unsafe_allow_html=True)
-            qcols=st.columns([3,1,1])
-            default_ticker=st.session_state.get("single_ticker", scan.iloc[0].Ticker if not scan.empty else "BBRI")
-            tickers=sorted(scan.Ticker.unique().tolist())
-            qcols[0].selectbox("Pilih saham dari hasil scanner",tickers,index=tickers.index(default_ticker) if default_ticker in tickers else 0,key="dashboard_stock_pick")
-            if qcols[1].button("🔎 Buka Single Stock",use_container_width=True):
-                st.session_state["single_ticker"]=st.session_state["dashboard_stock_pick"]
-                st.session_state["nav_request"]="🔎 Single Stock"
-                st.rerun()
-            qcols[2].caption("Chart utama: TradingView")
-
-    elif page=="⚡ Daily Trading":
-        style_page("DAILY","⚡ DAILY TRADING","Momentum dan setup cepat untuk horizon sekitar 1–5 hari.")
-    elif page=="📈 Swing Weekly":
-        style_page("SWING","📈 SWING TRADING MINGGUAN","Trend-following, breakout/pullback, support-resistance dan R:R untuk horizon 1–6 minggu.")
-    elif page=="🏦 Investor":
-        style_page("INVESTOR","🏦 INVESTOR JANGKA PANJANG","Filter MA200, struktur trend dan risk/reward untuk horizon 3–24 bulan.")
-    elif page=="📊 Sector Opportunity":
-        st.markdown('<div class="section-title">📊 Sector Opportunity — Dynamic</div>',unsafe_allow_html=True)
-        st.caption("Sektor dihitung dari technical strength, opportunity, bullish breadth, momentum 20D, volume dan pass rate.")
-        if scan.empty: st.info("Run scanner terlebih dahulu.")
-        else:
-            sec=sector_opportunity(scan)
-            st.markdown("### Sector Ranking")
-            header=st.columns([2.2,0.6,1,1,0.9,1,0.9,1,1,0.9,0.9])
-            for h,label in zip(header,["Sector","Stocks","Avg Tech","Avg Opp.","Volume","Bullish","Mom.20D","Pass Rate","Score","Status"," "]): h.markdown(f"<div class='small'><b>{label}</b></div>",unsafe_allow_html=True)
-            for i,(_,r) in enumerate(sec.iterrows()):
-                cols=st.columns([2.2,0.6,1,1,0.9,1,0.9,1,1,0.9,0.9]); cols[0].markdown(f"**{r['Sector']}**"); cols[1].write(int(r["Stocks"])); cols[2].write(f"{r['AvgTechnical']:.1f}"); cols[3].write(f"{r['AvgOpportunity']:.1f}"); cols[4].write(f"{r['AvgVolume']:.2f}x"); cols[5].write(f"{r['BullishBreadth']:.1f}%"); cols[6].write(f"{r['AvgMomentum20D']:.1f}%"); cols[7].write(f"{r['PassRate']:.1f}%"); cols[8].write(f"{r['Sector Score']:.1f}"); status=str(r["Status"]); kind="green" if "LEADING" in status else "yellow" if "WATCH" in status else "red"; cols[9].markdown(badge(status,kind),unsafe_allow_html=True)
-                if cols[10].button("🔎 Saham",key=f"sector_view_{i}",use_container_width=True): st.session_state["selected_sector"]=str(r["Sector"]); st.rerun()
-            selected=st.session_state.get("selected_sector","")
-            if selected:
-                with st.expander(f"🔎 Saham dalam sektor: {selected}",expanded=True):
-                    sstocks=scan[scan.Sector==selected].copy(); showcols=["Ticker","Price","Technical","Opportunity","Gate","Risk","Trend","Setup","Entry","Buy Low","Buy High","Stop Loss","TP1","TP2","R:R TP2"]; avail=[c for c in showcols if c in sstocks.columns]
-                    st.dataframe(vivid_style(money_cols(sstocks.sort_values(["Opportunity","Technical"],ascending=False)[avail].head(50))),use_container_width=True,hide_index=True,height=560)
-                if st.button("✕ Tutup daftar sektor",key="close_sector"): st.session_state.pop("selected_sector",None); st.rerun()
-            st.markdown("### 🔥 Sector Focus")
-            lead=sec.head(3); cc=st.columns(len(lead))
-            for col,(_,r) in zip(cc,lead.iterrows()):
-                with col: st.markdown(f'<div class="action-card"><div class="ticker">{r["Sector"]}</div><div class="score">{r["Sector Score"]:.1f}<span>/100</span></div><div>{badge(r["Status"],"green" if "LEADING" in str(r["Status"]) else "yellow" if "WATCH" in str(r["Status"]) else "red")}</div><div class="small">{int(r["Stocks"])} saham • Breadth {r["BullishBreadth"]:.1f}% • Momentum {r["AvgMomentum20D"]:.1f}%</div></div>',unsafe_allow_html=True)
-
-    elif page=="🏆 Top 150 / 50 / 10":
-        if scan.empty: st.info("Run scanner terlebih dahulu.")
-        else:
-            for title,df in [("Top 150 Enrich",scan.sort_values("Opportunity",ascending=False).head(150)),("Top 50 Focus",scan.sort_values("Opportunity",ascending=False).head(50)),("Top 10 Opportunity",scan[scan.Gate.isin(["PASS","NEAR PASS"])].sort_values(["Opportunity","Technical","R:R TP2"],ascending=False).head(10))]:
-                with st.expander(f"{title} • {len(df)} saham",expanded=False): st.dataframe(vivid_style(money_cols(df)),use_container_width=True,hide_index=True,height=520)
-
-    elif page=="🔎 Single Stock":
-        st.markdown('<div class="section-title">🔎 SINGLE STOCK ANALYSIS</div>',unsafe_allow_html=True)
-        st.caption("Analisis satu saham dengan trading plan dan TradingView Advanced Chart.")
-        available=sorted(scan.Ticker.unique().tolist()) if not scan.empty else []
-        preset=st.session_state.get("single_ticker","BBRI")
-        left,right=st.columns([2,1])
-        with left:
-            ticker_input=st.text_input("Kode saham IDX",preset).upper().strip().replace(".JK","")
-        with right:
-            interval=st.selectbox("Timeframe",["D","W","240","60"],index=0)
-        if available:
-            pick=st.selectbox("Pilih cepat dari hasil scanner",available,index=available.index(preset) if preset in available else 0)
-            if st.button("Gunakan saham terpilih",use_container_width=True): ticker_input=pick; st.session_state["single_ticker"]=pick; st.rerun()
-        if st.button("ANALYZE SINGLE STOCK",use_container_width=True): st.session_state["single_ticker"]=ticker_input; st.session_state["single_analyze"]=True
-        if st.session_state.get("single_analyze",False):
-            ticker=st.session_state.get("single_ticker",ticker_input); d=get_data(ticker)
-            if d.empty: st.error("Data analisis tidak tersedia untuk ticker tersebut.")
+        selected=st.session_state.get("selected_sector")
+        if selected:
+            rowsec=sec[sec.Sector==selected].iloc[0]
+            stocks=full[full["Ticker"].map(sector_of)==selected].copy()
+            st.markdown(f"#### 📋 Saham dalam sektor: **{selected}**")
+            metric_strip([
+                ("Saham",str(len(stocks))),
+                ("READY",str(int((stocks.Status.astype(str).str.upper()=="READY").sum()))),
+                ("Avg Opportunity",fmt(rowsec.AvgOpportunity,2)),
+                ("Avg R/R",fmt(rowsec.AvgRR,2)),
+            ])
+            if stocks.empty:
+                st.info("Belum ada saham yang terpetakan ke sektor ini.")
             else:
-                a,x=analyze(d)
-                if a:
-                    m=st.columns(6); m[0].metric("Price",rupiah(a["price"])); m[1].metric("Technical",f"{a['score']}/100"); m[2].metric("Opportunity",f"{a['opportunity']:.1f}/100"); m[3].metric("R:R TP2",f"1:{a['rr2']:.2f}"); m[4].metric("Gate",a["gate"]); m[5].metric("Risk",a["risk_level"])
-                    st.markdown('<div class="section-title">Trading Plan</div>',unsafe_allow_html=True)
-                    p=st.columns(5); p[0].markdown(f'<div class="buy-box"><b>BUY LOW</b><h3>{rupiah(a["entry_low"])}</h3></div>',unsafe_allow_html=True); p[1].markdown(f'<div class="buy-box"><b>BUY HIGH / ENTRY</b><h3>{rupiah(a["entry_high"])}</h3></div>',unsafe_allow_html=True); p[2].markdown(f'<div class="sl-box"><b>STOP LOSS</b><h3>{rupiah(a["stop"])}</h3></div>',unsafe_allow_html=True); p[3].markdown(f'<div class="tp-box"><b>TP1</b><h3>{rupiah(a["tp1"])}</h3></div>',unsafe_allow_html=True); p[4].markdown(f'<div class="tp-box"><b>TP2</b><h3>{rupiah(a["tp2"])}</h3></div>',unsafe_allow_html=True)
-                    st.markdown(f'**Buy Range:** {rupiah(a["entry_low"])} – {rupiah(a["entry_high"])} &nbsp; | &nbsp; **Risk/share:** {rupiah(a["price"]-a["stop"])} &nbsp; | &nbsp; **R:R TP2:** 1:{a["rr2"]:.2f}',unsafe_allow_html=True)
-                    st.write(f"**Setup:** {a['setup']}  •  **Action:** {a['action']}  •  **Confidence:** {a['confidence']}")
-                    st.write(f"**Invalidation:** {a['invalidation']}")
-                    st.markdown('<div class="tv-shell"><div class="section-title">📊 TradingView Advanced Chart</div><div class="small">Chart utama menggunakan widget resmi TradingView. Gunakan toolbar, timeframe, indikator dan drawing tools langsung pada chart.</div></div>',unsafe_allow_html=True)
-                    tradingview_chart(ticker,interval=interval,height=820)
+                cols=[c for c in ["Ticker","Status","Setup","Timing","Close","RSI","MACD","VolumeRatio","Support","Resistance","Entry","SL","TP1","TP2","RR","OpportunityScore","QualityScore"] if c in stocks.columns]
+                show_table(stocks.sort_values(["Status","OpportunityScore"],ascending=[True,False]),cols,"📋 Buka Daftar Saham Sektor")
+                # Quick individual-stock navigation from the selected sector.
+                tickers=stocks["Ticker"].astype(str).tolist()
+                if tickers:
+                    chosen=st.selectbox("Pilih saham untuk analisis individual",tickers,key="sector_stock_"+selected)
+                    st.caption("Setelah memilih saham, buka menu **🔎 Saham Individu** untuk melihat ringkasan teknis dan tautan TradingView penuh.")
 
-    elif page=="⚙️ System":
-        st.markdown('<div class="section-title">⚙️ System Configuration</div>',unsafe_allow_html=True)
-        st.write(f"Configured universe: **{len(UNIVERSE)}** tickers (target 300)")
-        st.write("Universe file: `data/universe.csv` with embedded fallback.")
-        st.info("Universe loader dirancang untuk GitHub/Streamlit Cloud dan akan memakai embedded 300-ticker fallback bila file lokal tidak tersedia.")
-        st.write("### TradingView")
-        st.write("Single Stock memakai TradingView Advanced Chart Widget dengan symbol dinamis `IDX:<TICKER>`. Widget resmi mendukung konfigurasi symbol, interval, studies, toolbar dan ukuran chart.")
-        st.write("### Data source")
-        st.warning("Baseline OHLCV scanner memakai yfinance untuk pengujian. Untuk produksi, gunakan data pasar yang sesuai lisensi dan kebutuhan operasional.")
-        st.write("### Multi-Style")
-        st.write("Daily Trading, Swing Weekly dan Investor memakai layer scoring/gate masing-masing." )
+        show_table(sec,["Sector","Stocks","Ready","ReadyPct","AvgOpportunity","AvgSetup","AvgQuality","AvgRR","AvgRSI","SectorOpportunityScore"],"📋 Buka Tabel Ringkasan Sector Opportunity")
+        st.markdown("#### Cara membaca")
+        st.caption("Sector Opportunity Score adalah agregasi kualitas/setup/opportunity/RR dari saham yang masuk snapshot. Klik sektor di atas untuk membuka daftar sahamnya; gunakan menu Saham Individu untuk Entry/SL/TP dan konfirmasi market gate.")
 
-
-if __name__ == "__main__":
-    main()
+elif mode=="🏆 Top 3 Actionable":
+    header("🏆 Top 3 Actionable","Risk-Gated execution candidates dari snapshot EOD."); show_top3(action,m); show_rules()
+elif mode=="🟩 Top 10 Opportunity":
+    header("🟩 Top 10 Opportunity","Opportunity pool — bukan otomatis BUY."); show_top10(opp); show_rules()
+elif mode=="🟨 Top 50 Focus":
+    header("🟨 Top 50 Focus","Focused setup list dengan R/R minimum."); show_top50(focus); show_rules()
+elif mode=="🟦 Top 150 Enrich":
+    header("🟦 Top 150 Enrich","Quality pool untuk pemantauan lebih luas."); show_top150(enrich); show_rules()
