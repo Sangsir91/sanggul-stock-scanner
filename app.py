@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.1.3.8 PRO FIX6"
+APP_VERSION = "V11.1.3.8 PRO FIX7"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SNAP_DIR = os.path.join(BASE_DIR, "snapshots")
 os.makedirs(SNAP_DIR, exist_ok=True)
@@ -101,23 +101,41 @@ def analyze(df):
 # =========================================================
 @st.cache_data(ttl=900,show_spinner=False)
 def load_universe():
-    # Robust path resolution for local, GitHub, and Streamlit Cloud deployments.
+    """Load the IDX universe robustly on local and Streamlit Cloud deployments.
+
+    Priority: universe.csv beside app.py, current working directory, then an
+    embedded 400-ticker fallback. The embedded fallback prevents a deployment
+    from failing simply because a companion CSV was not copied into the repo.
+    """
     candidates = [
         os.path.join(BASE_DIR, "universe.csv"),
-        os.path.join(BASE_DIR, "sanggul_v1138", "universe.csv"),
         os.path.join(os.getcwd(), "universe.csv"),
+        os.path.join(BASE_DIR, "sanggul_v1138", "universe.csv"),
         os.path.join(os.getcwd(), "sanggul_v1138", "universe.csv"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "universe.csv"),
     ]
+    seen=set()
     for path in candidates:
-        if os.path.isfile(path):
-            df = pd.read_csv(path)
-            if "Ticker" not in df.columns:
-                raise ValueError(f"universe.csv ditemukan tetapi kolom 'Ticker' tidak ada: {path}")
-            return df["Ticker"].astype(str).str.upper().str.strip().tolist()
-    raise FileNotFoundError(
-        "universe.csv tidak ditemukan. Letakkan universe.csv satu folder dengan app.py "
-        "(root repository Streamlit), lalu Redeploy/Reboot app."
-    )
+        path=os.path.abspath(path)
+        if path in seen:
+            continue
+        seen.add(path)
+        try:
+            if os.path.isfile(path):
+                df=pd.read_csv(path)
+                if "Ticker" in df.columns:
+                    tickers=df["Ticker"].astype(str).str.upper().str.strip()
+                    tickers=tickers[tickers.str.fullmatch(r"[A-Z0-9]+")].drop_duplicates().tolist()
+                    if tickers:
+                        return tickers
+        except Exception:
+            pass
+
+    # Embedded fallback: use the same 400-ticker universe shipped with this build.
+    fallback = ['BBCA', 'BBRI', 'DCII', 'BREN', 'BYAN', 'BMRI', 'AMMN', 'TLKM', 'MORA', 'ASII', 'DSSA', 'TPIA', 'SRAJ', 'BRPT', 'DNET', 'BBNI', 'SMMA', 'MPRO', 'EMAS', 'CUAN', 'BRMS', 'CASA', 'PANI', 'AADI', 'IMPC', 'UNTR', 'ICBP', 'CDIA', 'ANTM', 'ISAT', 'BNLI', 'MDKA', 'HMSP', 'ADRO', 'BRIS', 'BUMI', 'ADMR', 'UNVR', 'INDF', 'NCKL', 'MBMA', 'PTRO', 'PGUN', 'AMRT', 'GOTO', 'MLPT', 'CPIN', 'INCO', 'SUPR', 'INKP', 'MEGA', 'PGEO', 'EXCL', 'BNGA', 'BDMN', 'GEMS', 'BELI', 'MTEL', 'TAPG', 'VKTR', 'MEDC', 'CMRY', 'TINS', 'PTBA', 'PGAS', 'KLBF', 'ARCI', 'GGRM', 'ENRG', 'MYOR', 'TBIG', 'JARR', 'MGLV', 'NISP', 'AKRA', 'ITMG', 'EMTK', 'SILO', 'JPFA', 'LIFE', 'FAPA', 'MAPI', 'BINA', 'BTPN', 'GIAA', 'SRTG', 'MIKA', 'MDIY', 'TOWR', 'TKIM', 'SINI', 'ULTJ', 'PNBN', 'CBDK', 'MKPI', 'AVIA', 'JSMR', 'BSIM', 'MAPA', 'BBHI', 'ADES', 'NSSS', 'SOHO', 'PACK', 'SMAR', 'INTP', 'BUVA', 'SUPA', 'BBSI', 'AUTO', 'DSNG', 'BBTN', 'POWR', 'AALI', 'RAJA', 'DEWA', 'INDY', 'JRPT', 'BNBR', 'MSIN', 'BNII', 'PSAB', 'MLBI', 'BSSR', 'BFIN', 'CITA', 'FASW', 'POLU', 'PWON', 'CARE', 'STAA', 'MCOL', 'COIN', 'RLCO', 'CMNT', 'ARTO', 'STTP', 'BSDE', 'TSPC', 'RISE', 'HRUM', 'SGER', 'IBST', 'GOOD', 'ARKO', 'BKSL', 'ALII', 'SCMA', 'RATU', 'SMGR', 'AGII', 'YUPI', 'LSIP', 'ADMF', 'CTRA', 'PRAY', 'HRTA', 'ESSA', 'SIDO', 'NATO', 'SSMS', 'SMMT', 'CLEO', 'BUKA', 'WIFI', 'SMSM', 'HEAL', 'EDGE', 'ERAA', 'BIPI', 'BBKP', 'CMNP', 'BMAS', 'SIMP', 'DMAS', 'PLIN', 'DUTI', 'XSPI', 'RMKE', 'BHAT', 'MIDI', 'SGRO', 'WIKA', 'TMAS', 'SSIA', 'FILM', 'BJBR', 'INPP', 'BBMD', 'BJTM', 'TLDN', 'ABMM', 'TCPI', 'CNMA', 'BTPS', 'MDIA', 'INET', 'FORE', 'CYBR', 'EPMT', 'SHIP', 'CLAY', 'GMFI', 'SMCB', 'VICI', 'PNLF', 'SMDR', 'PKPK', 'DMND', 'MTDL', 'BULL', 'TRIM', 'ACES', 'BOGA', 'KPIG', 'YULE', 'UNIC', 'WBSA', 'TOTL', 'OMED', 'BSWD', 'TUGU', 'MAYA', 'ANJT', 'BALI', 'MBSS', 'MSJA', 'SAME', 'ELSA', 'UANG', 'BPII', 'APIC', 'SOCI', 'NICL', 'JECX', 'ELPI', 'MASB', 'TGKA', 'DRMA', 'PALM', 'GJTL', 'MPMX', 'SURE', 'HATM', 'LINK', 'KRAS', 'SMRA', 'TOBA', 'MSTI', 'MARK', 'MMIX', 'AMAR', 'NOBU', 'TFCO', 'GGRP', 'VISI', 'JTPE', 'BIRD', 'MTLA', 'PBID', 'KIJA', 'SMIL', 'ARGO', 'CASS', 'EURO', 'ALKA', 'DKFT', 'TBLA', 'LPKR', 'BWPT', 'PSGO', 'BEEF', 'MKAP', 'RDTX', 'NIRO', 'ARNA', 'BANK', 'AGRO', 'CBRE', 'LPPF', 'IATA', 'JSPT', 'IMAS', 'HEXA', 'GOLF', 'KEJU', 'CENT', 'ROTI', 'DOOH', 'WIIM', 'SAMF', 'DAAZ', 'KEEN', 'NEST', 'ABDA', 'SKRN', 'FISH', 'SDRA', 'INPC', 'BESS', 'BBYB', 'CBUT', 'CPRO', 'FPNI', 'MDLA', 'BNBA', 'PNIN', 'OMRE', 'ASGR', 'ISSP', 'AGRS', 'JAWA', 'LPCK', 'APLN', 'BGTG', 'KETR', 'ROCK', 'IRSX', 'DAYA', 'SFAN', 'BUKK', 'PNGO', 'MAPB', 'PORT', 'VICO', 'TEBE', 'PYFA', 'ASLI', 'ALDO', 'WINS', 'PRDA', 'MCOR', 'SMDM', 'BCIC', 'TOTO', 'ASRI', 'RANS', 'PBSA', 'MGRO', 'GTSI', 'CTBN', 'MAHA', 'KAEF', 'AGAR', 'HUMI', 'MINA', 'RALS', 'PTSN', 'PSKT', 'MYOH', 'BACA', 'DATA', 'BABP', 'ASSA', 'SCCO', 'MNCN', 'NICE', 'MMLP', 'MBAP', 'BISI', 'BCAP', 'DWGL', 'DNAR', 'BRAM', 'KMTR', 'BHIT', 'UCID', 'NETV', 'STAR', 'AYAM', 'IMJS', 'IFII', 'KOTA', 'IPCC', 'IFSH', 'INDR', 'PNBS', 'LPGI', 'MTMH', 'AMAG', 'FAST', 'RONY', 'DGWG', 'KINO', 'PMJS', 'BOLT', 'CARS', 'POLI', 'NICK', 'ACST', 'BMTR', 'FUTR', 'OASA', 'PSSI', 'DVLA', 'BKSW', 'BLTZ', 'BLES', 'BMHS', 'MERK']
+    if fallback:
+        return fallback
+    raise FileNotFoundError("Universe IDX tidak tersedia. Pastikan universe.csv tersedia atau gunakan build Streamlit Cloud yang menyertakan embedded universe.")
 
 @st.cache_data(ttl=900,show_spinner=False)
 def load_data(ticker,period="2y",interval="1d"):
