@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.1.5 PRO HYBRID"
+APP_VERSION = "V11.1.5 PRO HYBRID FIX5 · RISK GATE 2.0"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SNAP_DIR = os.path.join(BASE_DIR, "snapshots")
 os.makedirs(SNAP_DIR, exist_ok=True)
@@ -75,6 +75,9 @@ def analyze(df):
     d=df.copy().dropna(); c=d["Close"]
     d["MA20"]=c.rolling(20).mean(); d["MA50"]=c.rolling(50).mean(); d["MA200"]=c.rolling(200).mean()
     d["RSI"]=rsi(c); d["MACD"],d["MACDsig"],d["MACDh"]=macd(c); d["V20"]=d["Volume"].rolling(20).mean()
+    prev_close=c.shift(1)
+    tr=pd.concat([(d["High"]-d["Low"]),(d["High"]-prev_close).abs(),(d["Low"]-prev_close).abs()],axis=1).max(axis=1)
+    d["ATR14"]=tr.rolling(14).mean()
     x,p=d.iloc[-1],d.iloc[-2]; close=float(x.Close); ma20,ma50,ma200=map(float,(x.MA20,x.MA50,x.MA200))
     ret20=float(c.iloc[-1]/c.iloc[-21]-1) if len(c)>=21 else np.nan
     ret60=float(c.iloc[-1]/c.iloc[-61]-1) if len(c)>=61 else np.nan
@@ -96,7 +99,12 @@ def analyze(df):
     setup_type="BREAKOUT" if breakout else ("PULLBACK" if pullback and near_support else ("REJECTION SUPPORT" if rejection and near_support else "WAIT"))
     status="AVOID" if close<ma50 and x.MACD<x.MACDsig else ("READY" if ready else "WAIT")
     timing="SORE / CLOSE CONFIRM" if breakout else ("PAGI CONFIRM" if near_support or pullback else "WATCH")
-    return {"Close":close,"MA20":ma20,"MA50":ma50,"MA200":ma200,"Return20D":ret20*100,"Return60D":ret60*100,"RSI":float(x.RSI),"MACD":float(x.MACD),"VolumeRatio":vr,"Support":support,"Resistance":resistance,"Entry":entry,"SL":sl,"TP1":tp1,"TP2":tp2,"RR":rr,"RiskPct":risk/entry*100,"QualityScore":quality,"SetupScore":setup,"OpportunityScore":opportunity,"Status":status,"Setup":setup_type,"Timing":timing,"Candle":candle}
+    atr14=float(x.ATR14) if pd.notna(x.ATR14) and x.ATR14>0 else np.nan
+    risk_pct=risk/entry*100
+    risk_atr=(risk/atr14) if pd.notna(atr14) and atr14>0 else np.nan
+    overext=max(close/ma20-1,0)*100 if ma20>0 else np.nan
+    entry_gap=abs(entry-close)/close*100 if close>0 else np.nan
+    return {"Close":close,"MA20":ma20,"MA50":ma50,"MA200":ma200,"Return20D":ret20*100,"Return60D":ret60*100,"RSI":float(x.RSI),"MACD":float(x.MACD),"VolumeRatio":vr,"ATR14":atr14,"Support":support,"Resistance":resistance,"Entry":entry,"SL":sl,"TP1":tp1,"TP2":tp2,"RR":rr,"RiskPct":risk_pct,"StopDistancePct":risk_pct,"RiskATRMultiple":risk_atr,"OverextensionPct":overext,"EntryGapPct":entry_gap,"QualityScore":quality,"SetupScore":setup,"OpportunityScore":opportunity,"Status":status,"Setup":setup_type,"Timing":timing,"Candle":candle}
 
 # =========================================================
 # MULTI-FACTOR ENGINE — Technical + Fundamental + Flow + Sector
@@ -371,6 +379,42 @@ def read_snapshot(path):
         return {"meta":meta,**data}
     except Exception:return None
 
+def apply_risk_gate(result,min_rr,max_stop_pct=15.0,market_regime="NEUTRAL / SIDEWAYS"):
+    x=result.copy()
+    gates=[]; flags=[]
+    for _,r in x.iterrows():
+        status=str(r.get("Status","WAIT")).upper()
+        setup=str(r.get("Setup","WAIT")).upper()
+        rr=float(pd.to_numeric(r.get("RR",np.nan),errors="coerce")) if pd.notna(r.get("RR",np.nan)) else np.nan
+        mf=float(pd.to_numeric(r.get("MultiFactorScore",np.nan),errors="coerce")) if pd.notna(r.get("MultiFactorScore",np.nan)) else np.nan
+        risk_pct=float(pd.to_numeric(r.get("RiskPct",np.nan),errors="coerce")) if pd.notna(r.get("RiskPct",np.nan)) else np.nan
+        atr_mult=float(pd.to_numeric(r.get("RiskATRMultiple",np.nan),errors="coerce")) if pd.notna(r.get("RiskATRMultiple",np.nan)) else np.nan
+        issues=[]
+        if status!="READY": issues.append("TECH")
+        if setup not in {"BREAKOUT","PULLBACK","REJECTION SUPPORT"}: issues.append("SETUP WAIT")
+        if not pd.notna(rr) or rr < min_rr: issues.append("RR")
+        if not pd.notna(mf) or mf < 65: issues.append("SCORE")
+        if pd.notna(risk_pct) and risk_pct > max_stop_pct: issues.append("STOP DISTANCE")
+        if pd.notna(atr_mult) and atr_mult > 4.5: issues.append("ATR RISK")
+        if str(market_regime).upper().startswith("RISK-OFF"): issues.append("MARKET")
+        if not issues:
+            gate="PASS"
+        elif "TECH" in issues or "SETUP WAIT" in issues:
+            gate="WAIT"
+        elif "MARKET" in issues:
+            gate="MARKET REVIEW"
+        elif "STOP DISTANCE" in issues or "ATR RISK" in issues:
+            gate="RISK REVIEW"
+        else:
+            gate="FACTOR REVIEW"
+        gates.append(gate)
+        flags.append(", ".join(issues) if issues else "OK")
+    x["RiskGate"]=gates
+    x["RiskFlag"]=flags
+    x["RiskGateVersion"]="2.0"
+    x["ActionableMode"]=np.where(x["RiskGate"]=="PASS",x["AnalysisMode"],"NOT ACTIONABLE")
+    return x
+
 def build_layers(result,min_rr):
     def sortdf(df, cols):
         use=[c for c in cols if c in df.columns]
@@ -385,7 +429,7 @@ def build_layers(result,min_rr):
     action=sortdf(action_pool,['MultiFactorScore','RR','SetupScore']).head(3).copy(); action['Layer']='TOP 3 ACTIONABLE'
     return enrich,focus,opp,action
 
-def run_full_scan(period,n,min_rr,save_eod=True):
+def run_full_scan(period,n,min_rr,max_stop_pct=15.0,save_eod=True):
     # Keep enough history internally for MA200/RSI/MACD, while the selected
     # period controls the EOD review window saved in the snapshot.
     engine_period="2y"
@@ -398,12 +442,13 @@ def run_full_scan(period,n,min_rr,save_eod=True):
         prog.progress(i/len(uni),text=f"Scanning {i}/{len(uni)} • berhasil {len(rows)}")
     prog.empty(); result=pd.DataFrame(rows)
     if result.empty:return None
-    result=factor_enrich(result)
-    enrich,focus,opp,action=build_layers(result,min_rr); ih=load_data("^JKSE",engine_period,"1d")
+    result=factor_enrich(result); ih=load_data("^JKSE",engine_period,"1d")
     if len(ih)>=220:
         ic=ih.Close; ihsg=float(ic.iloc[-1]); ih20=float(ic.rolling(20).mean().iloc[-1]); ih50=float(ic.rolling(50).mean().iloc[-1]); regime="RISK-ON" if ihsg>ih20>ih50 else ("NEUTRAL / SIDEWAYS" if ihsg>=ih50 else "RISK-OFF")
     else: ihsg=ih20=ih50=np.nan; regime="DATA INSUFFICIENT"
-    meta={"timestamp":datetime.now().isoformat(timespec="seconds"),"period":period,"engine_period":engine_period,"universe":n,"analyzed":len(result),"min_rr":min_rr,"ihsg":ihsg,"ihsg_ma20":ih20,"ihsg_ma50":ih50,"regime":regime,"analysis_mode":"HYBRID"}
+    result=apply_risk_gate(result,min_rr,max_stop_pct,regime)
+    enrich,focus,opp,action=build_layers(result,min_rr)
+    meta={"timestamp":datetime.now().isoformat(timespec="seconds"),"period":period,"engine_period":engine_period,"universe":n,"analyzed":len(result),"min_rr":min_rr,"max_stop_pct":max_stop_pct,"ihsg":ihsg,"ihsg_ma20":ih20,"ihsg_ma50":ih50,"regime":regime,"analysis_mode":"HYBRID","risk_gate_version":"2.0"}
     if save_eod:
         return save_snapshot(result,enrich,focus,opp,action,meta)
     st.session_state["current_scan"]={"meta":meta,"full":result,"top150":enrich,"top50":focus,"top10":opp,"top3":action}
@@ -576,7 +621,7 @@ def show_table_open(df,cols,expand_label="📋 Buka Tabel"):
 
 def show_top3(action,meta,opp=None):
     st.markdown('<div class="section-title">🏆 Top 3 Actionable Picks — Hybrid Risk Gate</div>',unsafe_allow_html=True)
-    st.caption("Foreign Flow, Broker Flow, dan Fundamental adalah enrichment. Tanpa data tersebut, kolom score ditampilkan sebagai — dan tidak ikut bobot; Sanggul tetap berjalan dalam CORE TECHNICAL + SECTOR mode.")
+    st.caption("Risk Gate 2.0 menilai setup, R/R, jarak Stop Loss, risiko terhadap ATR, dan market regime. Foreign Flow, Broker Flow, dan Fundamental tetap enrichment opsional.")
     if action is None or action.empty:
         o=opp.copy() if isinstance(opp,pd.DataFrame) else pd.DataFrame()
         if o.empty: st.warning('Top 3 belum terbentuk karena Top 10 snapshot kosong.'); return
@@ -598,7 +643,7 @@ def show_top3(action,meta,opp=None):
             cand=actionable_ready if not actionable_ready.empty else ready
             show_table(cand.sort_values(sort,ascending=False).head(3),cols,'📋 Top 3 Technical Candidates')
         return
-    cols=['Ticker','Setup','Timing','Close','MA20','RSI','MACD','VolumeRatio','Entry','SL','TP1','TP2','RR','TechnicalScore','FundamentalScore','ForeignFlowScore','BrokerFlowScore','SectorStrengthScore','MultiFactorScore','FactorCoveragePct','AnalysisMode','RiskGate','Status']
+    cols=['Ticker','Setup','Timing','Close','MA20','RSI','MACD','VolumeRatio','Entry','SL','TP1','TP2','RR','RiskPct','RiskATRMultiple','OverextensionPct','TechnicalScore','FundamentalScore','ForeignFlowScore','BrokerFlowScore','SectorStrengthScore','MultiFactorScore','FactorCoveragePct','AnalysisMode','RiskGate','RiskFlag','Status']
     display=action.copy()
     for score_col,flag_col in [('FundamentalScore','FundamentalAvailable'),('ForeignFlowScore','ForeignAvailable'),('BrokerFlowScore','BrokerAvailable')]:
         if score_col in display.columns and flag_col in display.columns:
@@ -619,11 +664,13 @@ def show_top3(action,meta,opp=None):
         gate=str(r.get('RiskGate','LEGACY / REVIEW'))
         setup=str(r.get('Setup','—'))
         entry=r.get('Entry',np.nan); sl=r.get('SL',np.nan); tp1=r.get('TP1',np.nan); tp2=r.get('TP2',np.nan); rr=r.get('RR',np.nan)
-        st.markdown(f'<div class="card"><b>{ticker}</b> &nbsp; {status_badge(status)} &nbsp; <b>{mode_label}</b> · Coverage <b>{cov:.0f}%</b> · Risk Gate <b>{gate}</b><br>Setup: <b>{setup}</b> · Entry <b>{fmt(entry)}</b> · SL <b>{fmt(sl)}</b> · TP1 <b>{fmt(tp1)}</b> · TP2 <b>{fmt(tp2)}</b> · R/R <b>{fmt(rr,2)}</b><br><span class="small-note">Chart: <a href="{tv_link(ticker)}" target="_blank">TradingView</a></span></div>',unsafe_allow_html=True)
+        risk_pct=r.get('RiskPct',np.nan); atr_mult=r.get('RiskATRMultiple',np.nan); flag=str(r.get('RiskFlag','OK'))
+        flag_html='' if flag=='OK' else f' · <span class="small-note">⚠️ {flag}</span>'
+        st.markdown(f'<div class="card"><b>{ticker}</b> &nbsp; {status_badge(status)} &nbsp; <b>{mode_label}</b> · Coverage <b>{cov:.0f}%</b> · Risk Gate <b>{gate}</b><br>Setup: <b>{setup}</b> · Entry <b>{fmt(entry)}</b> · SL <b>{fmt(sl)}</b> · TP1 <b>{fmt(tp1)}</b> · TP2 <b>{fmt(tp2)}</b> · R/R <b>{fmt(rr,2)}</b> · Stop <b>{fmt(risk_pct,1)}%</b> · ATR Risk <b>{fmt(atr_mult,1)}x</b>{flag_html}<br><span class="small-note">Chart: <a href="{tv_link(ticker)}" target="_blank">TradingView</a></span></div>',unsafe_allow_html=True)
 
 def show_top10(opp):
     st.markdown('<div class="section-title">🟩 Top 10 Opportunity — Opportunity Now</div>',unsafe_allow_html=True)
-    show_table(opp,["Ticker","Setup","Timing","OpportunityScore","MultiFactorScore","FactorCoveragePct","AnalysisMode","RiskGate","Close","MA20","RSI","MACD","VolumeRatio","Entry","SL","TP1","TP2","RR","Status","Candle"])
+    show_table(opp,["Ticker","Setup","Timing","OpportunityScore","MultiFactorScore","FactorCoveragePct","AnalysisMode","RiskGate","RiskFlag","Close","MA20","RSI","MACD","VolumeRatio","Entry","SL","TP1","TP2","RR","RiskPct","RiskATRMultiple","Status","Candle"])
 
 def show_top50(focus):
     st.markdown('<div class="section-title">🟨 Top 50 Focus — Focus List</div>',unsafe_allow_html=True)
@@ -676,6 +723,7 @@ with st.sidebar:
     period=st.selectbox("Data historis EOD",["1mo","3mo","6mo","2y"],index=3, format_func=lambda x: {"1mo":"1 Bulan","3mo":"3 Bulan","6mo":"6 Bulan","2y":"2 Tahun"}[x])
     n=st.slider("Jumlah saham saat EOD scan",50,400,400,50)
     min_rr=st.number_input("Minimum R/R",1.5,4.0,2.0,0.5)
+    max_stop_pct=st.number_input("Max Stop Distance (%)",5.0,40.0,15.0,1.0,help="Risk Gate 2.0: kandidat dengan jarak Entry–SL di atas batas ini masuk RISK REVIEW.")
     st.divider(); st.caption("📌 EOD = screening utama · Pagi = konfirmasi · Harian = tactical · Mingguan = swing · External factors = optional enrichment")
     st.caption("Periode EOD: 1B / 3B / 6B / 2T · engine indikator minimum 2T")
     scan_now=st.button("🔄 Scan 400 Saham / Update EOD",type="primary",use_container_width=True)
@@ -691,7 +739,7 @@ current_scan=st.session_state.get("current_scan")
 
 if scan_now:
     with st.spinner(f"Menjalankan EOD scan {n} saham dan menyimpan snapshot..."):
-        path=run_full_scan(period,n,min_rr,save_eod=False)
+        path=run_full_scan(period,n,min_rr,max_stop_pct,save_eod=False)
     if path: st.success("Current Scan selesai. Snapshot EOD resmi tidak diubah."); st.rerun()
     else: st.error("Tidak ada data yang berhasil dianalisis.")
 
@@ -708,7 +756,7 @@ if mode=="🌆 EOD Full Scan":
     header("🌆 EOD Full Scan","Bangun snapshot baru setelah market close. Snapshot lama tetap tersimpan.")
     st.info("Gunakan setelah candle harian selesai. Hasil ini menjadi baseline untuk Dashboard dan Morning Confirmation.")
     if st.button("🚀 Jalankan EOD Full Scan",type="primary"):
-        path=run_full_scan(period,n,min_rr)
+        path=run_full_scan(period,n,min_rr,max_stop_pct)
         if path: st.success(f"Snapshot EOD tersimpan: {os.path.basename(path)}"); st.rerun()
         else: st.error("Tidak ada data yang berhasil dianalisis.")
     st.stop()
