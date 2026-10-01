@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.1.3.8 PRO FIX7"
+APP_VERSION = "V11.1.5 PRO HYBRID"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SNAP_DIR = os.path.join(BASE_DIR, "snapshots")
 os.makedirs(SNAP_DIR, exist_ok=True)
@@ -76,6 +76,8 @@ def analyze(df):
     d["MA20"]=c.rolling(20).mean(); d["MA50"]=c.rolling(50).mean(); d["MA200"]=c.rolling(200).mean()
     d["RSI"]=rsi(c); d["MACD"],d["MACDsig"],d["MACDh"]=macd(c); d["V20"]=d["Volume"].rolling(20).mean()
     x,p=d.iloc[-1],d.iloc[-2]; close=float(x.Close); ma20,ma50,ma200=map(float,(x.MA20,x.MA50,x.MA200))
+    ret20=float(c.iloc[-1]/c.iloc[-21]-1) if len(c)>=21 else np.nan
+    ret60=float(c.iloc[-1]/c.iloc[-61]-1) if len(c)>=61 else np.nan
     support=float(d["Low"].rolling(20).min().iloc[-2]); resistance=float(d["High"].rolling(20).max().iloc[-2])
     vr=float(x.Volume/x.V20) if x.V20 and pd.notna(x.V20) else 0; candle=candle_label(x.Open,x.High,x.Low,x.Close,p.Open,p.Close)
     trend=int(close>ma20)+int(ma20>ma50)+int(ma50>ma200)
@@ -94,7 +96,183 @@ def analyze(df):
     setup_type="BREAKOUT" if breakout else ("PULLBACK" if pullback and near_support else ("REJECTION SUPPORT" if rejection and near_support else "WAIT"))
     status="AVOID" if close<ma50 and x.MACD<x.MACDsig else ("READY" if ready else "WAIT")
     timing="SORE / CLOSE CONFIRM" if breakout else ("PAGI CONFIRM" if near_support or pullback else "WATCH")
-    return {"Close":close,"MA20":ma20,"MA50":ma50,"MA200":ma200,"RSI":float(x.RSI),"MACD":float(x.MACD),"VolumeRatio":vr,"Support":support,"Resistance":resistance,"Entry":entry,"SL":sl,"TP1":tp1,"TP2":tp2,"RR":rr,"RiskPct":risk/entry*100,"QualityScore":quality,"SetupScore":setup,"OpportunityScore":opportunity,"Status":status,"Setup":setup_type,"Timing":timing,"Candle":candle}
+    return {"Close":close,"MA20":ma20,"MA50":ma50,"MA200":ma200,"Return20D":ret20*100,"Return60D":ret60*100,"RSI":float(x.RSI),"MACD":float(x.MACD),"VolumeRatio":vr,"Support":support,"Resistance":resistance,"Entry":entry,"SL":sl,"TP1":tp1,"TP2":tp2,"RR":rr,"RiskPct":risk/entry*100,"QualityScore":quality,"SetupScore":setup,"OpportunityScore":opportunity,"Status":status,"Setup":setup_type,"Timing":timing,"Candle":candle}
+
+# =========================================================
+# MULTI-FACTOR ENGINE — Technical + Fundamental + Flow + Sector
+# =========================================================
+DATA_DIR = os.path.join(BASE_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+
+SECTOR_BENCH = {
+    "Financials":"BBCA","Energy":"ADRO","Basic Materials":"ANTM","Industrials":"ASII",
+    "Infrastructure":"TLKM","Consumer":"ICBP","Property":"BSDE","Technology":"GOTO",
+    "Healthcare":"KLBF","Transportation":"ASSA","Agriculture":"AALI","Other / Belum Dipetakan":"BBCA"
+}
+
+def _clean_ticker_series(s):
+    return s.astype(str).str.upper().str.strip().str.replace('.JK','',regex=False)
+
+def load_factor_file(name):
+    path=os.path.join(DATA_DIR,name)
+    if not os.path.isfile(path): return pd.DataFrame()
+    try:
+        x=pd.read_csv(path); x.columns=[str(c).strip() for c in x.columns]
+        if 'Ticker' not in x.columns: return pd.DataFrame()
+        x['Ticker']=_clean_ticker_series(x['Ticker'])
+        return x.drop_duplicates('Ticker',keep='last')
+    except Exception: return pd.DataFrame()
+
+def _score_series(v, positive=True):
+    x=pd.to_numeric(v,errors='coerce')
+    if x.notna().sum()<3: return pd.Series(np.nan,index=v.index)
+    ranks=x.rank(pct=True,method='average')*100
+    return ranks if positive else 100-ranks
+
+FACTOR_SCHEMAS = {
+    'fundamentals.csv': ['Ticker','ROE','ProfitMargin','RevenueGrowth','EarningsGrowth','DebtToEquity','PE','PB'],
+    'foreign_flow.csv': ['Ticker','ForeignNet1D','ForeignNet5D','ForeignNet20D'],
+    'broker_flow.csv': ['Ticker','BrokerNet1D','BrokerNet5D'],
+}
+
+COLUMN_ALIASES = {
+    'ticker':'Ticker','kode':'Ticker','code':'Ticker','stock code':'Ticker',
+    'roe':'ROE','profitmargin':'ProfitMargin','profit margin':'ProfitMargin','net margin':'ProfitMargin',
+    'revenuegrowth':'RevenueGrowth','revenue growth':'RevenueGrowth','growth revenue':'RevenueGrowth',
+    'earningsgrowth':'EarningsGrowth','earnings growth':'EarningsGrowth','profit growth':'EarningsGrowth',
+    'debtequity':'DebtToEquity','debttoequity':'DebtToEquity','debt to equity':'DebtToEquity','der':'DebtToEquity',
+    'pe':'PE','p/e':'PE','per':'PE','pb':'PB','p/b':'PB','pbv':'PB',
+    'foreignnet1d':'ForeignNet1D','foreign net 1d':'ForeignNet1D','foreign net buy 1d':'ForeignNet1D',
+    'foreignnet5d':'ForeignNet5D','foreign net 5d':'ForeignNet5D','foreign net buy 5d':'ForeignNet5D',
+    'foreignnet20d':'ForeignNet20D','foreign net 20d':'ForeignNet20D','foreign net buy 20d':'ForeignNet20D',
+    'brokernet1d':'BrokerNet1D','broker net 1d':'BrokerNet1D','broker net buy 1d':'BrokerNet1D',
+    'brokernet5d':'BrokerNet5D','broker net 5d':'BrokerNet5D','broker net buy 5d':'BrokerNet5D',
+}
+
+def _normalize_columns(df):
+    x=df.copy(); out={}
+    for c in x.columns:
+        key=str(c).strip().lower().replace('_',' ').replace('-',' ')
+        compact=key.replace(' ','')
+        out[c]=COLUMN_ALIASES.get(key,COLUMN_ALIASES.get(compact,c))
+    x=x.rename(columns=out)
+    if 'Ticker' in x.columns: x['Ticker']=_clean_ticker_series(x['Ticker'])
+    for c in x.columns:
+        if c!='Ticker': x[c]=pd.to_numeric(x[c].astype(str).str.replace(',','',regex=False).str.replace('%','',regex=False),errors='coerce')
+    return x
+
+def read_factor_upload(uploaded):
+    if uploaded is None: return pd.DataFrame()
+    try:
+        name=str(getattr(uploaded,'name','')).lower()
+        df=pd.read_excel(uploaded) if name.endswith(('.xlsx','.xls')) else pd.read_csv(uploaded)
+        return _normalize_columns(df)
+    except Exception:
+        return pd.DataFrame()
+
+def factor_file_info(name, universe=None):
+    path=os.path.join(DATA_DIR,name); df=load_factor_file(name)
+    required=FACTOR_SCHEMAS.get(name,['Ticker'])
+    if not os.path.isfile(path) or df.empty:
+        return {'Status':'BELUM TERSEDIA','Rows':0,'CoveragePct':0.0,'Freshness':'—','MissingRequired':required}
+    uni=set(_clean_ticker_series(pd.Series(universe or [])).tolist()) if universe else set()
+    coverage=(len(set(df['Ticker']) & uni)/len(uni)*100) if uni else 0.0
+    missing=[c for c in required if c not in df.columns]
+    mtime=datetime.fromtimestamp(os.path.getmtime(path)).strftime('%Y-%m-%d %H:%M')
+    status='VALID' if ('Ticker' in df.columns and not missing) else 'PARTIAL'
+    return {'Status':status,'Rows':len(df),'CoveragePct':coverage,'Freshness':mtime,'MissingRequired':missing}
+
+def factor_enrich(result):
+    """Hybrid multi-factor engine: external factors enrich, never block core scanning."""
+    x=result.copy(); x['Ticker']=_clean_ticker_series(x['Ticker'])
+    f=load_factor_file('fundamentals.csv')
+    if not f.empty:
+        keep=[c for c in FACTOR_SCHEMAS['fundamentals.csv'] if c in f.columns]
+        x=x.merge(f[keep],on='Ticker',how='left')
+    for c in FACTOR_SCHEMAS['fundamentals.csv'][1:]:
+        if c not in x.columns: x[c]=np.nan
+    fund_components=[_score_series(x[c],pos) for c,pos in [('ROE',True),('ProfitMargin',True),('RevenueGrowth',True),('EarningsGrowth',True),('DebtToEquity',False),('PE',False),('PB',False)]]
+    fund_df=pd.concat(fund_components,axis=1)
+    x['FundamentalScore']=fund_df.mean(axis=1,skipna=True); x['FundamentalAvailable']=fund_df.notna().any(axis=1)
+
+    ff=load_factor_file('foreign_flow.csv')
+    if not ff.empty:
+        keep=[c for c in FACTOR_SCHEMAS['foreign_flow.csv'] if c in ff.columns]
+        x=x.merge(ff[keep],on='Ticker',how='left',suffixes=('','_ff'))
+    for c in FACTOR_SCHEMAS['foreign_flow.csv'][1:]:
+        if c not in x.columns: x[c]=np.nan
+    ff_scores=pd.concat([_score_series(x[c],True) for c in FACTOR_SCHEMAS['foreign_flow.csv'][1:]],axis=1)
+    x['ForeignFlowScore']=ff_scores.mean(axis=1,skipna=True); x['ForeignAvailable']=ff_scores.notna().any(axis=1)
+
+    bf=load_factor_file('broker_flow.csv')
+    if not bf.empty:
+        keep=[c for c in FACTOR_SCHEMAS['broker_flow.csv'] if c in bf.columns]
+        x=x.merge(bf[keep],on='Ticker',how='left',suffixes=('','_bf'))
+    for c in FACTOR_SCHEMAS['broker_flow.csv'][1:]:
+        if c not in x.columns: x[c]=np.nan
+    bf_scores=pd.concat([_score_series(x[c],True) for c in FACTOR_SCHEMAS['broker_flow.csv'][1:]],axis=1)
+    x['BrokerFlowScore']=bf_scores.mean(axis=1,skipna=True); x['BrokerAvailable']=bf_scores.notna().any(axis=1)
+
+    x['Sector']=x['Ticker'].map(sector_of)
+    sector_ret=x.groupby('Sector')['Return20D'].transform('mean') if 'Return20D' in x.columns else pd.Series(np.nan,index=x.index)
+    x['SectorStrengthScore']=_score_series(sector_ret,True).fillna(50.0)
+    x['SectorAvailable']=x['Sector'].ne('Other / Belum Dipetakan')
+    # Normalize the three technical sub-scores to their theoretical maxima before weighting.
+    # The previous implementation added raw scores and clipped at 100, causing many
+    # legitimate candidates to collapse to exactly 100.
+    QUALITY_MAX=33.0
+    SETUP_MAX=49.0
+    OPPORTUNITY_MAX=73.0
+    qn=(x['QualityScore']/QUALITY_MAX).clip(0,1)
+    sn=(x['SetupScore']/SETUP_MAX).clip(0,1)
+    on=(x['OpportunityScore']/OPPORTUNITY_MAX).clip(0,1)
+    x['TechnicalScore']=np.clip((0.40*qn+0.35*sn+0.25*on)*100,0,100)
+
+    # Only factors with actual data contribute. Available weights are normalized.
+    weights=[('TechnicalScore',.55,True),('FundamentalScore',.20,'FundamentalAvailable'),('ForeignFlowScore',.10,'ForeignAvailable'),('BrokerFlowScore',.05,'BrokerAvailable'),('SectorStrengthScore',.10,'SectorAvailable')]
+    scores=[]; coverages=[]; modes=[]
+    for _,r in x.iterrows():
+        available=[]
+        for col,w,flag in weights:
+            ok=True if flag is True else bool(r.get(flag,False))
+            val=pd.to_numeric(r.get(col,np.nan),errors='coerce')
+            if ok and pd.notna(val): available.append((float(val),w))
+        total=sum(w for _,w in available)
+        score=sum(v*w for v,w in available)/total if total else float(r.get('TechnicalScore',50))
+        has_f=bool(r.get('FundamentalAvailable',False)); has_ff=bool(r.get('ForeignAvailable',False)); has_b=bool(r.get('BrokerAvailable',False))
+        mode='FULL MULTI-FACTOR' if has_f and has_ff and has_b else ('PARTIAL ENRICHED' if (has_f or has_ff or has_b) else 'CORE TECHNICAL + SECTOR')
+        scores.append(score); coverages.append(total*100); modes.append(mode)
+    x['MultiFactorScore']=np.clip(scores,0,100)
+    x['FactorCoveragePct']=coverages
+    x['AnalysisMode']=modes
+    # Hybrid Risk Gate: external factors are enrichment, not mandatory blockers.
+    x['RiskGate']=np.where((x['Status']=='READY')&(x['MultiFactorScore']>=65),'PASS',np.where(x['Status']=='READY','TECH READY / FACTOR REVIEW','WAIT'))
+    x['ActionableMode']=np.where(x['RiskGate']=='PASS',x['AnalysisMode'],'NOT ACTIONABLE')
+    return x
+
+def save_uploaded_factor(uploaded,name):
+    df=read_factor_upload(uploaded)
+    required=FACTOR_SCHEMAS.get(name,['Ticker'])
+    if df.empty or 'Ticker' not in df.columns: return False,'File tidak dapat dibaca atau kolom Ticker tidak ditemukan.'
+    missing=[c for c in required if c not in df.columns]
+    if missing: return False,'Kolom wajib belum lengkap: '+', '.join(missing)
+    df=df.dropna(subset=['Ticker']).drop_duplicates('Ticker',keep='last')
+    df.to_csv(os.path.join(DATA_DIR,name),index=False)
+    return True,f'{len(df)} ticker tersimpan.'
+
+def template_bytes(name):
+    return pd.DataFrame(columns=FACTOR_SCHEMAS[name]).to_csv(index=False).encode('utf-8')
+
+def data_quality_table(universe):
+    rows=[]
+    for label,name in [('Fundamentals','fundamentals.csv'),('Foreign Flow','foreign_flow.csv'),('Broker Flow','broker_flow.csv')]:
+        info=factor_file_info(name,universe)
+        miss=', '.join(info['MissingRequired']) if info['MissingRequired'] else '—'
+        rows.append({'Factor':label,'Status':info['Status'],'Rows':info['Rows'],'Coverage %':round(info['CoveragePct'],1),'Last Updated':info['Freshness'],'Missing Columns':miss})
+    rows.append({'Factor':'Technical','Status':'LIVE / CALCULATED','Rows':len(universe),'Coverage %':100.0,'Last Updated':'Saat scan','Missing Columns':'—'})
+    mapped=sum(sector_of(t)!='Other / Belum Dipetakan' for t in universe)
+    rows.append({'Factor':'Sector Strength','Status':'CALCULATED','Rows':mapped,'Coverage %':round(mapped/len(universe)*100,1) if universe else 0,'Last Updated':'Saat scan','Missing Columns':'—'})
+    return pd.DataFrame(rows)
 
 # =========================================================
 # DATA / PERSISTENCE
@@ -186,13 +364,16 @@ def read_snapshot(path):
     except Exception:return None
 
 def build_layers(result,min_rr):
-    enrich=result.sort_values(["QualityScore","SetupScore","RR"],ascending=[False,False,False]).head(150).copy(); enrich["Layer"]="TOP 150 ENRICH"
-    focus=result[result.RR>=min_rr].sort_values(["SetupScore","QualityScore","OpportunityScore"],ascending=[False,False,False]).head(50).copy(); focus["Layer"]="TOP 50 FOCUS"
-    opp=result[result.RR>=min_rr].sort_values(["OpportunityScore","SetupScore","QualityScore"],ascending=[False,False,False]).head(10).copy(); opp["Layer"]="TOP 10 OPPORTUNITY"
-    action=opp[opp.Status=="READY"].sort_values(["OpportunityScore","RR","SetupScore"],ascending=[False,False,False]).head(3).copy(); action["Layer"]="TOP 3 ACTIONABLE"
+    def sortdf(df, cols):
+        use=[c for c in cols if c in df.columns]
+        return df.sort_values(use,ascending=[False]*len(use)) if use else df
+    enrich=sortdf(result,['MultiFactorScore','QualityScore','SetupScore','RR']).head(150).copy(); enrich['Layer']='TOP 150 ENRICH'
+    focus=sortdf(result[result.RR>=min_rr],['MultiFactorScore','SetupScore','QualityScore','RR']).head(50).copy(); focus['Layer']='TOP 50 FOCUS'
+    opp=sortdf(result[result.RR>=min_rr],['MultiFactorScore','OpportunityScore','SetupScore','RR']).head(10).copy(); opp['Layer']='TOP 10 OPPORTUNITY'
+    action=sortdf(opp[(opp.Status=='READY')&(opp.RiskGate=='PASS')],['MultiFactorScore','RR','SetupScore']).head(3).copy(); action['Layer']='TOP 3 ACTIONABLE'
     return enrich,focus,opp,action
 
-def run_full_scan(period,n,min_rr):
+def run_full_scan(period,n,min_rr,save_eod=True):
     # Keep enough history internally for MA200/RSI/MACD, while the selected
     # period controls the EOD review window saved in the snapshot.
     engine_period="2y"
@@ -205,12 +386,16 @@ def run_full_scan(period,n,min_rr):
         prog.progress(i/len(uni),text=f"Scanning {i}/{len(uni)} • berhasil {len(rows)}")
     prog.empty(); result=pd.DataFrame(rows)
     if result.empty:return None
+    result=factor_enrich(result)
     enrich,focus,opp,action=build_layers(result,min_rr); ih=load_data("^JKSE",engine_period,"1d")
     if len(ih)>=220:
         ic=ih.Close; ihsg=float(ic.iloc[-1]); ih20=float(ic.rolling(20).mean().iloc[-1]); ih50=float(ic.rolling(50).mean().iloc[-1]); regime="RISK-ON" if ihsg>ih20>ih50 else ("NEUTRAL / SIDEWAYS" if ihsg>=ih50 else "RISK-OFF")
     else: ihsg=ih20=ih50=np.nan; regime="DATA INSUFFICIENT"
-    meta={"timestamp":datetime.now().isoformat(timespec="seconds"),"period":period,"engine_period":engine_period,"universe":n,"analyzed":len(result),"min_rr":min_rr,"ihsg":ihsg,"ihsg_ma20":ih20,"ihsg_ma50":ih50,"regime":regime}
-    return save_snapshot(result,enrich,focus,opp,action,meta)
+    meta={"timestamp":datetime.now().isoformat(timespec="seconds"),"period":period,"engine_period":engine_period,"universe":n,"analyzed":len(result),"min_rr":min_rr,"ihsg":ihsg,"ihsg_ma20":ih20,"ihsg_ma50":ih50,"regime":regime,"analysis_mode":"HYBRID"}
+    if save_eod:
+        return save_snapshot(result,enrich,focus,opp,action,meta)
+    st.session_state["current_scan"]={"meta":meta,"full":result,"top150":enrich,"top50":focus,"top10":opp,"top3":action}
+    return "CURRENT_SCAN"
 
 def market_metrics(period):
     """Return clean market metrics; fall back to the latest EOD snapshot when live Yahoo data is unavailable."""
@@ -377,26 +562,44 @@ def show_table_open(df,cols,expand_label="📋 Buka Tabel"):
     with st.expander(expand_label,expanded=True):
         st.dataframe(df[use],use_container_width=True,hide_index=True)
 
-def show_top3(action,meta):
-    st.markdown('<div class="section-title">🏆 Top 3 Actionable Picks — Risk-Gated</div>',unsafe_allow_html=True)
-    st.caption("Hanya kandidat READY dari Top 10. Tetap ikuti Entry, Stop Loss, dan market gate.")
-    if action is None or action.empty: st.warning("Belum ada setup READY pada snapshot ini."); return
-    cols=["Ticker","Setup","Timing","Close","MA20","RSI","MACD","VolumeRatio","Support","Resistance","Entry","SL","TP1","TP2","RR","RiskPct","OpportunityScore","Status"]
-    show_table(action,cols)
+def show_top3(action,meta,opp=None):
+    st.markdown('<div class="section-title">🏆 Top 3 Actionable Picks — Hybrid Risk Gate</div>',unsafe_allow_html=True)
+    st.caption("Foreign Flow, Broker Flow, dan Fundamental adalah enrichment. Tanpa data tersebut, kolom score ditampilkan sebagai — dan tidak ikut bobot; Sanggul tetap berjalan dalam CORE TECHNICAL + SECTOR mode.")
+    if action is None or action.empty:
+        o=opp.copy() if isinstance(opp,pd.DataFrame) else pd.DataFrame()
+        if o.empty: st.warning('Top 3 belum terbentuk karena Top 10 snapshot kosong.'); return
+        ready=o[o.Status.astype(str).str.upper()=='READY'].copy() if 'Status' in o.columns else pd.DataFrame()
+        passed=ready[ready.RiskGate.astype(str).str.upper()=='PASS'].copy() if 'RiskGate' in ready.columns else pd.DataFrame()
+        c1,c2,c3=st.columns(3); c1.metric('Top 10',len(o)); c2.metric('READY',len(ready)); c3.metric('Risk Gate PASS',len(passed))
+        if ready.empty:
+            st.warning('Belum ada kandidat READY di Top 10. Tunggu setup teknikal/market gate yang lebih baik.')
+        else:
+            st.warning('Ada kandidat READY tetapi belum PASS karena Multi-Factor Score masih di bawah ambang 65.')
+            cols=['Ticker','Setup','Timing','Close','Entry','SL','TP1','TP2','RR','TechnicalScore','MultiFactorScore','FactorCoveragePct','AnalysisMode','RiskGate','Status']
+            sort=[c for c in ['MultiFactorScore','TechnicalScore','RR'] if c in ready.columns]
+            show_table(ready.sort_values(sort,ascending=False).head(3),cols,'📋 Top 3 Technical Candidates')
+        return
+    cols=['Ticker','Setup','Timing','Close','MA20','RSI','MACD','VolumeRatio','Entry','SL','TP1','TP2','RR','TechnicalScore','FundamentalScore','ForeignFlowScore','BrokerFlowScore','SectorStrengthScore','MultiFactorScore','FactorCoveragePct','AnalysisMode','RiskGate','Status']
+    display=action.copy()
+    for score_col,flag_col in [('FundamentalScore','FundamentalAvailable'),('ForeignFlowScore','ForeignAvailable'),('BrokerFlowScore','BrokerAvailable')]:
+        if score_col in display.columns and flag_col in display.columns:
+            display.loc[~display[flag_col].fillna(False).astype(bool),score_col]=np.nan
+    show_table(display,cols)
     for _,r in action.iterrows():
-        st.markdown(f'<div class="card"><b>{r.Ticker}</b> &nbsp; {status_badge(r.Status)} &nbsp; Setup: <b>{r.Setup}</b> &nbsp; Entry <b>{fmt(r.Entry)}</b> · SL <b>{fmt(r.SL)}</b> · TP1 <b>{fmt(r.TP1)}</b> · TP2 <b>{fmt(r.TP2)}</b> · R/R <b>{fmt(r.RR,2)}</b><br><span class="small-note">Chart: <a href="{tv_link(r.Ticker)}" target="_blank">TradingView</a></span></div>',unsafe_allow_html=True)
+        mode_label=str(r.get('AnalysisMode','—')); cov=float(r.get('FactorCoveragePct',0) or 0)
+        st.markdown(f'<div class="card"><b>{r.Ticker}</b> &nbsp; {status_badge(r.Status)} &nbsp; <b>{mode_label}</b> · Coverage <b>{cov:.0f}%</b> · Risk Gate <b>{r.RiskGate}</b><br>Setup: <b>{r.Setup}</b> · Entry <b>{fmt(r.Entry)}</b> · SL <b>{fmt(r.SL)}</b> · TP1 <b>{fmt(r.TP1)}</b> · TP2 <b>{fmt(r.TP2)}</b> · R/R <b>{fmt(r.RR,2)}</b><br><span class="small-note">Chart: <a href="{tv_link(r.Ticker)}" target="_blank">TradingView</a></span></div>',unsafe_allow_html=True)
 
 def show_top10(opp):
     st.markdown('<div class="section-title">🟩 Top 10 Opportunity — Opportunity Now</div>',unsafe_allow_html=True)
-    show_table(opp,["Ticker","Setup","Timing","OpportunityScore","Close","MA20","RSI","MACD","VolumeRatio","Support","Resistance","Entry","SL","TP1","TP2","RR","Status","Candle"])
+    show_table(opp,["Ticker","Setup","Timing","OpportunityScore","MultiFactorScore","FactorCoveragePct","AnalysisMode","RiskGate","Close","MA20","RSI","MACD","VolumeRatio","Entry","SL","TP1","TP2","RR","Status","Candle"])
 
 def show_top50(focus):
     st.markdown('<div class="section-title">🟨 Top 50 Focus — Focus List</div>',unsafe_allow_html=True)
-    show_table(focus,["Ticker","Setup","SetupScore","QualityScore","Close","MA20","RSI","MACD","VolumeRatio","Support","Resistance","Entry","SL","TP1","TP2","RR","Status","Timing"])
+    show_table(focus,["Ticker","Setup","SetupScore","QualityScore","MultiFactorScore","FactorCoveragePct","RiskGate","Close","MA20","RSI","MACD","VolumeRatio","Entry","SL","TP1","TP2","RR","Status","Timing"])
 
 def show_top150(enrich):
     st.markdown('<div class="section-title">🟦 Top 150 Enrich — Quality Pool</div>',unsafe_allow_html=True)
-    show_table(enrich,["Ticker","QualityScore","SetupScore","OpportunityScore","Close","RSI","MACD","MA20","MA50","MA200","Support","Resistance","Status","Setup"])
+    show_table(enrich,["Ticker","QualityScore","SetupScore","OpportunityScore","MultiFactorScore","FactorCoveragePct","RiskGate","Close","RSI","MACD","MA20","MA50","MA200","Support","Resistance","Status","Setup"])
 
 def show_rules():
     with st.expander("📋 Execution Rule",expanded=False):
@@ -431,17 +634,17 @@ def weekly_candidates(focus):
 # =========================================================
 # HEADER + SIDEBAR
 # =========================================================
-header("Sanggul Stock Scanner",f"{APP_VERSION} · 400 IDX · EOD Snapshot Persistent · Morning Confirmation · TradingView")
+header("Sanggul Stock Scanner",f"{APP_VERSION} · 400 IDX · Hybrid Factors · EOD Snapshot Persistent · Morning Confirmation · TradingView")
 
 with st.sidebar:
     st.markdown("### 🧭 MENU UTAMA")
     mode=st.radio("Navigasi",[
-        "📊 Dashboard","⚡ Trading Harian","📅 Swing Trading Mingguan","🔎 Saham Individu","🏭 Sector Opportunity","🏆 Top 3 Actionable","🟩 Top 10 Opportunity","🟨 Top 50 Focus","🟦 Top 150 Enrich","🌅 Morning Confirmation","🌆 EOD Full Scan","📜 EOD Scan History"],index=0)
+        "📊 Dashboard","⚡ Trading Harian","📅 Swing Trading Mingguan","🔎 Saham Individu","🏭 Sector Opportunity","🏆 Top 3 Actionable","🟩 Top 10 Opportunity","🟨 Top 50 Focus","🟦 Top 150 Enrich","🌅 Morning Confirmation","🌆 EOD Full Scan","📜 EOD Scan History","🧠 Multi-Factor Data Hub"],index=0)
     st.divider(); st.markdown("### ⚙️ PENGATURAN")
     period=st.selectbox("Data historis EOD",["1mo","3mo","6mo","2y"],index=3, format_func=lambda x: {"1mo":"1 Bulan","3mo":"3 Bulan","6mo":"6 Bulan","2y":"2 Tahun"}[x])
     n=st.slider("Jumlah saham saat EOD scan",50,400,400,50)
     min_rr=st.number_input("Minimum R/R",1.5,4.0,2.0,0.5)
-    st.divider(); st.caption("📌 EOD = screening utama · Pagi = konfirmasi · Harian = tactical · Mingguan = swing")
+    st.divider(); st.caption("📌 EOD = screening utama · Pagi = konfirmasi · Harian = tactical · Mingguan = swing · External factors = optional enrichment")
     st.caption("Periode EOD: 1B / 3B / 6B / 2T · engine indikator minimum 2T")
     scan_now=st.button("🔄 Scan 400 Saham / Update EOD",type="primary",use_container_width=True)
 
@@ -450,13 +653,21 @@ ihsg,ih20,ih50,regime=market_metrics(period)
 metric_strip([("IHSG",fmt(ihsg)),("MA20",fmt(ih20)),("MA50",fmt(ih50)),("Market Gate",regime)])
 
 snap=read_snapshot(latest_snapshot())
+current_scan=st.session_state.get("current_scan")
 
-# Preserve manual scan from V11.1.3.7
+# Scan 400 is a current/dynamic view and does not overwrite the official EOD snapshot.
+
 if scan_now:
     with st.spinner(f"Menjalankan EOD scan {n} saham dan menyimpan snapshot..."):
-        path=run_full_scan(period,n,min_rr)
-    if path: st.success(f"Snapshot EOD tersimpan: {os.path.basename(path)}"); st.rerun()
+        path=run_full_scan(period,n,min_rr,save_eod=False)
+    if path: st.success("Current Scan selesai. Snapshot EOD resmi tidak diubah."); st.rerun()
     else: st.error("Tidak ada data yang berhasil dianalisis.")
+
+# Current Scan takes precedence for analytical menus during this session;
+# official EOD history remains read from the persisted snapshot.
+active=snap
+if current_scan is not None:
+    active=current_scan
 
 # =========================================================
 # SPECIAL MENUS
@@ -489,10 +700,48 @@ if mode=="📜 EOD Scan History":
     show_table(pd.DataFrame(rows),["Snapshot","Timestamp","Regime","Universe","Analyzed","Top 3"])
     st.stop()
 
-if not snap:
-    st.warning("Belum ada EOD Snapshot."); st.info("Gunakan **🔄 Scan 400 Saham / Update EOD** setelah market close."); st.stop()
+if mode=="🧠 Multi-Factor Data Hub":
+    header("🧠 Multi-Factor Data Hub","Hybrid engine: Technical + Sector tetap berjalan; Fundamental/Foreign/Broker memperkaya jika tersedia.")
+    universe=load_universe()
+    st.markdown("#### 📊 Data Quality")
+    q=data_quality_table(universe)
+    st.dataframe(q,use_container_width=True,hide_index=True)
+    st.caption("Coverage = persentase ticker pada universe 400 yang memiliki data faktor. Data external tidak pernah dibuat/fiktif.")
+    st.markdown("**Mode:** 🟢 FULL MULTI-FACTOR · 🟡 PARTIAL ENRICHED · 🔵 CORE TECHNICAL + SECTOR")
+    st.markdown("#### 📥 Import data EOD / external factors")
+    st.caption("Upload CSV atau Excel. Header yang umum seperti Ticker/Kode, DER, PER, PBV, Foreign Net 1D/5D/20D akan dinormalisasi otomatis.")
+    c1,c2,c3=st.columns(3)
+    with c1:
+        st.download_button("⬇️ Template Fundamentals",template_bytes('fundamentals.csv'),'sanggul_fundamentals_template.csv','text/csv',use_container_width=True)
+        uf=st.file_uploader("Fundamentals CSV/XLSX",type=['csv','xlsx','xls'],key='fund_upload')
+        if uf is not None and st.button("Simpan Fundamentals",key='save_fund'):
+            ok,msg=save_uploaded_factor(uf,'fundamentals.csv'); st.success(msg) if ok else st.error(msg)
+    with c2:
+        st.download_button("⬇️ Template Foreign Flow",template_bytes('foreign_flow.csv'),'sanggul_foreign_flow_template.csv','text/csv',use_container_width=True)
+        uff=st.file_uploader("Foreign Flow CSV/XLSX",type=['csv','xlsx','xls'],key='foreign_upload')
+        if uff is not None and st.button("Simpan Foreign Flow",key='save_foreign'):
+            ok,msg=save_uploaded_factor(uff,'foreign_flow.csv'); st.success(msg) if ok else st.error(msg)
+    with c3:
+        st.download_button("⬇️ Template Broker Flow",template_bytes('broker_flow.csv'),'sanggul_broker_flow_template.csv','text/csv',use_container_width=True)
+        ubf=st.file_uploader("Broker Flow CSV/XLSX",type=['csv','xlsx','xls'],key='broker_upload')
+        if ubf is not None and st.button("Simpan Broker Flow",key='save_broker'):
+            ok,msg=save_uploaded_factor(ubf,'broker_flow.csv'); st.success(msg) if ok else st.error(msg)
+    st.markdown("#### 🔎 Data yang tersimpan")
+    for label,file in [('Fundamentals','fundamentals.csv'),('Foreign Flow','foreign_flow.csv'),('Broker Flow','broker_flow.csv')]:
+        info=factor_file_info(file,universe)
+        st.write(f"**{label}:** {info['Status']} · {info['Rows']} rows · coverage {info['CoveragePct']:.1f}% · update {info['Freshness']}")
+        if info['MissingRequired']: st.caption('Kolom kurang: '+', '.join(info['MissingRequired']))
+    st.markdown("#### 🌐 Sumber resmi")
+    st.caption("BEI menyediakan statistik perdagangan dan data pasar EOD; untuk data berlisensi gunakan akses resmi yang Anda miliki. Data foreign investor di statistik BEI dikategorikan berdasarkan transaction domicile, bukan identitas investor aktual.")
+    st.link_button("🌐 IDX Data Pasar", "https://www.idx.co.id/id/data-pasar/", use_container_width=False)
+    st.link_button("🌐 IDX Statistik", "https://www.idx.co.id/id/data-pasar/laporan-statistik/statistik", use_container_width=False)
+    st.info("Setelah data tersimpan, jalankan **🔄 Scan 400 Saham / Update EOD** agar Multi-Factor Score dan Risk Gate dihitung ulang. Tanpa external data pun scanner tetap dapat menghasilkan kandidat melalui CORE TECHNICAL + SECTOR. Scan 400 tidak menghapus snapshot EOD lama sampai Anda menjalankan EOD Full Scan.")
+    st.stop()
 
-m=snap["meta"]; action,opp,focus,enrich=snap["top3"],snap["top10"],snap["top50"],snap["top150"]
+if not active:
+    st.warning("Belum ada data scan. Gunakan **🔄 Scan 400 Saham / Update EOD** atau **🌆 EOD Full Scan**."); st.stop()
+
+m=active["meta"]; action,opp,focus,enrich=active["top3"],active["top10"],active["top50"],active["top150"]
 
 # =========================================================
 # DASHBOARD / OLD MENUS
@@ -500,12 +749,13 @@ m=snap["meta"]; action,opp,focus,enrich=snap["top3"],snap["top10"],snap["top50"]
 if mode=="📊 Dashboard":
     header("📊 Dashboard","Last EOD Snapshot · Risk-Gated · persistent")
     metric_strip([("Snapshot",m.get("timestamp","—").replace("T"," ")), ("EOD Window",{"1mo":"1 Bulan","3mo":"3 Bulan","6mo":"6 Bulan","2y":"2 Tahun"}.get(m.get("period"),m.get("period","—"))), ("Regime",m.get("regime","—")), ("Pipeline","400 → 150 → 50 → 10 → 3")])
+    st.info("HYBRID: Technical 55% + Fundamental 20% + Foreign 10% + Broker 5% + Sector 10%. Bobot faktor yang tersedia otomatis dinormalisasi. Foreign/Broker/Fundamental adalah enrichment, bukan syarat wajib Top 3.")
     show_top3(action,m); show_top150(enrich); show_top50(focus); show_top10(opp); show_rules()
-    st.download_button("📥 Export Full Scan CSV",snap["full"].to_csv(index=False).encode("utf-8"),"sanggul_v11_1_3_8_full_scan.csv","text/csv")
+    st.download_button("📥 Export Full Scan CSV",active["full"].to_csv(index=False).encode("utf-8"),"sanggul_v11_1_5_full_scan.csv","text/csv")
 
 elif mode=="⚡ Trading Harian":
     header("⚡ Trading Harian","Tactical setup untuk horizon 1–5 hari · menggunakan hasil EOD sebagai starting universe.")
-    d=daily_table(snap["full"])
+    d=daily_table(active["full"])
     if d.empty: st.info("Belum ada kandidat trading harian yang memenuhi filter.")
     else:
         metric_strip([("Kandidat",str(len(d))), ("Ready",str((d.Status=="READY").sum())), ("Breakout",str((d.Setup=="BREAKOUT").sum())), ("Pullback",str((d.Setup=="PULLBACK").sum()))])
@@ -547,6 +797,7 @@ elif mode=="🔎 Saham Individu":
         st.markdown('<div class="card"><b>Periode data EOD yang dipilih:</b> '+{"1mo":"1 Bulan","3mo":"3 Bulan","6mo":"6 Bulan","2y":"2 Tahun"}.get(period,period)+'<br><span class="small-note">Mesin indikator tetap mengambil minimal 2 tahun secara internal agar MA200, RSI dan MACD tetap valid; periode di atas menentukan jendela historis EOD yang dipakai sebagai acuan review.</span></div>',unsafe_allow_html=True)
     with right:
         st.markdown("#### Ringkasan Teknis")
+        
         st.markdown(f'<div class="card">Trend MA20/50/200: <b>{"Bullish" if a["MA20"]>a["MA50"] else "Mixed"}</b><br>MA20: <b>{fmt(a["MA20"])}</b><br>MA50: <b>{fmt(a["MA50"])}</b><br>MA200: <b>{fmt(a["MA200"])}</b><br>Price vs MA20: <b>{fmt((a["Close"]-a["MA20"])/a["MA20"]*100,1)}%</b><br>RSI: <b>{fmt(a["RSI"],1)}</b><br>MACD: <b>{fmt(a["MACD"],2)}</b><br>Volume ratio: <b>{fmt(a["VolumeRatio"],2)}x</b><br>Support: <b>{fmt(a["Support"])}</b><br>Resistance: <b>{fmt(a["Resistance"])}</b><br>Candle: <b>{a["Candle"]}</b></div>',unsafe_allow_html=True)
         st.markdown("#### Trade Plan")
         st.markdown(f'<div class="card">Setup <b>{a["Setup"]}</b><br>Entry <b>{fmt(a["Entry"])}</b><br>Stop Loss <b>{fmt(a["SL"])}</b><br>TP1 <b>{fmt(a["TP1"])}</b><br>TP2 <b>{fmt(a["TP2"])}</b><br>R/R <b>{fmt(a["RR"],2)}</b><br>Status {status_badge(a["Status"])}</div>',unsafe_allow_html=True)
@@ -554,7 +805,7 @@ elif mode=="🔎 Saham Individu":
 
 elif mode=="🏭 Sector Opportunity":
     header("🏭 Sector Opportunity","Klik nama sektor untuk melihat daftar saham di dalam sektor tersebut. Ini adalah alat pemetaan peluang, bukan sinyal BUY otomatis.")
-    full=snap["full"].copy()
+    full=active["full"].copy()
     sec=sector_opportunity(full)
     if sec.empty:
         st.info("Belum ada data sektor pada snapshot ini.")
@@ -602,7 +853,7 @@ elif mode=="🏭 Sector Opportunity":
         st.caption("Sector Opportunity Score adalah agregasi kualitas/setup/opportunity/RR dari saham yang masuk snapshot. Klik sektor di atas untuk membuka daftar sahamnya; gunakan menu Saham Individu untuk Entry/SL/TP dan konfirmasi market gate.")
 
 elif mode=="🏆 Top 3 Actionable":
-    header("🏆 Top 3 Actionable","Risk-Gated execution candidates dari snapshot EOD."); show_top3(action,m); show_rules()
+    header("🏆 Top 3 Actionable","Risk-Gated execution candidates dari snapshot EOD."); show_top3(action,m,opp); show_rules()
 elif mode=="🟩 Top 10 Opportunity":
     header("🟩 Top 10 Opportunity","Opportunity pool — bukan otomatis BUY."); show_top10(opp); show_rules()
 elif mode=="🟨 Top 50 Focus":
