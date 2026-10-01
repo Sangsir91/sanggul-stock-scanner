@@ -6,9 +6,9 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.1.5 PRO HYBRID FIX7 · RISK GATE INTEGRITY 2.1"
-ENGINE_VERSION = "V11.1.5-FIX8"
-RISK_GATE_VERSION = "2.2"
+APP_VERSION = "V11.1.5 PRO HYBRID FIX11 · PRO DECISION DASHBOARD"
+ENGINE_VERSION = "V11.1.5-FIX11"
+RISK_GATE_VERSION = "2.3"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SNAP_DIR = os.path.join(BASE_DIR, "snapshots")
 CURRENT_SCAN_DIR = os.path.join(BASE_DIR, "current_scan")
@@ -22,28 +22,74 @@ st.set_page_config(page_title=f"Sanggul Stock Scanner {APP_VERSION}", page_icon=
 # =========================================================
 st.markdown("""
 <style>
-:root { --navy:#08264d; --blue:#0b63ce; --blue2:#eaf3ff; --line:#d9e2ef; --ink:#172235; --muted:#66758a; --green:#11844b; --red:#c53636; --orange:#e58a00; }
-.block-container { padding-top: 1rem; padding-bottom: 2rem; max-width: 1500px; }
-section[data-testid="stSidebar"] { border-right:1px solid #dfe7f2; }
-section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
-.hero { background:linear-gradient(100deg,#08264d 0%,#0b63ce 72%,#176fd2 100%); color:white; padding:18px 22px; border-radius:14px; margin-bottom:14px; box-shadow:0 8px 24px rgba(8,38,77,.14); }
-.hero h1 { margin:0; font-size:28px; letter-spacing:-.4px; }
-.hero p { margin:4px 0 0; opacity:.88; font-size:13px; }
-.section-title { font-size:18px; font-weight:700; color:var(--ink); margin:10px 0 8px; }
-.card { background:white; border:1px solid var(--line); border-radius:12px; padding:13px 15px; box-shadow:0 2px 10px rgba(20,40,80,.045); }
-.metric-card { background:white; border:1px solid var(--line); border-radius:11px; padding:12px 14px; min-height:80px; }
-.metric-label { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.4px; }
-.metric-value { color:var(--ink); font-size:21px; font-weight:750; margin-top:4px; }
-.badge { display:inline-block; padding:4px 9px; border-radius:999px; font-size:11px; font-weight:700; }
-.badge-blue { background:#eaf3ff; color:#0b63ce; }
-.badge-green { background:#e8f7ef; color:#11844b; }
-.badge-yellow { background:#fff5dc; color:#9a6500; }
-.badge-red { background:#fdeaea; color:#b42d2d; }
-.small-note { color:var(--muted); font-size:12px; }
-.tv-wrap { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#fff; }
-div[data-testid="stDataFrame"] { border:1px solid var(--line); border-radius:10px; }
-button[kind="primary"] { border-radius:8px; }
-hr { border-color:#e6ebf2; }
+:root { --bg:#061425; --panel:#0a1d31; --panel2:#0d2740; --line:#21405e; --ink:#eef6ff; --muted:#9bb0c6; --blue:#1685ff; --blue2:#0b63ce; --green:#16d58a; --red:#ff5b6e; --orange:#ffb21a; --cyan:#31c7ff; }
+html,body,[data-testid="stAppViewContainer"] { background:linear-gradient(180deg,#04101f 0%,#071a2d 55%,#061425 100%); color:var(--ink); }
+[data-testid="stHeader"] { background:rgba(4,16,31,.86); }
+.block-container { padding-top:.8rem; padding-bottom:2rem; max-width:1600px; }
+section[data-testid="stSidebar"] { background:#041321; border-right:1px solid #17344f; }
+section[data-testid="stSidebar"] .block-container { padding-top:1rem; }
+section[data-testid="stSidebar"] * { color:#dcecff; }
+.hero { background:linear-gradient(115deg,#071a31 0%,#0a4b91 58%,#126fe4 100%); color:white; padding:18px 22px; border:1px solid #1d6fbd; border-radius:16px; margin-bottom:14px; box-shadow:0 14px 38px rgba(0,80,180,.20); }
+.hero h1 { margin:0; font-size:28px; letter-spacing:-.4px; } .hero p { margin:5px 0 0; color:#cfe4ff; font-size:13px; }
+.section-title { font-size:19px; font-weight:800; color:#f2f7ff; margin:14px 0 9px; }
+.card,.dark-card { background:linear-gradient(145deg,#0a2035,#081a2d); border:1px solid #204361; border-radius:14px; padding:14px 16px; box-shadow:0 8px 24px rgba(0,0,0,.18); color:#eaf4ff; }
+.metric-card { background:linear-gradient(145deg,#0a2137,#08192c); border:1px solid #21415e; border-radius:13px; padding:12px 14px; min-height:82px; box-shadow:0 7px 20px rgba(0,0,0,.15); }
+.metric-label { color:#8fa9c1; font-size:11px; text-transform:uppercase; letter-spacing:.5px; } .metric-value { color:#f4f9ff; font-size:23px; font-weight:800; margin-top:4px; }
+.badge { display:inline-block; padding:4px 9px; border-radius:999px; font-size:11px; font-weight:800; } .badge-blue { background:#0b3760; color:#5eb6ff; } .badge-green { background:#063f32; color:#33e39c; } .badge-yellow { background:#493514; color:#ffc44f; } .badge-red { background:#4b1722; color:#ff7181; }
+.small-note { color:#8fa9c1; font-size:12px; }
+.dashboard-grid { display:grid; grid-template-columns:1.15fr 1.05fr .8fr; gap:14px; margin:10px 0 14px; } .dashboard-panel { background:linear-gradient(145deg,#0a2137,#08192b); border:1px solid #214561; border-radius:16px; padding:17px; box-shadow:0 10px 28px rgba(0,0,0,.20); }
+.panel-kicker { color:#8da8c2; font-size:11px; text-transform:uppercase; letter-spacing:.8px; } .big-number { font-size:31px; font-weight:850; color:#f6fbff; margin-top:3px; }
+.green { color:#19d98d !important; } .yellow { color:#ffc44f !important; } .red { color:#ff6577 !important; } .regime { font-size:27px; font-weight:850; margin:7px 0; }
+.stat-list { display:flex; flex-direction:column; gap:9px; margin-top:8px; } .stat-row { display:flex; justify-content:space-between; gap:12px; color:#a9bfd4; font-size:13px; border-bottom:1px solid #16344d; padding-bottom:7px; } .stat-row b { color:#eef7ff; }
+.top3-wrap { background:linear-gradient(135deg,#071a2e,#092c49); border:1px solid #22557b; border-radius:18px; padding:17px; box-shadow:0 14px 34px rgba(0,0,0,.22); margin:12px 0; }
+.top3-head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:12px; } .top3-title { font-size:20px; font-weight:850; color:#f5f9ff; } .top3-sub { color:#9eb5ca; font-size:12px; }
+.pick-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; } .pick-card { background:linear-gradient(160deg,#0b2540,#081a2d); border:1px solid #27516f; border-radius:15px; padding:15px; min-height:220px; }
+.pick-rank { width:28px; height:28px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; background:#f7c84b; color:#142235; font-weight:900; margin-right:7px; } .pick-ticker { font-size:19px; font-weight:850; color:#fff; } .pick-status { float:right; }
+.pick-setup { margin-top:12px; color:#b8cbe0; font-size:12px; } .pick-price { font-size:22px; font-weight:800; color:#fff; margin:4px 0 10px; }
+.pick-metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:10px; } .pick-metric { background:#0b2035; border:1px solid #173b58; border-radius:8px; padding:7px; } .pick-metric span { display:block; color:#7994ac; font-size:10px; } .pick-metric b { color:#edf7ff; font-size:12px; }
+.risk-line { margin-top:11px; font-size:11px; font-weight:700; color:#ffbf42; } .mode-pill { display:inline-block; padding:5px 9px; background:#0d3557; color:#8fd0ff; border:1px solid #225f8c; border-radius:999px; font-size:10px; font-weight:800; }
+.pipeline { display:grid; grid-template-columns:repeat(6,1fr); gap:7px; margin:10px 0 14px; } .pipe { background:#0a2035; border:1px solid #1b3c58; border-radius:9px; padding:9px 7px; text-align:center; color:#9fb4c8; font-size:10px; } .pipe b { display:block; color:#f0f7ff; font-size:15px; margin-top:2px; }
+div[data-testid="stDataFrame"] { border:1px solid #24455f; border-radius:10px; background:#081a2c; }
+button[kind="primary"] { border-radius:10px; background:linear-gradient(90deg,#0877ed,#1165d7); border:1px solid #268fff; color:#fff !important; }
+.stButton>button,.stLinkButton>a { border-radius:10px !important; color:#f7fbff !important; background:linear-gradient(135deg,#0c3558,#0a2743) !important; border:1px solid #286187 !important; box-shadow:0 5px 16px rgba(0,0,0,.18); }
+.stButton>button:hover,.stLinkButton>a:hover { border-color:#27a6ff !important; box-shadow:0 0 0 1px rgba(39,166,255,.18),0 8px 20px rgba(0,105,210,.18); }
+/* Modern dark controls: replace Streamlit's default white widgets */
+section[data-testid="stSidebar"] div[data-baseweb="select"] > div,
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+[data-testid="stMultiSelect"] div[data-baseweb="select"] > div {
+  background:linear-gradient(135deg,#0b2742,#0a1e34) !important;
+  border:1px solid #1c79a9 !important; border-radius:10px !important; color:#eef7ff !important;
+  box-shadow:inset 0 0 0 1px rgba(46,190,255,.06),0 5px 15px rgba(0,0,0,.14) !important;
+}
+section[data-testid="stSidebar"] div[data-baseweb="select"] *,
+[data-testid="stSelectbox"] div[data-baseweb="select"] * { color:#eef7ff !important; }
+[data-testid="stNumberInput"] > div { background:linear-gradient(135deg,#0b2942,#0a1e34) !important; border:1px solid #2a73a7 !important; border-radius:10px !important; }
+[data-testid="stNumberInput"] input { color:#36a8ff !important; -webkit-text-fill-color:#36a8ff !important; background:transparent !important; font-weight:800 !important; caret-color:#36a8ff !important; }
+[data-testid="stNumberInput"] input::placeholder { color:#6fc4ff !important; -webkit-text-fill-color:#6fc4ff !important; opacity:1 !important; }
+[data-testid="stSelectbox"] input { color:#36a8ff !important; -webkit-text-fill-color:#36a8ff !important; font-weight:800 !important; }
+section[data-testid="stSidebar"] [data-baseweb="select"] [role="combobox"] { color:#36a8ff !important; font-weight:800 !important; }
+section[data-testid="stSidebar"] [data-baseweb="select"] [role="combobox"] * { color:#36a8ff !important; -webkit-text-fill-color:#36a8ff !important; }
+[data-testid="stNumberInput"] button { color:#9fe3ff !important; background:#102f4b !important; border-color:#1d5577 !important; }
+/* FIX11: high-contrast blue values inside white/bright widget surfaces */
+section[data-testid="stSidebar"] [data-testid="stNumberInput"] { background:linear-gradient(135deg,#071d33,#0a2943) !important; border:1px solid #176eb1 !important; border-radius:11px !important; }
+section[data-testid="stSidebar"] [data-testid="stNumberInput"] input { color:#36a8ff !important; -webkit-text-fill-color:#36a8ff !important; }
+section[data-testid="stSidebar"] [data-testid="stSelectbox"] div[data-baseweb="select"] { background:linear-gradient(135deg,#071d33,#0a2943) !important; border:1px solid #176eb1 !important; }
+section[data-testid="stSidebar"] [data-testid="stSelectbox"] div[data-baseweb="select"] span { color:#36a8ff !important; -webkit-text-fill-color:#36a8ff !important; font-weight:800 !important; }
+[data-testid="stSlider"] [data-baseweb="slider"] div[role="slider"] { background:#ff8a3d !important; border-color:#fff !important; box-shadow:0 0 0 2px rgba(255,138,61,.22) !important; }
+[data-testid="stSlider"] [data-baseweb="slider"] > div > div { background:linear-gradient(90deg,#ff315d,#ff8a3d) !important; }
+[data-testid="stSlider"] [data-baseweb="slider"] > div:first-child { background:#173b57 !important; }
+[data-testid="stExpander"] { background:rgba(7,25,42,.72); border:1px solid #204762; border-radius:12px; }
+[data-testid="stCaptionContainer"] { color:#91abc2 !important; }
+.stLinkButton>a { background:linear-gradient(90deg,#087ff1,#1769dd) !important; border-color:#2ca4ff !important; font-weight:800 !important; }
+hr { border-color:#1a3851; }
+/* Sidebar control accents */
+section[data-testid="stSidebar"] [data-testid="stSelectbox"] label { color:#cce8ff !important; font-weight:700; }
+section[data-testid="stSidebar"] [data-testid="stNumberInput"] label { color:#cce8ff !important; font-weight:700; }
+section[data-testid="stSidebar"] [data-testid="stSlider"] label { color:#cce8ff !important; font-weight:700; }
+.control-card { background:linear-gradient(145deg,#071d32,#0a2942); border:1px solid #1d5477; border-radius:14px; padding:10px 12px; margin:7px 0 10px; box-shadow:0 8px 22px rgba(0,0,0,.16); }
+.control-title { font-size:11px; text-transform:uppercase; letter-spacing:.8px; color:#7ecbff; font-weight:800; }
+
+@media (max-width:1100px) { .dashboard-grid,.pick-grid { grid-template-columns:1fr; } .pipeline { grid-template-columns:repeat(3,1fr); } }
 </style>
 """, unsafe_allow_html=True)
 
@@ -508,6 +554,12 @@ def apply_risk_gate(result,min_rr,max_stop_pct=15.0,market_regime="NEUTRAL / SID
             gate="FACTOR REVIEW"
         gates.append(gate); flags.append(", ".join(issues) if issues else "OK")
     x["RiskGate"]=gates; x["RiskFlag"]=flags; x["RiskGateVersion"]=RISK_GATE_VERSION
+    stock_gates=[]; market_states=[]
+    for _,r in x.iterrows():
+        issues=str(r.get("RiskFlag","")); stock_issues=[q for q in issues.split(", ") if q and q != "MARKET"]
+        stock_gates.append("PASS" if not stock_issues else ("RISK REVIEW" if any(q in stock_issues for q in ["STOP DISTANCE","ATR RISK","ATR DATA","RISK DATA"]) else ("FACTOR REVIEW" if "SCORE" in stock_issues else "WAIT")))
+        market_states.append("RISK-OFF" if str(market_regime).upper().startswith("RISK-OFF") else ("RISK-ON" if str(market_regime).upper().startswith("RISK-ON") else "NEUTRAL"))
+    x["StockSetupGate"]=stock_gates; x["MarketGate"]=market_states
     x["ActionableMode"]=np.where(x["RiskGate"]=="PASS",x["AnalysisMode"],"NOT ACTIONABLE")
     return x
 
@@ -731,9 +783,35 @@ def show_table_open(df,cols,expand_label="📋 Buka Tabel"):
     with st.expander(expand_label,expanded=True):
         st.dataframe(df[use],use_container_width=True,hide_index=True)
 
+def risk_badge(gate):
+    g=str(gate).upper(); cls='badge-green' if g=='PASS' else ('badge-yellow' if 'REVIEW' in g else 'badge-red')
+    return f'<span class="badge {cls}">{g}</span>'
+
+def show_top3_cards(action, meta):
+    st.markdown('<div class="top3-wrap"><div class="top3-head"><div><div class="top3-title">🏆 Top 3 Actionable — Best Available</div><div class="top3-sub">PASS diprioritaskan. REVIEW tetap ditampilkan sebagai kandidat terbaik, bukan sinyal eksekusi otomatis.</div></div><span class="mode-pill">Risk Gate 2.3</span></div>', unsafe_allow_html=True)
+    if action is None or action.empty:
+        st.markdown('<div class="small-note">Belum ada kandidat dari current scan.</div></div>', unsafe_allow_html=True); return
+    cards=[]
+    for i,(_,r) in enumerate(action.head(3).iterrows(),1):
+        ticker=str(r.get('Ticker','—')); gate=str(r.get('RiskGate','REVIEW')); setup=str(r.get('Setup','—')); mode=str(r.get('AnalysisMode','CORE TECHNICAL'))
+        close=fmt(r.get('Close',np.nan)); entry=fmt(r.get('Entry',np.nan)); sl=fmt(r.get('SL',np.nan)); tp1=fmt(r.get('TP1',np.nan)); rr=fmt(r.get('RR',np.nan),2)
+        score=fmt(r.get('MultiFactorScore',np.nan),1); cov=fmt(r.get('FactorCoveragePct',np.nan),0); risk=fmt(r.get('RiskPct',np.nan),1); atr=fmt(r.get('RiskATRMultiple',np.nan),1)
+        stock_gate=str(r.get('StockSetupGate','—')); market_gate=str(r.get('MarketGate','—')); flag=str(r.get('RiskFlag','OK'))
+        flag_html='' if flag=='OK' else f'<div class="risk-line">⚠️ {flag}</div>'
+        card=f'''<div class="pick-card"><div><span class="pick-rank">{i}</span><span class="pick-ticker">{ticker}</span><span class="pick-status">{risk_badge(gate)}</span></div><div class="pick-price">{close}</div><div class="pick-setup">{setup} · {mode} · Stock {stock_gate} · Market {market_gate}</div><div class="pick-metrics"><div class="pick-metric"><span>ENTRY</span><b>{entry}</b></div><div class="pick-metric"><span>SL</span><b>{sl}</b></div><div class="pick-metric"><span>TP1</span><b>{tp1}</b></div><div class="pick-metric"><span>R/R</span><b>{rr}</b></div></div><div class="pick-metrics"><div class="pick-metric"><span>SCORE</span><b>{score}</b></div><div class="pick-metric"><span>COVERAGE</span><b>{cov}%</b></div><div class="pick-metric"><span>RISK</span><b>{risk}%</b></div><div class="pick-metric"><span>ATR</span><b>{atr}x</b></div></div>{flag_html}<div style="margin-top:10px"><a href="{tv_link(ticker)}" target="_blank" style="color:#62bdff;font-size:11px">📈 TradingView</a></div></div>'''
+        cards.append(card)
+    st.markdown('<div class="pick-grid">'+''.join(cards)+'</div></div>', unsafe_allow_html=True)
+
+def dashboard_summary(active, meta, action, opp, focus, enrich, ihsg, ih20, ih50, regime):
+    reg=str(regime).upper(); reg_cls='green' if reg.startswith('RISK-ON') else ('red' if reg.startswith('RISK-OFF') else 'yellow')
+    full=active.get('full',pd.DataFrame()) if isinstance(active,dict) else pd.DataFrame(); analyzed=len(full); ready=int((full.get('Status',pd.Series(dtype=str)).astype(str).str.upper()=='READY').sum()) if not full.empty else 0; full_pass=int((full.get('RiskGate',pd.Series(dtype=str)).astype(str).str.upper()=='PASS').sum()) if not full.empty else 0
+    st.markdown(f'''<div class="dashboard-grid"><div class="dashboard-panel"><div class="panel-kicker">IHSG</div><div class="big-number">{fmt(ihsg,2)}</div><div class="{reg_cls}" style="font-size:13px;font-weight:800">{reg}</div><div class="stat-row"><span>MA20</span><b>{fmt(ih20,2)}</b></div><div class="stat-row"><span>MA50</span><b>{fmt(ih50,2)}</b></div></div><div class="dashboard-panel"><div class="panel-kicker">Market Regime</div><div class="regime {reg_cls}">{reg}</div><div class="small-note">Stock Setup dan Market Environment ditampilkan terpisah agar alasan REVIEW lebih mudah dibaca.</div><div style="margin-top:12px"><span class="mode-pill">HYBRID ENGINE</span> <span class="mode-pill">400 IDX</span></div></div><div class="dashboard-panel"><div class="panel-kicker">Statistik Scan</div><div class="stat-list"><div class="stat-row"><span>Saham dianalisis</span><b>{analyzed}</b></div><div class="stat-row"><span>READY</span><b>{ready}</b></div><div class="stat-row"><span>Risk Gate PASS</span><b>{full_pass}</b></div><div class="stat-row"><span>Top 10</span><b>{len(opp)}</b></div><div class="stat-row"><span>Top 3</span><b>{min(3,len(action))}</b></div></div></div></div>''',unsafe_allow_html=True)
+    st.markdown('<div class="pipeline"><div class="pipe">UNIVERSE<b>400</b></div><div class="pipe">QUALITY<b>150</b></div><div class="pipe">FOCUS<b>50</b></div><div class="pipe">OPPORTUNITY<b>10</b></div><div class="pipe">RISK GATE<b>2.3</b></div><div class="pipe">ACTIONABLE<b>3</b></div></div>',unsafe_allow_html=True)
+    show_top3_cards(action,meta)
+
 def show_top3(action,meta,opp=None):
     st.markdown('<div class="section-title">🏆 Top 3 Actionable Picks — Hybrid Risk Gate</div>',unsafe_allow_html=True)
-    st.caption(f"Risk Gate 2.2 · Max Stop {meta.get("max_stop_pct",15):.1f}% · Top 3 selalu diisi dengan Best Available Candidates; PASS diprioritaskan. ATR Risk tetap wajib untuk status PASS · Foreign Flow, Broker Flow, dan Fundamental adalah enrichment opsional.")
+    st.caption(f"Risk Gate 2.3 · Max Stop {meta.get("max_stop_pct",15):.1f}% · Top 3 selalu diisi dengan Best Available Candidates; PASS diprioritaskan. ATR Risk tetap wajib untuk status PASS · Foreign Flow, Broker Flow, dan Fundamental adalah enrichment opsional.")
     if action is None or action.empty:
         o=opp.copy() if isinstance(opp,pd.DataFrame) else pd.DataFrame()
         if o.empty:
@@ -820,13 +898,15 @@ def weekly_candidates(focus):
 # =========================================================
 # HEADER + SIDEBAR
 # =========================================================
-header("Sanggul Stock Scanner",f"{APP_VERSION} · 400 IDX · Hybrid Factors · EOD Snapshot Persistent · Morning Confirmation · TradingView")
+header("📈 Sanggul Stock Scanner",f"{APP_VERSION} · 400 IDX · Hybrid Factors · EOD Snapshot Persistent · Morning Confirmation · TradingView")
 
 with st.sidebar:
+    st.markdown('<div class="control-card"><div class="control-title">SANGGUL STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.1.5 · PRO HYBRID</div><div class="small-note" style="margin-top:4px">Decision-support terminal · 400 IDX</div></div>',unsafe_allow_html=True)
     st.markdown("### 🧭 MENU UTAMA")
     mode=st.radio("Navigasi",[
         "📊 Dashboard","⚡ Trading Harian","📅 Swing Trading Mingguan","🔎 Saham Individu","🏭 Sector Opportunity","🏆 Top 3 Actionable","🟩 Top 10 Opportunity","🟨 Top 50 Focus","🟦 Top 150 Enrich","🌅 Morning Confirmation","🌆 EOD Full Scan","📜 EOD Scan History","🧠 Multi-Factor Data Hub"],index=0)
     st.divider(); st.markdown("### ⚙️ PENGATURAN")
+    st.markdown('<div class="control-card"><div class="control-title">SCAN CONTROL</div><div class="small-note">Widget di bawah dibuat kontras agar nilai mudah dibaca di dark mode.</div></div>',unsafe_allow_html=True)
     period=st.selectbox("Data historis EOD",["1mo","3mo","6mo","2y"],index=3, format_func=lambda x: {"1mo":"1 Bulan","3mo":"3 Bulan","6mo":"6 Bulan","2y":"2 Tahun"}[x])
     n=st.slider("Jumlah saham saat EOD scan",50,400,400,50)
     min_rr=st.number_input("Minimum R/R",1.5,4.0,2.0,0.5)
@@ -943,11 +1023,13 @@ if mode in ["📊 Dashboard","🏆 Top 3 Actionable","🟩 Top 10 Opportunity","
 # DASHBOARD / OLD MENUS
 # =========================================================
 if mode=="📊 Dashboard":
-    header("📊 Dashboard","Last EOD Snapshot · Risk-Gated · persistent")
-    metric_strip([("Snapshot",m.get("timestamp","—").replace("T"," ")), ("EOD Window",{"1mo":"1 Bulan","3mo":"3 Bulan","6mo":"6 Bulan","2y":"2 Tahun"}.get(m.get("period"),m.get("period","—"))), ("Regime",m.get("regime","—")), ("Pipeline","400 → 150 → 50 → 10 → 3")])
-    st.info("HYBRID: Technical 55% + Fundamental 20% + Foreign 10% + Broker 5% + Sector 10%. Bobot faktor yang tersedia otomatis dinormalisasi. Foreign/Broker/Fundamental adalah enrichment, bukan syarat wajib Top 3.")
-    show_top3(action,m); show_top150(enrich); show_top50(focus); show_top10(opp); show_rules()
-    st.download_button("📥 Export Full Scan CSV",active["full"].to_csv(index=False).encode("utf-8"),"sanggul_v11_1_5_full_scan.csv","text/csv")
+    header("Dashboard","Ringkasan market, pipeline 400 saham, dan Best Available Top 3 — gaya terminal trading modern.")
+    dashboard_summary(active,m,action,opp,focus,enrich,ihsg,ih20,ih50,regime)
+    st.markdown("#### 🟩 Top 10 Opportunity — Opportunity Now")
+    show_table(opp,["Ticker","Setup","Timing","OpportunityScore","MultiFactorScore","FactorCoveragePct","AnalysisMode","StockSetupGate","MarketGate","RiskGate","RiskFlag","Close","MA20","RSI","Entry","SL","TP1","TP2","RR","RiskPct","RiskATRMultiple","Status"])
+    st.markdown("#### 📌 Decision Framework")
+    st.caption("Stock Setup = kualitas saham secara teknikal/risk. Market Environment = kondisi IHSG. Risk Gate menggabungkan keduanya. REVIEW bukan PASS dan bukan instruksi transaksi otomatis.")
+    st.download_button("📥 Export Full Scan CSV",active["full"].to_csv(index=False).encode("utf-8"),"sanggul_v11_1_5_fix9_full_scan.csv","text/csv")
 
 elif mode=="⚡ Trading Harian":
     header("⚡ Trading Harian","Tactical setup untuk horizon 1–5 hari · menggunakan hasil EOD sebagai starting universe.")
