@@ -240,7 +240,15 @@ def factor_enrich(result):
         total=sum(w for _,w in available)
         score=sum(v*w for v,w in available)/total if total else float(r.get('TechnicalScore',50))
         has_f=bool(r.get('FundamentalAvailable',False)); has_ff=bool(r.get('ForeignAvailable',False)); has_b=bool(r.get('BrokerAvailable',False))
-        mode='FULL MULTI-FACTOR' if has_f and has_ff and has_b else ('PARTIAL ENRICHED' if (has_f or has_ff or has_b) else 'CORE TECHNICAL + SECTOR')
+        has_sector=bool(r.get('SectorAvailable',False))
+        if has_f and has_ff and has_b:
+            mode='FULL MULTI-FACTOR'
+        elif has_f or has_ff or has_b:
+            mode='PARTIAL ENRICHED'
+        elif has_sector:
+            mode='CORE TECHNICAL + SECTOR'
+        else:
+            mode='CORE TECHNICAL'
         scores.append(score); coverages.append(total*100); modes.append(mode)
     x['MultiFactorScore']=np.clip(scores,0,100)
     x['FactorCoveragePct']=coverages
@@ -370,7 +378,11 @@ def build_layers(result,min_rr):
     enrich=sortdf(result,['MultiFactorScore','QualityScore','SetupScore','RR']).head(150).copy(); enrich['Layer']='TOP 150 ENRICH'
     focus=sortdf(result[result.RR>=min_rr],['MultiFactorScore','SetupScore','QualityScore','RR']).head(50).copy(); focus['Layer']='TOP 50 FOCUS'
     opp=sortdf(result[result.RR>=min_rr],['MultiFactorScore','OpportunityScore','SetupScore','RR']).head(10).copy(); opp['Layer']='TOP 10 OPPORTUNITY'
-    action=sortdf(opp[(opp.Status=='READY')&(opp.RiskGate=='PASS')],['MultiFactorScore','RR','SetupScore']).head(3).copy(); action['Layer']='TOP 3 ACTIONABLE'
+    # Top 3 must be genuinely actionable: READY + PASS + a non-WAIT setup.
+    # WAIT remains valid for Top 10/watchlist but should never be presented as an execution candidate.
+    actionable_setups=['BREAKOUT','PULLBACK','REJECTION SUPPORT']
+    action_pool=opp[(opp.Status=='READY')&(opp.RiskGate=='PASS')&(opp.Setup.isin(actionable_setups))].copy()
+    action=sortdf(action_pool,['MultiFactorScore','RR','SetupScore']).head(3).copy(); action['Layer']='TOP 3 ACTIONABLE'
     return enrich,focus,opp,action
 
 def run_full_scan(period,n,min_rr,save_eod=True):
@@ -571,13 +583,20 @@ def show_top3(action,meta,opp=None):
         ready=o[o.Status.astype(str).str.upper()=='READY'].copy() if 'Status' in o.columns else pd.DataFrame()
         passed=ready[ready.RiskGate.astype(str).str.upper()=='PASS'].copy() if 'RiskGate' in ready.columns else pd.DataFrame()
         c1,c2,c3=st.columns(3); c1.metric('Top 10',len(o)); c2.metric('READY',len(ready)); c3.metric('Risk Gate PASS',len(passed))
+        actionable_setups=['BREAKOUT','PULLBACK','REJECTION SUPPORT']
+        actionable_ready=ready[ready.get('Setup',pd.Series(index=ready.index,dtype=object)).isin(actionable_setups)] if not ready.empty else pd.DataFrame()
         if ready.empty:
             st.warning('Belum ada kandidat READY di Top 10. Tunggu setup teknikal/market gate yang lebih baik.')
-        else:
+        elif actionable_ready.empty:
+            st.warning('Ada saham READY, tetapi setup-nya masih WAIT. Saham WAIT tetap masuk Top 10 sebagai watchlist, bukan Top 3 Actionable.')
+        elif passed.empty:
             st.warning('Ada kandidat READY tetapi belum PASS karena Multi-Factor Score masih di bawah ambang 65.')
+        else:
+            st.info(f'{len(actionable_ready)} kandidat READY memiliki setup yang dapat dieksekusi; lihat tabel kandidat di bawah.')
             cols=['Ticker','Setup','Timing','Close','Entry','SL','TP1','TP2','RR','TechnicalScore','MultiFactorScore','FactorCoveragePct','AnalysisMode','RiskGate','Status']
             sort=[c for c in ['MultiFactorScore','TechnicalScore','RR'] if c in ready.columns]
-            show_table(ready.sort_values(sort,ascending=False).head(3),cols,'📋 Top 3 Technical Candidates')
+            cand=actionable_ready if not actionable_ready.empty else ready
+            show_table(cand.sort_values(sort,ascending=False).head(3),cols,'📋 Top 3 Technical Candidates')
         return
     cols=['Ticker','Setup','Timing','Close','MA20','RSI','MACD','VolumeRatio','Entry','SL','TP1','TP2','RR','TechnicalScore','FundamentalScore','ForeignFlowScore','BrokerFlowScore','SectorStrengthScore','MultiFactorScore','FactorCoveragePct','AnalysisMode','RiskGate','Status']
     display=action.copy()
