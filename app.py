@@ -585,9 +585,22 @@ def show_top3(action,meta,opp=None):
         if score_col in display.columns and flag_col in display.columns:
             display.loc[~display[flag_col].fillna(False).astype(bool),score_col]=np.nan
     show_table(display,cols)
+    # Snapshot compatibility: older EOD snapshots may not contain the newer
+    # Hybrid columns (AnalysisMode / FactorCoveragePct / RiskGate / Status).
+    # Never access them as Series attributes; use .get() so legacy snapshots
+    # cannot crash the dashboard.
     for _,r in action.iterrows():
-        mode_label=str(r.get('AnalysisMode','—')); cov=float(r.get('FactorCoveragePct',0) or 0)
-        st.markdown(f'<div class="card"><b>{r.Ticker}</b> &nbsp; {status_badge(r.Status)} &nbsp; <b>{mode_label}</b> · Coverage <b>{cov:.0f}%</b> · Risk Gate <b>{r.RiskGate}</b><br>Setup: <b>{r.Setup}</b> · Entry <b>{fmt(r.Entry)}</b> · SL <b>{fmt(r.SL)}</b> · TP1 <b>{fmt(r.TP1)}</b> · TP2 <b>{fmt(r.TP2)}</b> · R/R <b>{fmt(r.RR,2)}</b><br><span class="small-note">Chart: <a href="{tv_link(r.Ticker)}" target="_blank">TradingView</a></span></div>',unsafe_allow_html=True)
+        ticker=str(r.get('Ticker','—'))
+        status=str(r.get('Status','WAIT'))
+        mode_label=str(r.get('AnalysisMode','LEGACY / UNKNOWN'))
+        try:
+            cov=float(r.get('FactorCoveragePct',0) or 0)
+        except Exception:
+            cov=0.0
+        gate=str(r.get('RiskGate','LEGACY / REVIEW'))
+        setup=str(r.get('Setup','—'))
+        entry=r.get('Entry',np.nan); sl=r.get('SL',np.nan); tp1=r.get('TP1',np.nan); tp2=r.get('TP2',np.nan); rr=r.get('RR',np.nan)
+        st.markdown(f'<div class="card"><b>{ticker}</b> &nbsp; {status_badge(status)} &nbsp; <b>{mode_label}</b> · Coverage <b>{cov:.0f}%</b> · Risk Gate <b>{gate}</b><br>Setup: <b>{setup}</b> · Entry <b>{fmt(entry)}</b> · SL <b>{fmt(sl)}</b> · TP1 <b>{fmt(tp1)}</b> · TP2 <b>{fmt(tp2)}</b> · R/R <b>{fmt(rr,2)}</b><br><span class="small-note">Chart: <a href="{tv_link(ticker)}" target="_blank">TradingView</a></span></div>',unsafe_allow_html=True)
 
 def show_top10(opp):
     st.markdown('<div class="section-title">🟩 Top 10 Opportunity — Opportunity Now</div>',unsafe_allow_html=True)
