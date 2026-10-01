@@ -6,11 +6,13 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.1.5 PRO HYBRID FIX6 · RISK GATE INTEGRITY 2.1"
-ENGINE_VERSION = "V11.1.5-FIX6"
+APP_VERSION = "V11.1.5 PRO HYBRID FIX7 · RISK GATE INTEGRITY 2.1"
+ENGINE_VERSION = "V11.1.5-FIX7"
 RISK_GATE_VERSION = "2.1"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SNAP_DIR = os.path.join(BASE_DIR, "snapshots")
+CURRENT_SCAN_DIR = os.path.join(BASE_DIR, "current_scan")
+os.makedirs(CURRENT_SCAN_DIR, exist_ok=True)
 os.makedirs(SNAP_DIR, exist_ok=True)
 
 st.set_page_config(page_title=f"Sanggul Stock Scanner {APP_VERSION}", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
@@ -366,6 +368,53 @@ def save_snapshot(result,enrich,focus,opp,action,meta):
     with open(os.path.join(SNAP_DIR,"latest.txt"),"w",encoding="utf-8") as f: f.write(stamp)
     return path
 
+def save_current_scan(result,enrich,focus,opp,action,meta):
+    """Persist the latest ad-hoc/current scan separately from official EOD history.
+    This survives Streamlit reruns/reconnects without overwriting the official EOD snapshot.
+    """
+    os.makedirs(CURRENT_SCAN_DIR, exist_ok=True)
+    for name,df in [("full_scan.csv",result),("top150.csv",enrich),("top50.csv",focus),("top10.csv",opp),("top3.csv",action)]:
+        df.to_csv(os.path.join(CURRENT_SCAN_DIR,name),index=False)
+    meta=dict(meta or {})
+    meta["current_scan_saved_at"]=datetime.now().isoformat(timespec="seconds")
+    meta["scan_type"]="CURRENT_SCAN"
+    with open(os.path.join(CURRENT_SCAN_DIR,"meta.json"),"w",encoding="utf-8") as f:
+        json.dump(meta,f,ensure_ascii=False,indent=2)
+    return CURRENT_SCAN_DIR
+
+def load_current_scan():
+    """Load the latest current scan, if one exists."""
+    try:
+        meta_path=os.path.join(CURRENT_SCAN_DIR,"meta.json")
+        if not os.path.isfile(meta_path): return None
+        meta=json.load(open(meta_path,encoding="utf-8"))
+        files=[("full","full_scan.csv"),("top150","top150.csv"),("top50","top50.csv"),("top10","top10.csv"),("top3","top3.csv")]
+        data={}
+        for k,f in files:
+            path=os.path.join(CURRENT_SCAN_DIR,f)
+            if not os.path.isfile(path): return None
+            data[k]=pd.read_csv(path)
+        return {"meta":meta,**data}
+    except Exception:
+        return None
+
+def _ensure_layers(snap):
+    """Rebuild derived layers whenever persisted/current layer CSVs are empty or stale.
+    Full scan data is the source of truth; Top150/50/10/3 are derived views.
+    """
+    if not snap or snap.get("full") is None or snap["full"].empty:
+        return snap
+    full=snap["full"].copy()
+    meta=snap.get("meta",{})
+    min_rr=float(meta.get("min_rr",2.0) or 2.0)
+    # Always re-apply current risk gate before rebuilding derived layers.
+    regime=str(meta.get("regime","NEUTRAL / SIDEWAYS"))
+    max_stop=float(meta.get("max_stop_pct",15.0) or 15.0)
+    full=apply_risk_gate(full,min_rr,max_stop,regime)
+    enrich,focus,opp,action=build_layers(full,min_rr)
+    snap.update({"full":full,"top150":enrich,"top50":focus,"top10":opp,"top3":action})
+    return snap
+
 def latest_snapshot():
     marker=os.path.join(SNAP_DIR,"latest.txt")
     if os.path.exists(marker):
@@ -423,7 +472,7 @@ def read_snapshot(path):
         snap={"meta":meta,**data}
         # Always refresh risk layers in memory using the current engine. The persisted
         # CSVs remain untouched, so EOD history is still an audit trail.
-        return _refresh_snapshot_risk_layers(snap)
+        return _ensure_layers(_refresh_snapshot_risk_layers(snap))
     except Exception:return None
 
 def apply_risk_gate(result,min_rr,max_stop_pct=15.0,market_regime="NEUTRAL / SIDEWAYS"):
@@ -498,7 +547,9 @@ def run_full_scan(period,n,min_rr,max_stop_pct=15.0,save_eod=True):
     meta={"timestamp":datetime.now().isoformat(timespec="seconds"),"period":period,"engine_period":engine_period,"universe":n,"analyzed":len(result),"min_rr":min_rr,"max_stop_pct":max_stop_pct,"ihsg":ihsg,"ihsg_ma20":ih20,"ihsg_ma50":ih50,"regime":regime,"analysis_mode":"HYBRID","engine_version":ENGINE_VERSION,"risk_gate_version":RISK_GATE_VERSION}
     if save_eod:
         return save_snapshot(result,enrich,focus,opp,action,meta)
-    st.session_state["current_scan"]={"meta":meta,"full":result,"top150":enrich,"top50":focus,"top10":opp,"top3":action}
+    current_meta=dict(meta); current_meta["scan_type"]="CURRENT_SCAN"
+    save_current_scan(result,enrich,focus,opp,action,current_meta)
+    st.session_state["current_scan"]={"meta":current_meta,"full":result,"top150":enrich,"top50":focus,"top10":opp,"top3":action}
     return "CURRENT_SCAN"
 
 def market_metrics(period):
@@ -780,12 +831,15 @@ ihsg,ih20,ih50,regime=market_metrics(period)
 metric_strip([("IHSG",fmt(ihsg)),("MA20",fmt(ih20)),("MA50",fmt(ih50)),("Market Gate",regime)])
 
 snap=read_snapshot(latest_snapshot())
-current_scan=st.session_state.get("current_scan")
+current_scan=st.session_state.get("current_scan") or load_current_scan()
+if current_scan is not None:
+    current_scan=_ensure_layers(current_scan)
+    st.session_state["current_scan"]=current_scan
 
 # Scan 400 is a current/dynamic view and does not overwrite the official EOD snapshot.
 
 if scan_now:
-    with st.spinner(f"Menjalankan EOD scan {n} saham dan menyimpan snapshot..."):
+    with st.spinner(f"Menjalankan current scan {n} saham..."):
         path=run_full_scan(period,n,min_rr,max_stop_pct,save_eod=False)
     if path: st.success("Current Scan selesai. Snapshot EOD resmi tidak diubah."); st.rerun()
     else: st.error("Tidak ada data yang berhasil dianalisis.")
@@ -795,6 +849,8 @@ if scan_now:
 active=snap
 if current_scan is not None:
     active=current_scan
+if active is not None:
+    active=_ensure_layers(active)
 
 # =========================================================
 # SPECIAL MENUS
