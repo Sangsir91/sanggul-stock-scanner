@@ -6,7 +6,9 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.1.5 PRO HYBRID FIX5 · RISK GATE 2.0"
+APP_VERSION = "V11.1.5 PRO HYBRID FIX6 · RISK GATE INTEGRITY 2.1"
+ENGINE_VERSION = "V11.1.5-FIX6"
+RISK_GATE_VERSION = "2.1"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SNAP_DIR = os.path.join(BASE_DIR, "snapshots")
 os.makedirs(SNAP_DIR, exist_ok=True)
@@ -371,17 +373,61 @@ def latest_snapshot():
         if os.path.isdir(p): return p
     ds=snapshot_dirs(); return ds[0] if ds else None
 
+def _refresh_snapshot_risk_layers(snap):
+    """Re-apply the current Risk Gate to persisted full_scan data.
+    This prevents legacy snapshots from silently retaining old PASS/WAIT states.
+    """
+    if not snap or "full" not in snap or snap["full"].empty:
+        return snap
+    meta=snap.get("meta",{})
+    full=snap["full"].copy()
+    # Backfill ATR-derived metrics when older snapshots already contain ATR14.
+    if "RiskPct" not in full.columns and {"Entry","SL"}.issubset(full.columns):
+        ent=pd.to_numeric(full["Entry"],errors="coerce")
+        sl=pd.to_numeric(full["SL"],errors="coerce")
+        full["RiskPct"]=(ent-sl).abs()/ent.replace(0,np.nan)*100
+    if "StopDistancePct" not in full.columns and "RiskPct" in full.columns:
+        full["StopDistancePct"]=full["RiskPct"]
+    if "RiskATRMultiple" not in full.columns:
+        if "ATR14" in full.columns and {"Entry","SL"}.issubset(full.columns):
+            atr=pd.to_numeric(full["ATR14"],errors="coerce")
+            risk=(pd.to_numeric(full["Entry"],errors="coerce")-pd.to_numeric(full["SL"],errors="coerce")).abs()
+            full["RiskATRMultiple"]=risk/atr.replace(0,np.nan)
+        else:
+            full["RiskATRMultiple"]=np.nan
+    # Old snapshots may not have the newer metadata columns.
+    if "AnalysisMode" not in full.columns:
+        full["AnalysisMode"]="LEGACY / UNKNOWN"
+    if "FactorCoveragePct" not in full.columns:
+        full["FactorCoveragePct"]=np.nan
+    if "MultiFactorScore" not in full.columns and "TechnicalScore" in full.columns:
+        full["MultiFactorScore"]=pd.to_numeric(full["TechnicalScore"],errors="coerce")
+    # Preserve the original market regime and threshold when available.
+    min_rr=float(meta.get("min_rr",2.0) or 2.0)
+    max_stop=float(meta.get("max_stop_pct",15.0) or 15.0)
+    regime=str(meta.get("regime","NEUTRAL / SIDEWAYS"))
+    full=apply_risk_gate(full,min_rr,max_stop,regime)
+    enrich,focus,opp,action=build_layers(full,min_rr)
+    meta=meta.copy()
+    meta["engine_version_current"]=ENGINE_VERSION
+    meta["risk_gate_version_current"]=RISK_GATE_VERSION
+    meta["snapshot_refresh"]=datetime.now().isoformat(timespec="seconds")
+    snap.update({"meta":meta,"full":full,"top150":enrich,"top50":focus,"top10":opp,"top3":action})
+    return snap
+
 def read_snapshot(path):
     if not path:return None
     try:
         meta=json.load(open(os.path.join(path,"meta.json"),encoding="utf-8"))
         data={k:pd.read_csv(os.path.join(path,f)) for k,f in [("full","full_scan.csv"),("top150","top150.csv"),("top50","top50.csv"),("top10","top10.csv"),("top3","top3.csv")]}
-        return {"meta":meta,**data}
+        snap={"meta":meta,**data}
+        # Always refresh risk layers in memory using the current engine. The persisted
+        # CSVs remain untouched, so EOD history is still an audit trail.
+        return _refresh_snapshot_risk_layers(snap)
     except Exception:return None
 
 def apply_risk_gate(result,min_rr,max_stop_pct=15.0,market_regime="NEUTRAL / SIDEWAYS"):
-    x=result.copy()
-    gates=[]; flags=[]
+    x=result.copy(); gates=[]; flags=[]
     for _,r in x.iterrows():
         status=str(r.get("Status","WAIT")).upper()
         setup=str(r.get("Setup","WAIT")).upper()
@@ -394,8 +440,12 @@ def apply_risk_gate(result,min_rr,max_stop_pct=15.0,market_regime="NEUTRAL / SID
         if setup not in {"BREAKOUT","PULLBACK","REJECTION SUPPORT"}: issues.append("SETUP WAIT")
         if not pd.notna(rr) or rr < min_rr: issues.append("RR")
         if not pd.notna(mf) or mf < 65: issues.append("SCORE")
-        if pd.notna(risk_pct) and risk_pct > max_stop_pct: issues.append("STOP DISTANCE")
-        if pd.notna(atr_mult) and atr_mult > 4.5: issues.append("ATR RISK")
+        if not pd.notna(risk_pct): issues.append("RISK DATA")
+        elif risk_pct > max_stop_pct: issues.append("STOP DISTANCE")
+        # ATR is now a required integrity check for a PASS. Missing ATR must never
+        # silently become PASS; the user should know the risk metric is incomplete.
+        if not pd.notna(atr_mult): issues.append("ATR DATA")
+        elif atr_mult > 4.5: issues.append("ATR RISK")
         if str(market_regime).upper().startswith("RISK-OFF"): issues.append("MARKET")
         if not issues:
             gate="PASS"
@@ -403,15 +453,12 @@ def apply_risk_gate(result,min_rr,max_stop_pct=15.0,market_regime="NEUTRAL / SID
             gate="WAIT"
         elif "MARKET" in issues:
             gate="MARKET REVIEW"
-        elif "STOP DISTANCE" in issues or "ATR RISK" in issues:
+        elif any(k in issues for k in ["STOP DISTANCE","ATR RISK","ATR DATA","RISK DATA"]):
             gate="RISK REVIEW"
         else:
             gate="FACTOR REVIEW"
-        gates.append(gate)
-        flags.append(", ".join(issues) if issues else "OK")
-    x["RiskGate"]=gates
-    x["RiskFlag"]=flags
-    x["RiskGateVersion"]="2.0"
+        gates.append(gate); flags.append(", ".join(issues) if issues else "OK")
+    x["RiskGate"]=gates; x["RiskFlag"]=flags; x["RiskGateVersion"]=RISK_GATE_VERSION
     x["ActionableMode"]=np.where(x["RiskGate"]=="PASS",x["AnalysisMode"],"NOT ACTIONABLE")
     return x
 
@@ -448,7 +495,7 @@ def run_full_scan(period,n,min_rr,max_stop_pct=15.0,save_eod=True):
     else: ihsg=ih20=ih50=np.nan; regime="DATA INSUFFICIENT"
     result=apply_risk_gate(result,min_rr,max_stop_pct,regime)
     enrich,focus,opp,action=build_layers(result,min_rr)
-    meta={"timestamp":datetime.now().isoformat(timespec="seconds"),"period":period,"engine_period":engine_period,"universe":n,"analyzed":len(result),"min_rr":min_rr,"max_stop_pct":max_stop_pct,"ihsg":ihsg,"ihsg_ma20":ih20,"ihsg_ma50":ih50,"regime":regime,"analysis_mode":"HYBRID","risk_gate_version":"2.0"}
+    meta={"timestamp":datetime.now().isoformat(timespec="seconds"),"period":period,"engine_period":engine_period,"universe":n,"analyzed":len(result),"min_rr":min_rr,"max_stop_pct":max_stop_pct,"ihsg":ihsg,"ihsg_ma20":ih20,"ihsg_ma50":ih50,"regime":regime,"analysis_mode":"HYBRID","engine_version":ENGINE_VERSION,"risk_gate_version":RISK_GATE_VERSION}
     if save_eod:
         return save_snapshot(result,enrich,focus,opp,action,meta)
     st.session_state["current_scan"]={"meta":meta,"full":result,"top150":enrich,"top50":focus,"top10":opp,"top3":action}
@@ -621,7 +668,7 @@ def show_table_open(df,cols,expand_label="📋 Buka Tabel"):
 
 def show_top3(action,meta,opp=None):
     st.markdown('<div class="section-title">🏆 Top 3 Actionable Picks — Hybrid Risk Gate</div>',unsafe_allow_html=True)
-    st.caption("Risk Gate 2.0 menilai setup, R/R, jarak Stop Loss, risiko terhadap ATR, dan market regime. Foreign Flow, Broker Flow, dan Fundamental tetap enrichment opsional.")
+    st.caption(f"Risk Gate 2.1 · Max Stop {meta.get("max_stop_pct",15):.1f}% · ATR Risk wajib tersedia untuk PASS · Foreign Flow, Broker Flow, dan Fundamental tetap enrichment opsional.")
     if action is None or action.empty:
         o=opp.copy() if isinstance(opp,pd.DataFrame) else pd.DataFrame()
         if o.empty: st.warning('Top 3 belum terbentuk karena Top 10 snapshot kosong.'); return
@@ -723,7 +770,7 @@ with st.sidebar:
     period=st.selectbox("Data historis EOD",["1mo","3mo","6mo","2y"],index=3, format_func=lambda x: {"1mo":"1 Bulan","3mo":"3 Bulan","6mo":"6 Bulan","2y":"2 Tahun"}[x])
     n=st.slider("Jumlah saham saat EOD scan",50,400,400,50)
     min_rr=st.number_input("Minimum R/R",1.5,4.0,2.0,0.5)
-    max_stop_pct=st.number_input("Max Stop Distance (%)",5.0,40.0,15.0,1.0,help="Risk Gate 2.0: kandidat dengan jarak Entry–SL di atas batas ini masuk RISK REVIEW.")
+    max_stop_pct=st.number_input("Max Stop Distance (%)",5.0,40.0,15.0,1.0,help="Risk Gate 2.1: kandidat dengan jarak Entry–SL di atas batas ini masuk RISK REVIEW. ATR Risk juga wajib tersedia untuk PASS.")
     st.divider(); st.caption("📌 EOD = screening utama · Pagi = konfirmasi · Harian = tactical · Mingguan = swing · External factors = optional enrichment")
     st.caption("Periode EOD: 1B / 3B / 6B / 2T · engine indikator minimum 2T")
     scan_now=st.button("🔄 Scan 400 Saham / Update EOD",type="primary",use_container_width=True)
@@ -822,6 +869,10 @@ if not active:
     st.warning("Belum ada data scan. Gunakan **🔄 Scan 400 Saham / Update EOD** atau **🌆 EOD Full Scan**."); st.stop()
 
 m=active["meta"]; action,opp,focus,enrich=active["top3"],active["top10"],active["top50"],active["top150"]
+if mode in ["📊 Dashboard","🏆 Top 3 Actionable","🟩 Top 10 Opportunity","🟨 Top 50 Focus","🟦 Top 150 Enrich"]:
+    snap_engine=str(m.get("engine_version",m.get("engine_version_current","LEGACY")))
+    if snap_engine != ENGINE_VERSION:
+        st.warning(f"⚠️ Snapshot lama/legacy terdeteksi ({snap_engine}). Risk Gate dan layer telah dihitung ulang di memori dengan {ENGINE_VERSION}. Jalankan 🔄 Scan 400 untuk membuat hasil baru yang tersimpan.")
 
 # =========================================================
 # DASHBOARD / OLD MENUS
