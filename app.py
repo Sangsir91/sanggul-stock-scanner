@@ -7,8 +7,8 @@ import numpy as np
 import yfinance as yf
 
 APP_VERSION = "V11.1.5 PRO HYBRID FIX7 · RISK GATE INTEGRITY 2.1"
-ENGINE_VERSION = "V11.1.5-FIX7"
-RISK_GATE_VERSION = "2.1"
+ENGINE_VERSION = "V11.1.5-FIX8"
+RISK_GATE_VERSION = "2.2"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SNAP_DIR = os.path.join(BASE_DIR, "snapshots")
 CURRENT_SCAN_DIR = os.path.join(BASE_DIR, "current_scan")
@@ -518,11 +518,25 @@ def build_layers(result,min_rr):
     enrich=sortdf(result,['MultiFactorScore','QualityScore','SetupScore','RR']).head(150).copy(); enrich['Layer']='TOP 150 ENRICH'
     focus=sortdf(result[result.RR>=min_rr],['MultiFactorScore','SetupScore','QualityScore','RR']).head(50).copy(); focus['Layer']='TOP 50 FOCUS'
     opp=sortdf(result[result.RR>=min_rr],['MultiFactorScore','OpportunityScore','SetupScore','RR']).head(10).copy(); opp['Layer']='TOP 10 OPPORTUNITY'
-    # Top 3 must be genuinely actionable: READY + PASS + a non-WAIT setup.
-    # WAIT remains valid for Top 10/watchlist but should never be presented as an execution candidate.
+    # Top 3 policy: always surface up to 3 best available non-WAIT candidates.
+    # PASS candidates are preferred; if fewer than 3 pass, fill with the next
+    # best READY candidates and preserve their RiskGate (REVIEW/FACTOR REVIEW).
+    # This keeps the dashboard populated without falsely labeling REVIEW as PASS.
     actionable_setups=['BREAKOUT','PULLBACK','REJECTION SUPPORT']
-    action_pool=opp[(opp.Status=='READY')&(opp.RiskGate=='PASS')&(opp.Setup.isin(actionable_setups))].copy()
-    action=sortdf(action_pool,['MultiFactorScore','RR','SetupScore']).head(3).copy(); action['Layer']='TOP 3 ACTIONABLE'
+    base=opp.copy()
+    action_pool=base[(base.Status.astype(str).str.upper()=='READY')&(base.Setup.astype(str).str.upper().isin(actionable_setups))].copy()
+    gate_rank={'PASS':0,'RISK REVIEW':1,'FACTOR REVIEW':2,'MARKET REVIEW':3,'WAIT':9}
+    if not action_pool.empty:
+        action_pool['_gate_rank']=action_pool['RiskGate'].astype(str).str.upper().map(gate_rank).fillna(8)
+        action_pool['_risk_sort']=pd.to_numeric(action_pool.get('RiskPct',np.nan),errors='coerce').fillna(999)
+        action=action_pool.sort_values(['_gate_rank','MultiFactorScore','TechnicalScore','SetupScore','_risk_sort'],ascending=[True,False,False,False,True]).head(3).copy()
+        action.drop(columns=['_gate_rank','_risk_sort'],errors='ignore',inplace=True)
+    else:
+        # Last-resort candidate pool: use READY rows from the full scan even if
+        # the setup is not yet actionable. They are explicitly labeled WAIT/REVIEW.
+        ready_all=result[result.Status.astype(str).str.upper()=='READY'].copy()
+        action=sortdf(ready_all,['MultiFactorScore','TechnicalScore','OpportunityScore','SetupScore']).head(3).copy()
+    action['Layer']='TOP 3 ACTIONABLE'
     return enrich,focus,opp,action
 
 def run_full_scan(period,n,min_rr,max_stop_pct=15.0,save_eod=True):
@@ -719,33 +733,28 @@ def show_table_open(df,cols,expand_label="📋 Buka Tabel"):
 
 def show_top3(action,meta,opp=None):
     st.markdown('<div class="section-title">🏆 Top 3 Actionable Picks — Hybrid Risk Gate</div>',unsafe_allow_html=True)
-    st.caption(f"Risk Gate 2.1 · Max Stop {meta.get("max_stop_pct",15):.1f}% · ATR Risk wajib tersedia untuk PASS · Foreign Flow, Broker Flow, dan Fundamental tetap enrichment opsional.")
+    st.caption(f"Risk Gate 2.2 · Max Stop {meta.get("max_stop_pct",15):.1f}% · Top 3 selalu diisi dengan Best Available Candidates; PASS diprioritaskan. ATR Risk tetap wajib untuk status PASS · Foreign Flow, Broker Flow, dan Fundamental adalah enrichment opsional.")
     if action is None or action.empty:
         o=opp.copy() if isinstance(opp,pd.DataFrame) else pd.DataFrame()
-        if o.empty: st.warning('Top 3 belum terbentuk karena Top 10 snapshot kosong.'); return
+        if o.empty:
+            st.warning('Belum ada hasil scan. Jalankan 🔄 Scan 400 Saham terlebih dahulu.')
+            return
         ready=o[o.Status.astype(str).str.upper()=='READY'].copy() if 'Status' in o.columns else pd.DataFrame()
         passed=ready[ready.RiskGate.astype(str).str.upper()=='PASS'].copy() if 'RiskGate' in ready.columns else pd.DataFrame()
         c1,c2,c3=st.columns(3); c1.metric('Top 10',len(o)); c2.metric('READY',len(ready)); c3.metric('Risk Gate PASS',len(passed))
-        actionable_setups=['BREAKOUT','PULLBACK','REJECTION SUPPORT']
-        actionable_ready=ready[ready.get('Setup',pd.Series(index=ready.index,dtype=object)).isin(actionable_setups)] if not ready.empty else pd.DataFrame()
         if ready.empty:
-            st.warning('Belum ada kandidat READY di Top 10. Tunggu setup teknikal/market gate yang lebih baik.')
-        elif actionable_ready.empty:
-            st.warning('Ada saham READY, tetapi setup-nya masih WAIT. Saham WAIT tetap masuk Top 10 sebagai watchlist, bukan Top 3 Actionable.')
-        elif passed.empty:
-            st.warning('Ada kandidat READY tetapi belum PASS karena Multi-Factor Score masih di bawah ambang 65.')
+            st.warning('Top 10 belum memiliki kandidat READY. Top 3 akan terisi setelah ada setup READY.')
         else:
-            st.info(f'{len(actionable_ready)} kandidat READY memiliki setup yang dapat dieksekusi; lihat tabel kandidat di bawah.')
-            cols=['Ticker','Setup','Timing','Close','Entry','SL','TP1','TP2','RR','TechnicalScore','MultiFactorScore','FactorCoveragePct','AnalysisMode','RiskGate','Status']
-            sort=[c for c in ['MultiFactorScore','TechnicalScore','RR'] if c in ready.columns]
-            cand=actionable_ready if not actionable_ready.empty else ready
-            show_table(cand.sort_values(sort,ascending=False).head(3),cols,'📋 Top 3 Technical Candidates')
+            st.info('Top 3 menggunakan kebijakan **Best Available**: PASS diprioritaskan, lalu kandidat READY terbaik berstatus REVIEW. REVIEW bukan berarti PASS.')
+            cols=['Ticker','Setup','Timing','Close','Entry','SL','TP1','TP2','RR','RiskPct','RiskATRMultiple','TechnicalScore','MultiFactorScore','FactorCoveragePct','AnalysisMode','RiskGate','RiskFlag','Status']
+            show_table(ready.sort_values(['MultiFactorScore','TechnicalScore'],ascending=False).head(3),cols,'📋 Top 3 Best Available Candidates')
         return
     cols=['Ticker','Setup','Timing','Close','MA20','RSI','MACD','VolumeRatio','Entry','SL','TP1','TP2','RR','RiskPct','RiskATRMultiple','OverextensionPct','TechnicalScore','FundamentalScore','ForeignFlowScore','BrokerFlowScore','SectorStrengthScore','MultiFactorScore','FactorCoveragePct','AnalysisMode','RiskGate','RiskFlag','Status']
     display=action.copy()
     for score_col,flag_col in [('FundamentalScore','FundamentalAvailable'),('ForeignFlowScore','ForeignAvailable'),('BrokerFlowScore','BrokerAvailable')]:
         if score_col in display.columns and flag_col in display.columns:
             display.loc[~display[flag_col].fillna(False).astype(bool),score_col]=np.nan
+    st.info('ℹ️ Top 3 selalu menampilkan hingga 3 kandidat terbaik. PASS = lolos Risk Gate; REVIEW = kandidat terbaik yang belum lolos seluruh gate. Jangan menyamakan REVIEW dengan sinyal eksekusi.')
     show_table(display,cols)
     # Snapshot compatibility: older EOD snapshots may not contain the newer
     # Hybrid columns (AnalysisMode / FactorCoveragePct / RiskGate / Status).
