@@ -10,8 +10,8 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.2.5 PRO MORNING DECISION BOARD"
-ENGINE_VERSION = "V11.2.5-MORNING-DECISION-BOARD"
+APP_VERSION = "V11.3 PRO MORNING DECISION ENGINE MOBILE"
+ENGINE_VERSION = "V11.3-MORNING-DECISION-ENGINE-MOBILE"
 RISK_GATE_VERSION = "2.5"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RECOVERY_DIR = os.path.join(BASE_DIR, "recovered_eod")
@@ -21,7 +21,7 @@ CURRENT_SCAN_DIR = os.path.join(BASE_DIR, "current_scan")
 os.makedirs(CURRENT_SCAN_DIR, exist_ok=True)
 os.makedirs(SNAP_DIR, exist_ok=True)
 
-st.set_page_config(page_title=f"Sanggul Stock Scanner {APP_VERSION}", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title=f"Sanggul Stock Scanner {APP_VERSION}", page_icon="📈", layout="wide", initial_sidebar_state="collapsed")
 
 # =========================================================
 # PROFESSIONAL UI — inspired by modern brokerage terminals
@@ -53,7 +53,23 @@ section[data-testid="stSidebar"] * { color:#dcecff; }
 .pick-rank { width:28px; height:28px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; background:#f7c84b; color:#142235; font-weight:900; margin-right:7px; } .pick-ticker { font-size:19px; font-weight:850; color:#fff; } .pick-status { float:right; }
 .pick-setup { margin-top:12px; color:#b8cbe0; font-size:12px; } .pick-price { font-size:22px; font-weight:800; color:#fff; margin:4px 0 10px; }
 .pick-metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:10px; } .pick-metric { background:#0b2035; border:1px solid #173b58; border-radius:8px; padding:7px; } .pick-metric span { display:block; color:#7994ac; font-size:10px; } .pick-metric b { color:#edf7ff; font-size:12px; }
-.risk-line { margin-top:11px; font-size:11px; font-weight:700; color:#ffbf42; } .mode-pill { display:inline-block; padding:5px 9px; background:#0d3557; color:#8fd0ff; border:1px solid #225f8c; border-radius:999px; font-size:10px; font-weight:800; }
+.risk-line { margin-top:11px; font-size:11px; font-weight:700; color:#ffbf42; }
+.op10-wrap { background:linear-gradient(135deg,#071a2e,#09283f); border:1px solid #22557b; border-radius:18px; padding:15px; margin:12px 0; }
+.op10-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:10px; }
+.op10-card { background:linear-gradient(160deg,#0b2540,#081a2d); border:1px solid #27516f; border-radius:13px; padding:11px; min-height:220px; box-shadow:0 7px 18px rgba(0,0,0,.16); }
+.op10-head { display:flex; align-items:center; justify-content:space-between; gap:6px; }
+.op10-rank { width:24px; height:24px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; background:#2b84d8; color:#fff; font-weight:900; font-size:11px; margin-right:5px; }
+.op10-ticker { font-size:17px; font-weight:850; color:#fff; }
+.op10-price { font-size:20px; font-weight:850; color:#fff; margin:7px 0 2px; }
+.op10-sub { color:#9fb8cd; font-size:10px; min-height:28px; line-height:1.35; }
+.op10-metrics { display:grid; grid-template-columns:repeat(2,1fr); gap:5px; margin-top:8px; }
+.op10-metric { background:#0b2035; border:1px solid #173b58; border-radius:7px; padding:6px; }
+.op10-metric span { display:block; color:#7894ad; font-size:9px; text-transform:uppercase; }
+.op10-metric b { color:#edf7ff; font-size:11px; }
+.op10-foot { margin-top:8px; color:#9fb8cd; font-size:10px; line-height:1.45; }
+@media (max-width:1200px){ .op10-grid{grid-template-columns:repeat(3,minmax(0,1fr));} }
+@media (max-width:800px){ .op10-grid{grid-template-columns:repeat(2,minmax(0,1fr));} .pick-grid{grid-template-columns:1fr;} }
+ .mode-pill { display:inline-block; padding:5px 9px; background:#0d3557; color:#8fd0ff; border:1px solid #225f8c; border-radius:999px; font-size:10px; font-weight:800; }
 .pipeline { display:grid; grid-template-columns:repeat(6,1fr); gap:7px; margin:10px 0 14px; } .pipe { background:#0a2035; border:1px solid #1b3c58; border-radius:9px; padding:9px 7px; text-align:center; color:#9fb4c8; font-size:10px; } .pipe b { display:block; color:#f0f7ff; font-size:15px; margin-top:2px; }
 div[data-testid="stDataFrame"] { border:1px solid #24455f; border-radius:10px; background:#081a2c; }
 button[kind="primary"] { border-radius:10px; background:linear-gradient(90deg,#0877ed,#1165d7); border:1px solid #268fff; color:#fff !important; }
@@ -96,6 +112,31 @@ section[data-testid="stSidebar"] [data-testid="stSlider"] label { color:#cce8ff 
 .control-title { font-size:11px; text-transform:uppercase; letter-spacing:.8px; color:#7ecbff; font-weight:800; }
 
 @media (max-width:1100px) { .dashboard-grid,.pick-grid { grid-template-columns:1fr; } .pipeline { grid-template-columns:repeat(3,1fr); } }
+
+/* V11.3 MOBILE-FIRST DECISION BOARD */
+.mobile-only{display:none}
+.compact-note{color:#9fb8cd;font-size:10px;line-height:1.35}
+.card-primary-line{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.card-secondary{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px;color:#a9bfd4;font-size:11px}
+@media (max-width:700px){
+ .block-container{padding:.45rem .55rem 1.2rem;max-width:100%;}
+ .hero{padding:12px 13px;border-radius:13px;margin-bottom:9px}.hero h1{font-size:21px}.hero p{font-size:11px}
+ .section-title{font-size:16px;margin:9px 0 6px}
+ .dashboard-grid{grid-template-columns:1fr 1fr;gap:7px;margin:6px 0 8px}
+ .dashboard-grid .dashboard-panel{padding:10px;border-radius:12px;min-height:0}.dashboard-grid .dashboard-panel:nth-child(2){grid-column:1/-1}
+ .dashboard-panel .big-number{font-size:23px}.dashboard-panel .regime{font-size:20px}.dashboard-panel .small-note{font-size:10px}
+ .pipeline{grid-template-columns:repeat(3,1fr);gap:5px;margin:6px 0 9px}.pipe{padding:6px 4px;font-size:8px}.pipe b{font-size:12px}
+ .top3-wrap,.op10-wrap{padding:9px;border-radius:13px;margin:8px 0}.top3-head{margin-bottom:7px}.top3-title{font-size:16px}.top3-sub{font-size:10px;line-height:1.25}
+ .pick-grid{grid-template-columns:1fr;gap:7px}.pick-card{padding:10px;border-radius:12px;min-height:0}.pick-ticker{font-size:17px}.pick-rank{width:24px;height:24px;font-size:12px}
+ .pick-price{font-size:21px;margin:5px 0 6px}.pick-setup{font-size:10px;margin-top:6px;line-height:1.35}
+ .pick-metrics{grid-template-columns:repeat(4,1fr);gap:4px;margin-top:6px}.pick-metric{padding:5px 4px;border-radius:6px}.pick-metric span{font-size:8px}.pick-metric b{font-size:10px}
+ .op10-grid{grid-template-columns:1fr;gap:7px}.op10-card{min-height:0;padding:9px;border-radius:11px}.op10-ticker{font-size:16px}.op10-price{font-size:19px;margin:5px 0 1px}.op10-sub{font-size:9px;min-height:0}
+ .op10-metrics{grid-template-columns:repeat(3,1fr);gap:4px;margin-top:6px}.op10-metric{padding:5px 4px}.op10-metric span{font-size:8px}.op10-metric b{font-size:10px}.op10-foot{font-size:9px;margin-top:6px}
+ .mode-pill{padding:3px 6px;font-size:8px}.metric-card{min-height:65px;padding:8px 9px}.metric-label{font-size:9px}.metric-value{font-size:18px}.card{padding:10px 11px;border-radius:11px}
+ div[data-testid="stDataFrame"]{font-size:10px} section[data-testid="stSidebar"]{width:88vw!important;min-width:88vw!important}
+ .stButton>button,.stLinkButton>a{min-height:40px;font-size:12px}
+}
+@media (min-width:701px) and (max-width:1050px){.op10-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.pick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1013,52 +1054,35 @@ def risk_badge(gate):
     return f'<span class="badge {cls}">{g}</span>'
 
 def show_top3_cards(action, meta):
-    """Dashboard Top-3 is explicitly an EOD candidate list plus a morning validation layer.
-    READY/RiskGate describe the EOD snapshot; MorningStatus describes the latest validated
-    daily reference before the open. Neither is an automatic BUY instruction.
-    """
-    st.markdown('<div class="top3-wrap"><div class="top3-head"><div><div class="top3-title">🏆 EOD Top 3 Candidates + 🌅 Morning Action</div><div class="top3-sub">EOD ranking is the historical candidate baseline. Morning status is re-validated separately; entry remains the user decision.</div></div><span class="mode-pill">EOD + MORNING</span></div>', unsafe_allow_html=True)
+    """Compact, mobile-first Top 3. EOD candidate and Morning Action are separated."""
+    st.markdown('<div class="top3-wrap"><div class="top3-head"><div><div class="top3-title">🏆 Top 3 + 🌅 Morning Action</div><div class="top3-sub">Ringkas untuk keputusan pagi. Entry tetap keputusan Anda.</div></div><span class="mode-pill">3 CARDS</span></div>', unsafe_allow_html=True)
     if action is None or action.empty:
-        st.markdown('<div class="small-note">Belum ada kandidat dari current scan.</div></div>', unsafe_allow_html=True)
-        return
-
+        st.markdown('<div class="small-note">Belum ada kandidat Top 3.</div></div>', unsafe_allow_html=True); return
     try:
         morning = morning_confirm(action.head(3), str(meta.get("period", "2y")), meta.get("regime", "NEUTRAL / SIDEWAYS"))
         morning_by = {str(r.get("Ticker")): r for _, r in morning.iterrows()} if not morning.empty else {}
     except Exception:
         morning_by = {}
-
     cards=[]
     for i,(_,r) in enumerate(action.head(3).iterrows(),1):
-        ticker=str(r.get('Ticker','—'))
-        eod_gate=str(r.get('RiskGate','REVIEW'))
-        setup=str(r.get('Setup','—'))
-        mode=str(r.get('AnalysisMode','CORE TECHNICAL'))
-        eod_close=fmt(r.get('Close',np.nan))
+        ticker=str(r.get('Ticker','—')); setup=str(r.get('Setup','—')); eod_close=fmt(r.get('Close',np.nan))
         entry=fmt(r.get('Entry',np.nan)); sl=fmt(r.get('SL',np.nan)); tp1=fmt(r.get('TP1',np.nan)); rr=fmt(r.get('RR',np.nan),2)
-        score=fmt(r.get('MultiFactorScore',np.nan),1); cov=fmt(r.get('FactorCoveragePct',np.nan),0); risk=fmt(r.get('RiskPct',np.nan),1); atr=fmt(r.get('RiskATRMultiple',np.nan),1)
-        stock_gate=str(r.get('StockSetupGate','—')); market_gate=str(r.get('MarketGate','—')); flag=str(r.get('RiskFlag','OK'))
-
+        score=fmt(r.get('MultiFactorScore',np.nan),1); cov=fmt(r.get('FactorCoveragePct',np.nan),0); risk=fmt(r.get('RiskPct',np.nan),1)
+        stock_gate=str(r.get('StockSetupGate','—')); market_gate=str(r.get('MarketGate','—'))
         mr=morning_by.get(ticker,{})
-        mstatus=str(mr.get('MorningStatus','NOT VALIDATED'))
-        mreason=str(mr.get('MorningReason','Morning validation belum tersedia'))
-        pref=fmt(mr.get('PreOpenReference',r.get('Close',np.nan)))
-        last_date=str(mr.get('LastDataDate',r.get('DataDate','—')))
-        data_status=str(mr.get('DataStatus','UNKNOWN'))
-        m_gate=str(mr.get('MarketGate',market_gate))
-        decision=str(mr.get('Decision','USER DECISION'))
-
-        flag_html='' if flag=='OK' else f'<div class="risk-line">⚠️ {flag}</div>'
-        card=f'''<div class="pick-card">
-<div><span class="pick-rank">{i}</span><span class="pick-ticker">{ticker}</span><span class="pick-status">{morning_status_badge(mstatus)}</span></div>
+        mstatus=str(mr.get('MorningStatus','NOT VALIDATED')); mreason=str(mr.get('MorningReason','—'))
+        pref=fmt(mr.get('PreOpenReference',r.get('Close',np.nan))); m_gate=str(mr.get('MarketGate',market_gate)); decision=str(mr.get('Decision','USER DECISION'))
+        dist=fmt(mr.get('DistanceToEntryPct',np.nan),1); pos=str(mr.get('EntryPosition','—')); data_status=str(mr.get('DataStatus','UNKNOWN'))
+        cards.append(f'''<div class="pick-card">
+<div class="card-primary-line"><div><span class="pick-rank">{i}</span><span class="pick-ticker">{ticker}</span></div><span class="pick-status">{morning_status_badge(mstatus)}</span></div>
 <div class="pick-price">{pref}</div>
-<div class="pick-setup"><b>Morning:</b> {mreason} · Data {data_status} · {last_date}</div>
-<div class="pick-setup">EOD Candidate · {setup} · {mode} · Stock {stock_gate} · Market {m_gate}</div>
-<div class="pick-metrics"><div class="pick-metric"><span>EOD CLOSE</span><b>{eod_close}</b></div><div class="pick-metric"><span>ENTRY</span><b>{entry}</b></div><div class="pick-metric"><span>SL</span><b>{sl}</b></div><div class="pick-metric"><span>TP1</span><b>{tp1}</b></div></div>
-<div class="pick-metrics"><div class="pick-metric"><span>R/R</span><b>{rr}</b></div><div class="pick-metric"><span>EOD SCORE</span><b>{score}</b></div><div class="pick-metric"><span>COVERAGE</span><b>{cov}%</b></div><div class="pick-metric"><span>RISK</span><b>{risk}%</b></div></div>
-<div class="pick-setup"><b>Morning Gate:</b> {m_gate} · <b>Decision:</b> {decision}</div>
-<div class="pick-setup"><b>ATR Risk:</b> {atr}x</div>{flag_html}<div style="margin-top:10px"><a href="{tv_link(ticker)}" target="_blank" style="color:#62bdff;font-size:11px">📈 TradingView</a></div></div>'''
-        cards.append(card)
+<div class="card-secondary"><span><b>{setup}</b></span><span>{pos}</span></div>
+<div class="compact-note">Pre-open reference · {data_status} · Distance {dist}%</div>
+<div class="pick-metrics"><div class="pick-metric"><span>ENTRY</span><b>{entry}</b></div><div class="pick-metric"><span>SL</span><b>{sl}</b></div><div class="pick-metric"><span>TP1</span><b>{tp1}</b></div><div class="pick-metric"><span>R/R</span><b>{rr}</b></div></div>
+<div class="pick-metrics"><div class="pick-metric"><span>EOD SCORE</span><b>{score}</b></div><div class="pick-metric"><span>COVERAGE</span><b>{cov}%</b></div><div class="pick-metric"><span>RISK</span><b>{risk}%</b></div><div class="pick-metric"><span>STOCK</span><b>{stock_gate}</b></div></div>
+<div class="pick-setup"><b>Market:</b> {m_gate} · <b>Morning:</b> {mreason}</div>
+<div class="pick-setup"><b>Decision:</b> {decision} · <b>ATR:</b> {fmt(r.get('RiskATRMultiple',np.nan),1)}x</div>
+<div style="margin-top:7px"><a href="{tv_link(ticker)}" target="_blank" style="color:#62bdff;font-size:11px">📈 TradingView</a></div></div>''')
     st.markdown('<div class="pick-grid">'+''.join(cards)+'</div></div>', unsafe_allow_html=True)
 
 def dashboard_summary(active, meta, action, opp, focus, enrich, ihsg, ih20, ih50, regime):
@@ -1069,52 +1093,36 @@ def dashboard_summary(active, meta, action, opp, focus, enrich, ihsg, ih20, ih50
     show_top3_cards(action,meta)
 
 def show_top3(action,meta,opp=None):
-    st.markdown('<div class="section-title">🏆 EOD Top 3 Candidates — Hybrid Risk Gate</div>',unsafe_allow_html=True)
-    st.caption(f"Risk Gate {RISK_GATE_VERSION} · Max Stop {meta.get("max_stop_pct",15):.1f}% · Top 3 selalu diisi dengan Best Available Candidates; PASS diprioritaskan. ATR Risk tetap wajib untuk status PASS · Foreign Flow, Broker Flow, dan Fundamental adalah enrichment opsional.")
-    if action is None or action.empty:
-        o=opp.copy() if isinstance(opp,pd.DataFrame) else pd.DataFrame()
-        if o.empty:
-            st.warning('Belum ada hasil scan. Jalankan 🔄 Scan 400 Saham terlebih dahulu.')
-            return
-        ready=o[o.Status.astype(str).str.upper()=='READY'].copy() if 'Status' in o.columns else pd.DataFrame()
-        passed=ready[ready.RiskGate.astype(str).str.upper()=='PASS'].copy() if 'RiskGate' in ready.columns else pd.DataFrame()
-        c1,c2,c3=st.columns(3); c1.metric('Top 10',len(o)); c2.metric('READY',len(ready)); c3.metric('Risk Gate PASS',len(passed))
-        if ready.empty:
-            st.warning('Top 10 belum memiliki kandidat READY. Top 3 akan terisi setelah ada setup READY.')
-        else:
-            st.info('Top 3 menggunakan kebijakan **Best Available**: PASS diprioritaskan, lalu kandidat READY terbaik berstatus REVIEW. REVIEW bukan berarti PASS.')
-            cols=['Ticker','Setup','Timing','Close','Entry','SL','TP1','TP2','RR','RiskPct','RiskATRMultiple','TechnicalScore','MultiFactorScore','FactorCoveragePct','AnalysisMode','RiskGate','RiskFlag','Status']
-            show_table(ready.sort_values(['MultiFactorScore','TechnicalScore'],ascending=False).head(3),cols,'📋 Top 3 Best Available Candidates')
-        return
-    cols=['Ticker','Setup','Timing','Close','MA20','RSI','MACD','VolumeRatio','Entry','SL','TP1','TP2','RR','RiskPct','RiskATRMultiple','OverextensionPct','TechnicalScore','FundamentalScore','ForeignFlowScore','BrokerFlowScore','SectorStrengthScore','MultiFactorScore','FactorCoveragePct','AnalysisMode','RiskGate','RiskFlag','Status']
-    display=action.copy()
-    for score_col,flag_col in [('FundamentalScore','FundamentalAvailable'),('ForeignFlowScore','ForeignAvailable'),('BrokerFlowScore','BrokerAvailable')]:
-        if score_col in display.columns and flag_col in display.columns:
-            display.loc[~display[flag_col].fillna(False).astype(bool),score_col]=np.nan
-    st.info('ℹ️ Top 3 selalu menampilkan hingga 3 kandidat terbaik. PASS = lolos Risk Gate; REVIEW = kandidat terbaik yang belum lolos seluruh gate. Jangan menyamakan REVIEW dengan sinyal eksekusi.')
-    show_table(display,cols)
-    # Snapshot compatibility: older EOD snapshots may not contain the newer
-    # Hybrid columns (AnalysisMode / FactorCoveragePct / RiskGate / Status).
-    # Never access them as Series attributes; use .get() so legacy snapshots
-    # cannot crash the dashboard.
-    for _,r in action.iterrows():
-        ticker=str(r.get('Ticker','—'))
-        status=str(r.get('Status','WAIT'))
-        mode_label=str(r.get('AnalysisMode','LEGACY / UNKNOWN'))
-        try:
-            cov=float(r.get('FactorCoveragePct',0) or 0)
-        except Exception:
-            cov=0.0
-        gate=str(r.get('RiskGate','LEGACY / REVIEW'))
-        setup=str(r.get('Setup','—'))
-        entry=r.get('Entry',np.nan); sl=r.get('SL',np.nan); tp1=r.get('TP1',np.nan); tp2=r.get('TP2',np.nan); rr=r.get('RR',np.nan)
-        risk_pct=r.get('RiskPct',np.nan); atr_mult=r.get('RiskATRMultiple',np.nan); flag=str(r.get('RiskFlag','OK'))
-        flag_html='' if flag=='OK' else f' · <span class="small-note">⚠️ {flag}</span>'
-        st.markdown(f'<div class="card"><b>{ticker}</b> &nbsp; {status_badge(status)} &nbsp; <b>{mode_label}</b> · Coverage <b>{cov:.0f}%</b> · Risk Gate <b>{gate}</b><br>Setup: <b>{setup}</b> · Entry <b>{fmt(entry)}</b> · SL <b>{fmt(sl)}</b> · TP1 <b>{fmt(tp1)}</b> · TP2 <b>{fmt(tp2)}</b> · R/R <b>{fmt(rr,2)}</b> · Stop <b>{fmt(risk_pct,1)}%</b> · ATR Risk <b>{fmt(atr_mult,1)}x</b>{flag_html}<br><span class="small-note">Chart: <a href="{tv_link(ticker)}" target="_blank">TradingView</a></span></div>',unsafe_allow_html=True)
+    show_top3_cards(action, meta)
+
+def show_top10_cards(opp):
+    st.markdown('<div class="op10-wrap"><div class="top3-head"><div><div class="top3-title">🟩 Top 10 Opportunity</div><div class="top3-sub">Quick scan. Top 10 bukan otomatis BUY.</div></div><span class="mode-pill">10 CARDS</span></div>', unsafe_allow_html=True)
+    if opp is None or opp.empty:
+        st.info("Belum ada data Top 10."); st.markdown('</div>', unsafe_allow_html=True); return
+    cards=[]
+    for i,(_,r) in enumerate(opp.head(10).iterrows(),1):
+        ticker=str(r.get('Ticker','—')); setup=str(r.get('Setup','—')); timing=str(r.get('Timing','—'))
+        risk_gate=str(r.get('RiskGate','—')); status=str(r.get('Status','WAIT')); analysis=str(r.get('AnalysisMode','CORE TECHNICAL'))
+        opp_score=fmt(r.get('OpportunityScore',np.nan),0); mf=fmt(r.get('MultiFactorScore',np.nan),1); cov=fmt(r.get('FactorCoveragePct',np.nan),0)
+        close=fmt(r.get('Close',np.nan)); ma20=fmt(r.get('MA20',np.nan)); rsi=fmt(r.get('RSI',np.nan),1)
+        entry=fmt(r.get('Entry',np.nan)); sl=fmt(r.get('SL',np.nan)); tp1=fmt(r.get('TP1',np.nan)); rr=fmt(r.get('RR',np.nan),2)
+        cards.append(f'''<div class="op10-card">
+<div class="op10-head"><div><span class="op10-rank">{i}</span><span class="op10-ticker">{ticker}</span></div>{status_badge(status)}</div>
+<div class="op10-price">{close}</div><div class="op10-sub"><b>{setup}</b> · {timing}</div>
+<div class="op10-metrics"><div class="op10-metric"><span>OPPORTUNITY</span><b>{opp_score}</b></div><div class="op10-metric"><span>MULTI</span><b>{mf}</b></div><div class="op10-metric"><span>COVERAGE</span><b>{cov}%</b></div><div class="op10-metric"><span>RSI</span><b>{rsi}</b></div><div class="op10-metric"><span>MA20</span><b>{ma20}</b></div><div class="op10-metric"><span>R/R</span><b>{rr}</b></div><div class="op10-metric"><span>ENTRY</span><b>{entry}</b></div><div class="op10-metric"><span>SL</span><b>{sl}</b></div><div class="op10-metric"><span>TP1</span><b>{tp1}</b></div></div>
+<div class="op10-foot">{risk_badge(risk_gate)} · {analysis} · <a href="{tv_link(ticker)}" target="_blank" style="color:#62bdff">📈 TradingView</a></div></div>''')
+    st.markdown('<div class="op10-grid">'+''.join(cards)+'</div></div>', unsafe_allow_html=True)
+
+def show_morning_cards(conf):
+    if conf is None or conf.empty: st.warning("Tidak ada kandidat Morning yang berhasil divalidasi."); return
+    cards=[]
+    for i,(_,r) in enumerate(conf.head(10).iterrows(),1):
+        ticker=str(r.get('Ticker','—')); ms=str(r.get('MorningStatus','WAIT')); reason=str(r.get('MorningReason','—')); pre=fmt(r.get('PreOpenReference',np.nan)); lo=fmt(r.get('EntryLow',np.nan)); hi=fmt(r.get('EntryHigh',np.nan)); sl=fmt(r.get('SL',np.nan)); tp1=fmt(r.get('TP1',np.nan)); rr=fmt(r.get('RR',np.nan),2); dist=fmt(r.get('DistanceToEntryPct',np.nan),1); pos=str(r.get('EntryPosition','—')); gate=str(r.get('MarketGate','—')); data=str(r.get('DataStatus','—'))
+        cards.append(f'''<div class="op10-card"><div class="op10-head"><div><span class="op10-rank">{i}</span><span class="op10-ticker">{ticker}</span></div>{morning_status_badge(ms)}</div><div class="op10-price">{pre}</div><div class="op10-sub"><b>{pos}</b> · {data}</div><div class="op10-metrics"><div class="op10-metric"><span>ENTRY ZONE</span><b>{lo}–{hi}</b></div><div class="op10-metric"><span>SL</span><b>{sl}</b></div><div class="op10-metric"><span>TP1</span><b>{tp1}</b></div><div class="op10-metric"><span>R/R</span><b>{rr}</b></div><div class="op10-metric"><span>DISTANCE</span><b>{dist}%</b></div><div class="op10-metric"><span>MARKET</span><b>{gate}</b></div></div><div class="op10-foot">{reason} · Decision: USER</div></div>''')
+    st.markdown('<div class="op10-grid">'+''.join(cards)+'</div>',unsafe_allow_html=True)
 
 def show_top10(opp):
-    st.markdown('<div class="section-title">🟩 Top 10 Opportunity — Opportunity Now</div>',unsafe_allow_html=True)
-    show_table(opp,["Ticker","Setup","Timing","OpportunityScore","MultiFactorScore","FactorCoveragePct","AnalysisMode","RiskGate","RiskFlag","Close","MA20","RSI","MACD","VolumeRatio","Entry","SL","TP1","TP2","RR","RiskPct","RiskATRMultiple","Status","Candle"])
+    show_top10_cards(opp)
 
 def show_top50(focus):
     st.markdown('<div class="section-title">🟨 Top 50 Focus — Focus List</div>',unsafe_allow_html=True)
@@ -1256,7 +1264,9 @@ if mode=="🌅 Morning Confirmation":
     conf=morning_confirm(snap["top10"],period,m.get("regime","NEUTRAL / SIDEWAYS"))
     if not conf.empty:
         st.markdown("#### 🌅 Morning Action Board")
-        show_table(conf,["Ticker","Setup","MorningStatus","MorningReason","PreOpenReference","Entry","EntryLow","EntryHigh","DistanceToEntryPct","EntryPosition","SL","TP1","TP2","RR","DataStatus","LastDataDate","DataAgeDays","MarketGate","Decision"])
+        show_morning_cards(conf)
+        with st.expander("📋 Buka tabel detail Morning", expanded=False):
+            show_table(conf,["Ticker","Setup","MorningStatus","MorningReason","PreOpenReference","Entry","EntryLow","EntryHigh","DistanceToEntryPct","EntryPosition","SL","TP1","TP2","RR","DataStatus","LastDataDate","DataAgeDays","MarketGate","Decision"],"Tabel Morning Detail")
     else:
         st.warning("Tidak ada kandidat Top 10 yang berhasil divalidasi.")
     st.caption("🟢 IN ENTRY ZONE = reference berada di area entry · 🔵 ABOVE ENTRY = belum perlu mengejar harga · 🟡 WAIT = market/setup belum mendukung · 🔴 CANCEL = struktur/risk invalid · USER DECISION = keputusan entry tetap pada Anda.")
