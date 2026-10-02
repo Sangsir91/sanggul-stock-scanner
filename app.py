@@ -10,8 +10,8 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.3 PRO MORNING DECISION ENGINE MOBILE"
-ENGINE_VERSION = "V11.3-MORNING-DECISION-ENGINE-MOBILE"
+APP_VERSION = "V11.4 PRO GLOBAL MORNING INTELLIGENCE MOBILE"
+ENGINE_VERSION = "V11.4-GLOBAL-MORNING-INTELLIGENCE-MOBILE"
 RISK_GATE_VERSION = "2.5"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RECOVERY_DIR = os.path.join(BASE_DIR, "recovered_eod")
@@ -70,6 +70,15 @@ section[data-testid="stSidebar"] * { color:#dcecff; }
 @media (max-width:1200px){ .op10-grid{grid-template-columns:repeat(3,minmax(0,1fr));} }
 @media (max-width:800px){ .op10-grid{grid-template-columns:repeat(2,minmax(0,1fr));} .pick-grid{grid-template-columns:1fr;} }
  .mode-pill { display:inline-block; padding:5px 9px; background:#0d3557; color:#8fd0ff; border:1px solid #225f8c; border-radius:999px; font-size:10px; font-weight:800; }
+
+.global-wrap { background:linear-gradient(135deg,#071a2e,#0a2945); border:1px solid #27587e; border-radius:16px; padding:14px; margin:10px 0 14px; }
+.global-head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; }
+.global-title { font-size:17px; font-weight:850; color:#f5f9ff; } .global-sub,.global-foot { color:#93abc0; font-size:11px; }
+.global-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; }
+.global-card { background:#0b2137; border:1px solid #1d4564; border-radius:10px; padding:9px; min-height:78px; }
+.global-name { color:#8fa9c1; font-size:9px; text-transform:uppercase; letter-spacing:.5px; } .global-value { color:#f5f9ff; font-size:17px; font-weight:850; margin:5px 0 2px; }
+.global-foot { margin-top:9px; line-height:1.45; }
+@media(max-width:800px){ .global-grid{grid-template-columns:repeat(2,1fr);} .global-card:last-child{grid-column:span 2;} .global-title{font-size:16px;} }
 .pipeline { display:grid; grid-template-columns:repeat(6,1fr); gap:7px; margin:10px 0 14px; } .pipe { background:#0a2035; border:1px solid #1b3c58; border-radius:9px; padding:9px 7px; text-align:center; color:#9fb4c8; font-size:10px; } .pipe b { display:block; color:#f0f7ff; font-size:15px; margin-top:2px; }
 div[data-testid="stDataFrame"] { border:1px solid #24455f; border-radius:10px; background:#081a2c; }
 button[kind="primary"] { border-radius:10px; background:linear-gradient(90deg,#0877ed,#1165d7); border:1px solid #268fff; color:#fff !important; }
@@ -461,6 +470,60 @@ def load_data(ticker,period="2y",interval="1d"):
         return d
     except Exception:
         return pd.DataFrame()
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def us_market_snapshot():
+    """Latest completed US session for the morning brief. Informational overlay only; never fabricates premarket quotes."""
+    specs = {
+        "S&P 500": "^GSPC",
+        "Nasdaq": "^IXIC",
+        "Dow Jones": "^DJI",
+        "Russell 2000": "^RUT",
+        "VIX": "^VIX",
+    }
+    rows=[]
+    for name,symbol in specs.items():
+        try:
+            d=yf.download(symbol, period="10d", interval="1d", auto_adjust=False, progress=False, threads=False, group_by="column")
+            if d is None or d.empty: continue
+            if isinstance(d.columns,pd.MultiIndex):
+                lvl0=set(map(str,d.columns.get_level_values(0)))
+                d.columns=d.columns.get_level_values(0) if "Close" in lvl0 else d.columns.get_level_values(1)
+            d.columns=[str(c) for c in d.columns]
+            if "Close" not in d.columns: continue
+            d=d.dropna(subset=["Close"])
+            if len(d)<2: continue
+            close=float(d["Close"].iloc[-1]); prev=float(d["Close"].iloc[-2])
+            chg=(close/prev-1)*100 if prev else np.nan
+            dt=pd.to_datetime(d.index[-1],errors="coerce")
+            rows.append({"Name":name,"Symbol":symbol,"Close":close,"ChangePct":chg,"Date":dt.strftime("%Y-%m-%d") if not pd.isna(dt) else "—"})
+        except Exception:
+            continue
+    out=pd.DataFrame(rows)
+    if out.empty:
+        return {"rows":[],"status":"DATA INSUFFICIENT","session":"—","lead":"UNAVAILABLE","breadth":np.nan}
+    session=str(out["Date"].max())
+    # VIX is interpreted inversely for the risk overlay; it is not included in equity breadth.
+    eq=out[~out["Name"].eq("VIX")].copy()
+    breadth=float((eq["ChangePct"]>0).mean()*100) if not eq.empty else np.nan
+    if breadth >= 75: lead="SUPPORTIVE"
+    elif breadth >= 50: lead="MIXED"
+    else: lead="CAUTION"
+    return {"rows":out.to_dict("records"),"status":"VALID","session":session,"lead":lead,"breadth":breadth}
+
+def global_morning_brief():
+    snap=us_market_snapshot()
+    rows=snap.get("rows",[])
+    if not rows:
+        st.markdown('<div class="global-wrap"><div class="global-head"><div><div class="global-title">🌎 US Market Lead</div><div class="global-sub">Data Wall Street sesi terakhir yang sudah selesai · bukan pre-market quote</div></div><span class="mode-pill">DATA INSUFFICIENT</span></div></div>',unsafe_allow_html=True)
+        return snap
+    cards=[]
+    for r in rows:
+        name=r["Name"]; chg=float(r.get("ChangePct",0) or 0); cls="green" if chg>0 else ("red" if chg<0 else "yellow")
+        cards.append(f'<div class="global-card"><div class="global-name">{name}</div><div class="global-value">{fmt(r.get("Close",np.nan),2)}</div><div class="{cls}" style="font-size:12px;font-weight:850">{"+" if chg>0 else ""}{chg:.2f}%</div></div>')
+    st.markdown(f'<div class="global-wrap"><div class="global-head"><div><div class="global-title">🌎 US Market Lead</div><div class="global-sub">Wall Street close · {snap.get("session","—")} · source: Yahoo Finance EOD</div></div><span class="mode-pill">LEAD: {snap.get("lead","—")}</span></div><div class="global-grid">{"".join(cards)}</div><div class="global-foot">US Lead adalah <b>context overlay</b>, bukan sinyal BUY/SELL. Sanggul tidak mengarang harga pre-market. Breadth saham indeks: {fmt(snap.get("breadth",np.nan),1)}% naik. VIX dibaca terpisah sebagai indikator volatilitas.</div></div>',unsafe_allow_html=True)
+    return snap
 
 def snapshot_dirs(): return sorted([p for p in glob.glob(os.path.join(SNAP_DIR,"*")) if os.path.isdir(p)],reverse=True)
 
@@ -1165,10 +1228,10 @@ def weekly_candidates(focus):
 # =========================================================
 # HEADER + SIDEBAR
 # =========================================================
-header("📈 Sanggul Stock Scanner",f"{APP_VERSION} · 400 IDX · Hybrid Factors · EOD Snapshot Persistent · Morning Confirmation · TradingView")
+header("📈 Sanggul Stock Scanner",f"{APP_VERSION} · 400 IDX · Global Morning Intelligence · EOD Persistent · Morning Confirmation · TradingView")
 
 with st.sidebar:
-    st.markdown('<div class="control-card"><div class="control-title">SANGGUL STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.1.5 · PRO HYBRID</div><div class="small-note" style="margin-top:4px">Decision-support terminal · 400 IDX</div></div>',unsafe_allow_html=True)
+    st.markdown('<div class="control-card"><div class="control-title">SANGGUL STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.4 · GLOBAL MORNING INTELLIGENCE</div><div class="small-note" style="margin-top:4px">Decision-support terminal · 400 IDX</div></div>',unsafe_allow_html=True)
     st.markdown("### 🧭 MENU UTAMA")
     mode=st.radio("Navigasi",[
         "📊 Dashboard","⚡ Trading Harian","📅 Swing Trading Mingguan","🔎 Saham Individu","🏭 Sector Opportunity","🏆 Top 3 Actionable","🟩 Top 10 Opportunity","🟨 Top 50 Focus","🟦 Top 150 Enrich","🌅 Morning Confirmation","🌆 EOD Full Scan","📜 EOD Scan History","🧠 Multi-Factor Data Hub"],index=0)
@@ -1185,6 +1248,7 @@ with st.sidebar:
 # Market strip
 ihsg,ih20,ih50,regime=market_metrics(period)
 metric_strip([("IHSG",fmt(ihsg)),("MA20",fmt(ih20)),("MA50",fmt(ih50)),("Market Gate",regime)])
+global_us=global_morning_brief()
 
 snap=read_snapshot(latest_snapshot())
 current_scan=st.session_state.get("current_scan") or load_current_scan()
@@ -1350,6 +1414,8 @@ if mode=="📊 Dashboard":
     if not mr.get("Ready"):
         st.error(f'🔒 **MORNING BLOCKED — {mr.get("Reason","EOD belum valid")}**. Top 3 EOD tidak ditampilkan sebagai kandidat pagi agar tidak terjadi false signal. Gunakan **🔄 Scan 400** hanya sebagai current view, bukan baseline EOD.')
         st.stop()
+    st.markdown("#### 🌎 Global Market Context")
+    global_morning_brief()
     st.markdown("#### 🟩 Top 10 Opportunity — Opportunity Now")
     show_table(opp,["Ticker","Setup","Timing","OpportunityScore","MultiFactorScore","FactorCoveragePct","AnalysisMode","StockSetupGate","MarketGate","RiskGate","RiskFlag","Close","MA20","RSI","Entry","SL","TP1","TP2","RR","RiskPct","RiskATRMultiple","Status"])
     st.markdown("#### 📌 Decision Framework")
