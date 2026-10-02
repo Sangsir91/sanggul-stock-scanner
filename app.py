@@ -1,15 +1,21 @@
 import os, json, glob
 from datetime import datetime
+try:
+    from zoneinfo import ZoneInfo
+except Exception:
+    ZoneInfo = None
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.1.5 PRO HYBRID FIX11 · PRO DECISION DASHBOARD"
-ENGINE_VERSION = "V11.1.5-FIX11"
-RISK_GATE_VERSION = "2.3"
+APP_VERSION = "V11.2.5 PRO MORNING DECISION BOARD"
+ENGINE_VERSION = "V11.2.5-MORNING-DECISION-BOARD"
+RISK_GATE_VERSION = "2.5"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+RECOVERY_DIR = os.path.join(BASE_DIR, "recovered_eod")
+os.makedirs(RECOVERY_DIR, exist_ok=True)
 SNAP_DIR = os.path.join(BASE_DIR, "snapshots")
 CURRENT_SCAN_DIR = os.path.join(BASE_DIR, "current_scan")
 os.makedirs(CURRENT_SCAN_DIR, exist_ok=True)
@@ -154,7 +160,7 @@ def analyze(df):
     risk_atr=(risk/atr14) if pd.notna(atr14) and atr14>0 else np.nan
     overext=max(close/ma20-1,0)*100 if ma20>0 else np.nan
     entry_gap=abs(entry-close)/close*100 if close>0 else np.nan
-    return {"Close":close,"MA20":ma20,"MA50":ma50,"MA200":ma200,"Return20D":ret20*100,"Return60D":ret60*100,"RSI":float(x.RSI),"MACD":float(x.MACD),"VolumeRatio":vr,"ATR14":atr14,"Support":support,"Resistance":resistance,"Entry":entry,"SL":sl,"TP1":tp1,"TP2":tp2,"RR":rr,"RiskPct":risk_pct,"StopDistancePct":risk_pct,"RiskATRMultiple":risk_atr,"OverextensionPct":overext,"EntryGapPct":entry_gap,"QualityScore":quality,"SetupScore":setup,"OpportunityScore":opportunity,"Status":status,"Setup":setup_type,"Timing":timing,"Candle":candle}
+    return {"Close":close,"MA20":ma20,"MA50":ma50,"MA200":ma200,"Return20D":ret20*100,"Return60D":ret60*100,"RSI":float(x.RSI),"MACD":float(x.MACD),"VolumeRatio":vr,"ATR14":atr14,"Support":support,"Resistance":resistance,"Entry":entry,"SL":sl,"TP1":tp1,"TP2":tp2,"RR":rr,"RiskPct":risk_pct,"StopDistancePct":risk_pct,"RiskATRMultiple":risk_atr,"OverextensionPct":overext,"EntryGapPct":entry_gap,"QualityScore":quality,"SetupScore":setup,"OpportunityScore":opportunity,"Status":status,"Setup":setup_type,"Timing":timing,"Candle":candle,"DataDate":pd.Timestamp(d.index[-1]).strftime("%Y-%m-%d"),"DataPoints":int(len(d)),"DataSource":"Yahoo Finance EOD"}
 
 # =========================================================
 # MULTI-FACTOR ENGINE — Technical + Fundamental + Flow + Sector
@@ -401,7 +407,17 @@ def load_data(ticker,period="2y",interval="1d"):
         d=d[keep].copy()
         if "Close" not in d.columns:
             return pd.DataFrame()
-        return d.dropna(subset=["Close"])
+        d=d.dropna(subset=["Close"])
+        # DATA CONTRACT: before the EOD lock, never use today's incomplete daily candle.
+        # This prevents a morning scan from labeling today's partial quote as EOD.
+        if interval == "1d":
+            now_jkt = jakarta_now()
+            before_eod_lock = (now_jkt.hour < 16) or (now_jkt.hour == 16 and now_jkt.minute < 20)
+            if before_eod_lock and len(d):
+                idx_dates = pd.to_datetime(d.index, errors="coerce").date
+                today = now_jkt.date()
+                d = d[[x is not None and x < today for x in idx_dates]]
+        return d
     except Exception:
         return pd.DataFrame()
 
@@ -460,6 +476,84 @@ def _ensure_layers(snap):
     enrich,focus,opp,action=build_layers(full,min_rr)
     snap.update({"full":full,"top150":enrich,"top50":focus,"top10":opp,"top3":action})
     return snap
+
+def _read_saved_bundle(base_dir, stamp):
+    try:
+        path=os.path.join(base_dir,stamp)
+        if not os.path.isdir(path): return None
+        meta=json.load(open(os.path.join(path,"meta.json"),encoding="utf-8"))
+        data={k:pd.read_csv(os.path.join(path,f)) for k,f in [("full","full_scan.csv"),("top150","top150.csv"),("top50","top50.csv"),("top10","top10.csv"),("top3","top3.csv")]}
+        return _ensure_layers({"meta":meta,**data})
+    except Exception:
+        return None
+
+def latest_recovered_eod():
+    marker=os.path.join(RECOVERY_DIR,"latest.txt")
+    if os.path.exists(marker):
+        stamp=open(marker,encoding="utf-8").read().strip()
+        return _read_saved_bundle(RECOVERY_DIR,stamp)
+    ds=sorted([p for p in glob.glob(os.path.join(RECOVERY_DIR,"*")) if os.path.isdir(p)],reverse=True)
+    return _read_saved_bundle(RECOVERY_DIR,os.path.basename(ds[0])) if ds else None
+
+def _validate_recovery_bundle(bundle, expected_universe=400):
+    if not bundle: return False, "NO RECOVERY DATA"
+    meta=bundle.get("meta",{}); full=bundle.get("full",pd.DataFrame())
+    if str(meta.get("scan_type","")).upper() != "RECOVERED_EOD": return False, "NOT RECOVERED EOD"
+    expected=int(meta.get("universe",expected_universe) or expected_universe)
+    analyzed=int(pd.to_numeric(full.get("Close",pd.Series(dtype=float)),errors="coerce").notna().sum()) if not full.empty else 0
+    if analyzed < min(expected,int(expected*0.90)): return False, f"INCOMPLETE RECOVERY ({analyzed}/{expected})"
+    dates=pd.to_datetime(full.get("DataDate"),errors="coerce").dropna() if "DataDate" in full.columns else pd.Series(dtype="datetime64[ns]")
+    if dates.empty: return False, "NO RECOVERY DATA DATE"
+    latest=dates.max().date(); today=jakarta_now().date()
+    if latest >= today: return False, "TODAY'S PARTIAL CANDLE IS NOT EOD"
+    return True, "RECOVERED EOD VALIDATED"
+
+def save_recovered_eod(bundle, source_label):
+    stamp=datetime.now().strftime("%Y%m%d_%H%M%S"); path=os.path.join(RECOVERY_DIR,stamp); os.makedirs(path,exist_ok=True)
+    meta=dict(bundle.get("meta",{})); meta["scan_type"]="RECOVERED_EOD"; meta["eod_locked"]=False; meta["recovery_source"]=source_label; meta["recovered_at"]=jakarta_now().isoformat(timespec="seconds"); meta["data_contract"]="Validated latest completed EOD; recovery is not an official saved EOD snapshot"
+    for k,f in [("full","full_scan.csv"),("top150","top150.csv"),("top50","top50.csv"),("top10","top10.csv"),("top3","top3.csv")]: bundle[k].to_csv(os.path.join(path,f),index=False)
+    with open(os.path.join(path,"meta.json"),"w",encoding="utf-8") as f: json.dump(meta,f,ensure_ascii=False,indent=2)
+    with open(os.path.join(RECOVERY_DIR,"latest.txt"),"w",encoding="utf-8") as f: f.write(stamp)
+    bundle["meta"]=meta
+    return bundle
+
+def recover_eod_from_current_or_scan(period, n=400, min_rr=2.0, max_stop_pct=15.0):
+    """Morning fallback: reuse a validated current scan first; otherwise build a fresh 400-stock completed-EOD scan. Never overwrites official EOD history."""
+    current=load_current_scan()
+    if current:
+        full=current.get("full",pd.DataFrame()).copy(); meta=current.get("meta",{})
+        expected=int(meta.get("universe",n) or n)
+        dates=pd.to_datetime(full.get("DataDate"),errors="coerce").dropna() if "DataDate" in full.columns else pd.Series(dtype="datetime64[ns]")
+        analyzed=int(pd.to_numeric(full.get("Close",pd.Series(dtype=float)),errors="coerce").notna().sum()) if not full.empty else 0
+        latest=dates.max().date() if not dates.empty else None
+        if analyzed >= min(expected,int(expected*0.90)) and latest is not None and latest < jakarta_now().date():
+            recovered={"meta":dict(meta),"full":full,"top150":current.get("top150",pd.DataFrame()),"top50":current.get("top50",pd.DataFrame()),"top10":current.get("top10",pd.DataFrame()),"top3":current.get("top3",pd.DataFrame())}
+            recovered=_ensure_layers(recovered)
+            ok,reason=_validate_recovery_bundle({"meta":{**recovered["meta"],"scan_type":"RECOVERED_EOD","universe":expected},"full":recovered["full"]},expected)
+            if ok:
+                return save_recovered_eod(recovered,"CURRENT_SCAN validated as completed EOD")
+
+    # No usable current scan: perform a fresh 400-stock scan. load_data() removes today's partial candle before 16:20 WIB.
+    path=run_full_scan(period,n,min_rr,max_stop_pct,save_eod=False)
+    current=load_current_scan() if path else None
+    if not current: return None
+    recovered={"meta":dict(current["meta"]),"full":current["full"].copy(),"top150":current["top150"].copy(),"top50":current["top50"].copy(),"top10":current["top10"].copy(),"top3":current["top3"].copy()}
+    recovered=_ensure_layers(recovered)
+    recovered["meta"]["scan_type"]="RECOVERED_EOD"
+    ok,reason=_validate_recovery_bundle(recovered,n)
+    return save_recovered_eod(recovered,"FRESH 400 CURRENT SCAN validated as completed EOD") if ok else None
+
+def morning_baseline(period, n=400, min_rr=2.0, max_stop_pct=15.0):
+    """Return official EOD if valid; otherwise use a validated non-official EOD recovery."""
+    official=read_snapshot(latest_snapshot())
+    if official:
+        valid,_=official_eod_snapshot_valid(official,n)
+        if valid: return official,"OFFICIAL EOD"
+    recovery=latest_recovered_eod()
+    if recovery:
+        ok,_=_validate_recovery_bundle(recovery,n)
+        if ok: return recovery,"AUTO EOD RECOVERY"
+    return None,"NO VALID EOD BASELINE"
 
 def latest_snapshot():
     marker=os.path.join(SNAP_DIR,"latest.txt")
@@ -610,7 +704,7 @@ def run_full_scan(period,n,min_rr,max_stop_pct=15.0,save_eod=True):
     else: ihsg=ih20=ih50=np.nan; regime="DATA INSUFFICIENT"
     result=apply_risk_gate(result,min_rr,max_stop_pct,regime)
     enrich,focus,opp,action=build_layers(result,min_rr)
-    meta={"timestamp":datetime.now().isoformat(timespec="seconds"),"period":period,"engine_period":engine_period,"universe":n,"analyzed":len(result),"min_rr":min_rr,"max_stop_pct":max_stop_pct,"ihsg":ihsg,"ihsg_ma20":ih20,"ihsg_ma50":ih50,"regime":regime,"analysis_mode":"HYBRID","engine_version":ENGINE_VERSION,"risk_gate_version":RISK_GATE_VERSION}
+    meta={"timestamp":jakarta_now().isoformat(timespec="seconds"),"period":period,"engine_period":engine_period,"universe":n,"analyzed":len(result),"min_rr":min_rr,"max_stop_pct":max_stop_pct,"ihsg":ihsg,"ihsg_ma20":ih20,"ihsg_ma50":ih50,"regime":regime,"analysis_mode":"HYBRID","engine_version":ENGINE_VERSION,"risk_gate_version":RISK_GATE_VERSION,"data_source":"Yahoo Finance EOD","data_contract":"No fabricated pre-open quote; latest validated EOD close is pre-open reference","scan_type":"OFFICIAL_EOD" if save_eod else "CURRENT_SCAN","eod_locked":bool(save_eod),"eod_data_date":(result["DataDate"].dropna().max() if "DataDate" in result.columns and not result["DataDate"].dropna().empty else None)}
     if save_eod:
         return save_snapshot(result,enrich,focus,opp,action,meta)
     current_meta=dict(meta); current_meta["scan_type"]="CURRENT_SCAN"
@@ -639,14 +733,138 @@ def market_metrics(period):
         pass
     return None,None,None,"🟡 DATA INSUFFICIENT"
 
-def morning_confirm(top10,period):
-    rows=[]
+def jakarta_now():
+    try:
+        return datetime.now(ZoneInfo("Asia/Jakarta")) if ZoneInfo else datetime.now()
+    except Exception:
+        return datetime.now()
+
+def _parse_iso_dt(v):
+    try:
+        return datetime.fromisoformat(str(v).replace("Z","+00:00"))
+    except Exception:
+        return None
+
+def eod_lock_open():
+    now = jakarta_now()
+    return (now.hour > 16) or (now.hour == 16 and now.minute >= 20)
+
+def official_eod_snapshot_valid(snap, expected_universe=400):
+    """Strict gate for the morning dashboard. Never treat a current/ad-hoc scan as EOD."""
+    if not snap:
+        return False, "NO OFFICIAL EOD SNAPSHOT"
+    meta=snap.get("meta",{})
+    if str(meta.get("scan_type","")).upper() not in {"OFFICIAL_EOD", "EOD"} and not bool(meta.get("eod_locked",False)):
+        return False, "SNAPSHOT NOT MARKED OFFICIAL EOD"
+    full=snap.get("full",pd.DataFrame())
+    expected=int(meta.get("universe",expected_universe) or expected_universe)
+    analyzed=int(pd.to_numeric(full.get("Close",pd.Series(dtype=float)),errors="coerce").notna().sum()) if not full.empty else 0
+    if analyzed < min(expected, int(expected*0.90)):
+        return False, f"INCOMPLETE EOD DATA ({analyzed}/{expected})"
+    dates=pd.to_datetime(full.get("DataDate"),errors="coerce").dropna() if "DataDate" in full.columns else pd.Series(dtype="datetime64[ns]")
+    if dates.empty:
+        return False, "NO EOD DATA DATE"
+    latest=dates.max().date()
+    today=jakarta_now().date()
+    if not eod_lock_open() and latest >= today:
+        return False, "TODAY'S PARTIAL CANDLE IS NOT EOD"
+    if str(meta.get("data_source","")).strip()=="":
+        return False, "UNKNOWN DATA SOURCE"
+    return True, "OFFICIAL EOD VALID"
+
+def morning_data_readiness(snap, expected_universe=400):
+    if not snap:
+        return {"Ready":False,"Level":"NO SNAPSHOT","Reason":"Belum ada EOD baseline yang dapat divalidasi."}
+    meta=snap.get("meta",{}); scan_type=str(meta.get("scan_type","")).upper()
+    if scan_type=="RECOVERED_EOD":
+        valid, valid_reason=_validate_recovery_bundle(snap,expected_universe)
+    else:
+        valid, valid_reason=official_eod_snapshot_valid(snap, expected_universe)
+    full=snap.get("full",pd.DataFrame())
+    required=["Ticker","Close","MA20","MA50","MA200","RSI","MACD","VolumeRatio","ATR14","Entry","SL","TP1","TP2","RR","RiskPct","RiskATRMultiple","Status","DataDate"]
+    missing=[c for c in required if c not in full.columns]
+    meta_expected=int(meta.get("universe",expected_universe) or expected_universe)
+    if missing:
+        return {"Ready":False,"Level":"DATA INCOMPLETE","Reason":"Kolom wajib belum lengkap: "+", ".join(missing),"Analyzed":0,"Expected":meta_expected,"LatestDataDate":"—"}
+    n=int(pd.to_numeric(full["Close"],errors="coerce").notna().sum()); dates=pd.to_datetime(full["DataDate"],errors="coerce").dropna()
+    latest_date=dates.max().strftime("%Y-%m-%d") if not dates.empty else None; latest_age=_days_since(latest_date) if latest_date else 999
+    top=snap.get("top10",pd.DataFrame()); candidate_missing=[]
+    if not top.empty:
+        for c in required:
+            if c in top.columns and top[c].isna().any(): candidate_missing.append(c)
+    if not valid: level="REVIEW"; reason=valid_reason
+    elif latest_age>5: level="STALE"; reason="Daily EOD terakhir terlalu lama"
+    elif n<min(meta_expected,int(meta_expected*0.90)) or candidate_missing: level="REVIEW"; reason="Periksa coverage/kelengkapan kandidat"
+    else:
+        level="READY" if scan_type!="RECOVERED_EOD" else "READY · RECOVERED"
+        reason=("Official EOD lengkap, terkunci, dan tidak memakai candle hari berjalan" if scan_type!="RECOVERED_EOD" else "EOD terakhir ditemukan dan divalidasi; bukan snapshot resmi tersimpan")
+    return {"Ready":level.startswith("READY"),"Level":level,"Reason":reason,"SnapshotTimestamp":meta.get("timestamp",meta.get("recovered_at","—")),"SnapshotAgeHours":0,"Analyzed":n,"Expected":meta_expected,"LatestDataDate":latest_date or "—","LatestDataAgeDays":latest_age,"UniqueDataDates":int(dates.dt.strftime("%Y-%m-%d").nunique()) if not dates.empty else 0,"CandidateMissing":candidate_missing,"Validation":valid_reason,"SourceType":scan_type}
+
+def _days_since(date_str):
+    try:
+        d=pd.Timestamp(date_str).date(); return (jakarta_now().date()-d).days
+    except Exception:
+        return 999
+
+def morning_confirm(top10,period,market_regime="NEUTRAL / SIDEWAYS"):
+    """Morning validation MUST use the locked official EOD snapshot.
+    Never fetch today's partial daily candle here: before the open a data provider can
+    already expose an incomplete current-day bar, which would incorrectly overwrite
+    the EOD close shown on the candidate card.
+    """
+    rows=[]; market=str(market_regime).upper()
     for _,r in top10.iterrows():
-        t=r.Ticker; d=load_data(t,"2y","1d")
-        if d.empty:continue
-        close=float(d.Close.iloc[-1]); openp=float(d.Open.iloc[-1]); eod_entry=float(r.Entry); sl=float(r.SL); gap=(openp-close)/max(close,1)*100
-        status="CANCEL" if close<sl else ("WAIT — TOO HIGH" if close>eod_entry*1.025 else ("CONFIRM" if close>=eod_entry*.985 else "WAIT — BELOW ENTRY"))
-        x=r.to_dict(); x.update({"Current":close,"Open":openp,"GapVsCurrentPct":gap,"MorningStatus":status}); rows.append(x)
+        ticker=str(r.get("Ticker",""))
+        if not ticker: continue
+        # The official EOD snapshot is the sole pre-open price reference.
+        ref=pd.to_numeric(pd.Series([r.get("Close",np.nan)]),errors="coerce").iloc[0]
+        if not np.isfinite(ref):
+            continue
+        last_date=str(r.get("DataDate","") or "")
+        data_age=_days_since(last_date) if last_date else 999
+        eod_entry=float(r.get("Entry",np.nan)); sl=float(r.get("SL",np.nan))
+        entry_low=eod_entry*.985; entry_high=eod_entry*1.025
+        if data_age>5:
+            status="DATA STALE"; reason="Official EOD data terlalu lama"
+        elif np.isfinite(sl) and ref<sl:
+            status="CANCEL"; reason="EOD reference berada di bawah SL"
+        elif market.startswith("RISK-OFF"):
+            status="WAIT — MARKET"; reason="Market Gate RISK-OFF"
+        elif ref<entry_low:
+            status="WAIT — BELOW ENTRY"; reason="Menunggu harga masuk area entry"
+        elif ref<=entry_high:
+            status="CONFIRM CANDIDATE"; reason="EOD reference berada di area entry"
+        else:
+            status="WAIT — TOO HIGH"; reason="EOD reference terlalu jauh di atas entry"
+        market_gate=("RISK-OFF" if market.startswith("RISK-OFF") else ("RISK-ON" if market.startswith("RISK-ON") else "NEUTRAL"))
+        if np.isfinite(eod_entry) and eod_entry > 0:
+            distance_entry_pct=(ref-eod_entry)/eod_entry*100.0
+        else:
+            distance_entry_pct=np.nan
+        if ref < entry_low:
+            entry_position="BELOW ENTRY"
+        elif ref <= entry_high:
+            entry_position="IN ENTRY ZONE"
+        else:
+            entry_position="ABOVE ENTRY"
+        x=r.to_dict(); x.update({
+            "PreOpenReference":ref,
+            "Current":ref,
+            "Open":np.nan,
+            "GapVsCurrentPct":np.nan,
+            "LastDataDate":last_date or "—",
+            "DataAgeDays":data_age,
+            "DataStatus":"VALID EOD" if data_age<=5 else "STALE",
+            "MorningStatus":status,
+            "MorningReason":reason,
+            "MarketGate":market_gate,
+            "EntryLow":tick(entry_low),
+            "EntryHigh":tick(entry_high),
+            "DistanceToEntryPct":round(float(distance_entry_pct),2) if np.isfinite(distance_entry_pct) else np.nan,
+            "EntryPosition":entry_position,
+            "Decision":"USER DECISION"
+        })
+        rows.append(x)
     return pd.DataFrame(rows)
 
 # =========================================================
@@ -763,6 +981,13 @@ def status_badge(s):
     s=str(s).upper(); cls="badge-green" if s in ["READY","CONFIRM"] else ("badge-red" if s in ["AVOID","CANCEL"] else "badge-yellow")
     return f'<span class="badge {cls}">{s}</span>'
 
+def morning_status_badge(s):
+    s=str(s).upper()
+    if s.startswith("CONFIRM"): cls="badge-green"
+    elif s.startswith("CANCEL") or s.startswith("DATA STALE"): cls="badge-red"
+    else: cls="badge-yellow"
+    return f'<span class="badge {cls}">{s}</span>'
+
 def header(title,subtitle=""):
     st.markdown(f'<div class="hero"><h1>{title}</h1><p>{subtitle}</p></div>',unsafe_allow_html=True)
 
@@ -788,17 +1013,51 @@ def risk_badge(gate):
     return f'<span class="badge {cls}">{g}</span>'
 
 def show_top3_cards(action, meta):
-    st.markdown('<div class="top3-wrap"><div class="top3-head"><div><div class="top3-title">🏆 Top 3 Actionable — Best Available</div><div class="top3-sub">PASS diprioritaskan. REVIEW tetap ditampilkan sebagai kandidat terbaik, bukan sinyal eksekusi otomatis.</div></div><span class="mode-pill">Risk Gate 2.3</span></div>', unsafe_allow_html=True)
+    """Dashboard Top-3 is explicitly an EOD candidate list plus a morning validation layer.
+    READY/RiskGate describe the EOD snapshot; MorningStatus describes the latest validated
+    daily reference before the open. Neither is an automatic BUY instruction.
+    """
+    st.markdown('<div class="top3-wrap"><div class="top3-head"><div><div class="top3-title">🏆 EOD Top 3 Candidates + 🌅 Morning Action</div><div class="top3-sub">EOD ranking is the historical candidate baseline. Morning status is re-validated separately; entry remains the user decision.</div></div><span class="mode-pill">EOD + MORNING</span></div>', unsafe_allow_html=True)
     if action is None or action.empty:
-        st.markdown('<div class="small-note">Belum ada kandidat dari current scan.</div></div>', unsafe_allow_html=True); return
+        st.markdown('<div class="small-note">Belum ada kandidat dari current scan.</div></div>', unsafe_allow_html=True)
+        return
+
+    try:
+        morning = morning_confirm(action.head(3), str(meta.get("period", "2y")), meta.get("regime", "NEUTRAL / SIDEWAYS"))
+        morning_by = {str(r.get("Ticker")): r for _, r in morning.iterrows()} if not morning.empty else {}
+    except Exception:
+        morning_by = {}
+
     cards=[]
     for i,(_,r) in enumerate(action.head(3).iterrows(),1):
-        ticker=str(r.get('Ticker','—')); gate=str(r.get('RiskGate','REVIEW')); setup=str(r.get('Setup','—')); mode=str(r.get('AnalysisMode','CORE TECHNICAL'))
-        close=fmt(r.get('Close',np.nan)); entry=fmt(r.get('Entry',np.nan)); sl=fmt(r.get('SL',np.nan)); tp1=fmt(r.get('TP1',np.nan)); rr=fmt(r.get('RR',np.nan),2)
+        ticker=str(r.get('Ticker','—'))
+        eod_gate=str(r.get('RiskGate','REVIEW'))
+        setup=str(r.get('Setup','—'))
+        mode=str(r.get('AnalysisMode','CORE TECHNICAL'))
+        eod_close=fmt(r.get('Close',np.nan))
+        entry=fmt(r.get('Entry',np.nan)); sl=fmt(r.get('SL',np.nan)); tp1=fmt(r.get('TP1',np.nan)); rr=fmt(r.get('RR',np.nan),2)
         score=fmt(r.get('MultiFactorScore',np.nan),1); cov=fmt(r.get('FactorCoveragePct',np.nan),0); risk=fmt(r.get('RiskPct',np.nan),1); atr=fmt(r.get('RiskATRMultiple',np.nan),1)
         stock_gate=str(r.get('StockSetupGate','—')); market_gate=str(r.get('MarketGate','—')); flag=str(r.get('RiskFlag','OK'))
+
+        mr=morning_by.get(ticker,{})
+        mstatus=str(mr.get('MorningStatus','NOT VALIDATED'))
+        mreason=str(mr.get('MorningReason','Morning validation belum tersedia'))
+        pref=fmt(mr.get('PreOpenReference',r.get('Close',np.nan)))
+        last_date=str(mr.get('LastDataDate',r.get('DataDate','—')))
+        data_status=str(mr.get('DataStatus','UNKNOWN'))
+        m_gate=str(mr.get('MarketGate',market_gate))
+        decision=str(mr.get('Decision','USER DECISION'))
+
         flag_html='' if flag=='OK' else f'<div class="risk-line">⚠️ {flag}</div>'
-        card=f'''<div class="pick-card"><div><span class="pick-rank">{i}</span><span class="pick-ticker">{ticker}</span><span class="pick-status">{risk_badge(gate)}</span></div><div class="pick-price">{close}</div><div class="pick-setup">{setup} · {mode} · Stock {stock_gate} · Market {market_gate}</div><div class="pick-metrics"><div class="pick-metric"><span>ENTRY</span><b>{entry}</b></div><div class="pick-metric"><span>SL</span><b>{sl}</b></div><div class="pick-metric"><span>TP1</span><b>{tp1}</b></div><div class="pick-metric"><span>R/R</span><b>{rr}</b></div></div><div class="pick-metrics"><div class="pick-metric"><span>SCORE</span><b>{score}</b></div><div class="pick-metric"><span>COVERAGE</span><b>{cov}%</b></div><div class="pick-metric"><span>RISK</span><b>{risk}%</b></div><div class="pick-metric"><span>ATR</span><b>{atr}x</b></div></div>{flag_html}<div style="margin-top:10px"><a href="{tv_link(ticker)}" target="_blank" style="color:#62bdff;font-size:11px">📈 TradingView</a></div></div>'''
+        card=f'''<div class="pick-card">
+<div><span class="pick-rank">{i}</span><span class="pick-ticker">{ticker}</span><span class="pick-status">{morning_status_badge(mstatus)}</span></div>
+<div class="pick-price">{pref}</div>
+<div class="pick-setup"><b>Morning:</b> {mreason} · Data {data_status} · {last_date}</div>
+<div class="pick-setup">EOD Candidate · {setup} · {mode} · Stock {stock_gate} · Market {m_gate}</div>
+<div class="pick-metrics"><div class="pick-metric"><span>EOD CLOSE</span><b>{eod_close}</b></div><div class="pick-metric"><span>ENTRY</span><b>{entry}</b></div><div class="pick-metric"><span>SL</span><b>{sl}</b></div><div class="pick-metric"><span>TP1</span><b>{tp1}</b></div></div>
+<div class="pick-metrics"><div class="pick-metric"><span>R/R</span><b>{rr}</b></div><div class="pick-metric"><span>EOD SCORE</span><b>{score}</b></div><div class="pick-metric"><span>COVERAGE</span><b>{cov}%</b></div><div class="pick-metric"><span>RISK</span><b>{risk}%</b></div></div>
+<div class="pick-setup"><b>Morning Gate:</b> {m_gate} · <b>Decision:</b> {decision}</div>
+<div class="pick-setup"><b>ATR Risk:</b> {atr}x</div>{flag_html}<div style="margin-top:10px"><a href="{tv_link(ticker)}" target="_blank" style="color:#62bdff;font-size:11px">📈 TradingView</a></div></div>'''
         cards.append(card)
     st.markdown('<div class="pick-grid">'+''.join(cards)+'</div></div>', unsafe_allow_html=True)
 
@@ -810,8 +1069,8 @@ def dashboard_summary(active, meta, action, opp, focus, enrich, ihsg, ih20, ih50
     show_top3_cards(action,meta)
 
 def show_top3(action,meta,opp=None):
-    st.markdown('<div class="section-title">🏆 Top 3 Actionable Picks — Hybrid Risk Gate</div>',unsafe_allow_html=True)
-    st.caption(f"Risk Gate 2.3 · Max Stop {meta.get("max_stop_pct",15):.1f}% · Top 3 selalu diisi dengan Best Available Candidates; PASS diprioritaskan. ATR Risk tetap wajib untuk status PASS · Foreign Flow, Broker Flow, dan Fundamental adalah enrichment opsional.")
+    st.markdown('<div class="section-title">🏆 EOD Top 3 Candidates — Hybrid Risk Gate</div>',unsafe_allow_html=True)
+    st.caption(f"Risk Gate {RISK_GATE_VERSION} · Max Stop {meta.get("max_stop_pct",15):.1f}% · Top 3 selalu diisi dengan Best Available Candidates; PASS diprioritaskan. ATR Risk tetap wajib untuk status PASS · Foreign Flow, Broker Flow, dan Fundamental adalah enrichment opsional.")
     if action is None or action.empty:
         o=opp.copy() if isinstance(opp,pd.DataFrame) else pd.DataFrame()
         if o.empty:
@@ -930,7 +1189,7 @@ if current_scan is not None:
 if scan_now:
     with st.spinner(f"Menjalankan current scan {n} saham..."):
         path=run_full_scan(period,n,min_rr,max_stop_pct,save_eod=False)
-    if path: st.success("Current Scan selesai. Snapshot EOD resmi tidak diubah."); st.rerun()
+    if path: st.success("Current Scan selesai. Ini hanya view dinamis; Official EOD Snapshot tidak diubah dan tidak dipakai sebagai Morning baseline."); st.rerun()
     else: st.error("Tidak ada data yang berhasil dianalisis.")
 
 # Current Scan takes precedence for analytical menus during this session;
@@ -945,21 +1204,62 @@ if active is not None:
 # SPECIAL MENUS
 # =========================================================
 if mode=="🌆 EOD Full Scan":
-    header("🌆 EOD Full Scan","Bangun snapshot baru setelah market close. Snapshot lama tetap tersimpan.")
-    st.info("Gunakan setelah candle harian selesai. Hasil ini menjadi baseline untuk Dashboard dan Morning Confirmation.")
-    if st.button("🚀 Jalankan EOD Full Scan",type="primary"):
-        path=run_full_scan(period,n,min_rr,max_stop_pct)
-        if path: st.success(f"Snapshot EOD tersimpan: {os.path.basename(path)}"); st.rerun()
-        else: st.error("Tidak ada data yang berhasil dianalisis.")
+    header("🌆 EOD Full Scan","Bangun official EOD snapshot setelah market close. Snapshot lama tetap tersimpan.")
+    now_jkt=jakarta_now()
+    st.info("Gunakan setelah candle harian selesai. Official EOD snapshot menjadi baseline Dashboard dan Morning Confirmation; sebelum market close jangan jadikan scan ini sebagai snapshot resmi.")
+    if now_jkt.hour < 16 or (now_jkt.hour == 16 and now_jkt.minute < 20):
+        st.warning(f"🔒 EOD LOCK — waktu Jakarta {now_jkt.strftime('%H:%M')}. Official EOD Scan dibuka mulai 16:20 WIB agar candle hari berjalan tidak masuk sebagai EOD final. Untuk screening saat ini gunakan 🔄 Scan 400 Saham / Update EOD; hasilnya tidak mengganti EOD Snapshot.")
+    else:
+        if st.button("🚀 Jalankan EOD Full Scan",type="primary"):
+            path=run_full_scan(period,n,min_rr,max_stop_pct)
+            if path: st.success(f"Snapshot EOD tersimpan: {os.path.basename(path)}"); st.rerun()
+            else: st.error("Tidak ada data yang berhasil dianalisis.")
     st.stop()
 
 if mode=="🌅 Morning Confirmation":
-    header("🌅 Morning Confirmation","Validasi Top 10 EOD dengan kondisi harga pagi. Tidak melakukan reranking 400 saham.")
-    if not snap: st.warning("Belum ada EOD Snapshot."); st.stop()
-    m=snap["meta"]; st.success(f"Baseline EOD: {m.get('timestamp','—')} · Top 10 tetap dipertahankan.")
-    conf=morning_confirm(snap["top10"],period)
-    show_table(conf,["Ticker","Setup","Timing","MorningStatus","Current","Open","Entry","SL","TP1","TP2","RR","RSI","MACD","VolumeRatio"])
-    st.caption("🟢 CONFIRM = dekat area entry · 🟡 WAIT = belum/terlalu tinggi · 🔴 CANCEL = di bawah SL.")
+    header("🌅 Morning Ready Center","Validasi EOD sebelum market buka. Jika snapshot resmi belum ada, sistem mencoba Auto EOD Recovery tanpa mengubah EOD History.")
+    if st.button("🔄 Refresh Morning Data",type="primary"):
+        load_data.clear(); st.session_state.pop("morning_recovery_attempted",None); st.rerun()
+    m0= snap.get("meta",{}) if snap else {}
+    baseline, baseline_source = morning_baseline(period, int(m0.get("universe",400) or 400), min_rr, max_stop_pct)
+    if baseline is None and not st.session_state.get("morning_recovery_attempted",False):
+        st.session_state["morning_recovery_attempted"]=True
+        with st.spinner("🌅 Menyiapkan EOD baseline tervalidasi dari data yang sudah selesai..."):
+            baseline, baseline_source = morning_baseline(period, 400, min_rr, max_stop_pct)
+        if baseline is None:
+            with st.spinner("🔄 Auto EOD Recovery: scan 400 saham completed-EOD..."):
+                baseline=recover_eod_from_current_or_scan(period,400,min_rr,max_stop_pct)
+                baseline_source="AUTO EOD RECOVERY" if baseline else "NO VALID EOD BASELINE"
+    if baseline is None:
+        st.error("🔒 MORNING DATA BLOCKED — tidak ditemukan EOD baseline yang tervalidasi. Tidak ada Top 3 pagi yang ditampilkan.")
+        st.info("Jalankan 🌆 EOD Full Scan setelah market close, atau gunakan 🔄 Scan 400 Saham / Update EOD. Current Scan akan dipakai untuk recovery hanya jika data terakhir lengkap dan bukan candle hari berjalan.")
+        st.stop()
+    snap=baseline
+    m=snap["meta"]; ready=morning_data_readiness(snap,int(m.get("universe",400) or 400))
+    analyzed=int(ready.get("Analyzed",0) or 0)
+    expected=int(ready.get("Expected",400) or 400)
+    coverage_pct=(analyzed/expected*100.0) if expected else 0.0
+    source_label="OFFICIAL EOD" if baseline_source=="OFFICIAL EOD" else "AUTO EOD RECOVERY"
+    baseline_created=m.get("timestamp",m.get("recovered_at","—"))
+    cols=st.columns(5)
+    cols[0].metric("EOD BASELINE",ready.get("LatestDataDate","—"))
+    cols[1].metric("Coverage",f"{analyzed}/{expected}",f"{coverage_pct:.1f}%")
+    cols[2].metric("Data Age",f"{ready.get("LatestDataAgeDays",999)} day")
+    cols[3].metric("Data Quality",ready.get("Level","REVIEW"))
+    cols[4].metric("Market Gate",str(m.get("regime","—")))
+    st.caption(f"Baseline: **{source_label}** · EOD data date **{ready.get("LatestDataDate","—")}** · Baseline created **{str(baseline_created)[:19]}** · Coverage **{analyzed}/{expected} ({coverage_pct:.1f}%)**")
+    if ready.get("Ready"):
+        st.success("🟢 MORNING DATA READY — data inti EOD lengkap dan kandidat siap Anda review. Entry tetap keputusan Anda.")
+    else:
+        st.warning("🟡 MORNING DATA REVIEW — jangan gunakan hasil sebagai dasar entry sebelum masalah data diperiksa.")
+    st.markdown(f'<div class="card"><b>Kontrak data pagi</b><br>• <b>{source_label}</b> adalah baseline. Auto Recovery <b>tidak menimpa EOD History</b> dan bukan klaim Official EOD.<br>• <b>EOD Data Date = {ready.get("LatestDataDate","—")}</b>; <b>Baseline Created = {str(baseline_created)[:19]}</b>. Dua tanggal ini sengaja dipisahkan.<br>• Sebelum market buka, <b>Pre-Open Reference</b> = close EOD terakhir; sistem tidak mengarang harga live/premarket.<br>• <b>Coverage {analyzed}/{expected} ({coverage_pct:.1f}%)</b> dan Data Age {ready.get("LatestDataAgeDays",999)} hari harus terlihat sebelum keputusan.<br>• Status Morning adalah <b>decision-support</b>, bukan instruksi BUY. <b>Entry tetap keputusan Anda.</b></div>',unsafe_allow_html=True)
+    conf=morning_confirm(snap["top10"],period,m.get("regime","NEUTRAL / SIDEWAYS"))
+    if not conf.empty:
+        st.markdown("#### 🌅 Morning Action Board")
+        show_table(conf,["Ticker","Setup","MorningStatus","MorningReason","PreOpenReference","Entry","EntryLow","EntryHigh","DistanceToEntryPct","EntryPosition","SL","TP1","TP2","RR","DataStatus","LastDataDate","DataAgeDays","MarketGate","Decision"])
+    else:
+        st.warning("Tidak ada kandidat Top 10 yang berhasil divalidasi.")
+    st.caption("🟢 IN ENTRY ZONE = reference berada di area entry · 🔵 ABOVE ENTRY = belum perlu mengejar harga · 🟡 WAIT = market/setup belum mendukung · 🔴 CANCEL = struktur/risk invalid · USER DECISION = keputusan entry tetap pada Anda.")
     st.stop()
 
 if mode=="📜 EOD Scan History":
@@ -1023,8 +1323,23 @@ if mode in ["📊 Dashboard","🏆 Top 3 Actionable","🟩 Top 10 Opportunity","
 # DASHBOARD / OLD MENUS
 # =========================================================
 if mode=="📊 Dashboard":
-    header("Dashboard","Ringkasan market, pipeline 400 saham, dan Best Available Top 3 — gaya terminal trading modern.")
-    dashboard_summary(active,m,action,opp,focus,enrich,ihsg,ih20,ih50,regime)
+    header("Dashboard","Ringkasan market, pipeline 400 saham, EOD candidates, dan Morning Ready status — gaya terminal trading modern.")
+    # Dashboard Top 3 is anchored to the official EOD snapshot.
+    # Current Scan remains available elsewhere as an ad-hoc/dynamic view and must never
+    # replace the historical EOD baseline on the morning decision card.
+    baseline, baseline_source = morning_baseline(period, 400, min_rr, max_stop_pct)
+    eod_action=baseline.get("top3",pd.DataFrame()) if baseline else pd.DataFrame()
+    eod_meta=baseline.get("meta",{}) if baseline else {}
+    mr=morning_data_readiness(baseline,int(eod_meta.get("universe",400) or 400)) if baseline else {"Ready":False,"Level":"NO SNAPSHOT","Reason":"Belum ada EOD baseline yang tervalidasi"}
+    # Critical safety rule: invalid/no official EOD snapshot must NEVER be rendered as Morning Top 3.
+    display_action=eod_action if mr.get("Ready") else pd.DataFrame()
+    dashboard_summary(active,m,display_action,opp,focus,enrich,ihsg,ih20,ih50,regime)
+    if baseline:
+        st.markdown(f'<div class="card"><b>🔒 EOD Baseline:</b> {baseline_source} · {eod_meta.get("timestamp",eod_meta.get("recovered_at","—"))} · data source {eod_meta.get("data_source","—")} · <b>Top 3 cards are locked to this baseline.</b><br><span class="small-note">🔄 Scan 400 / Update EOD is a separate current view and cannot overwrite the EOD baseline used for Morning Confirmation.</span></div>',unsafe_allow_html=True)
+    st.markdown(f'<div class="card"><b>🌅 Morning Ready Status:</b> <span class="mode-pill">{mr.get("Level","REVIEW")}</span> · EOD {mr.get("LatestDataDate","—")} · analyzed {mr.get("Analyzed",0)}/{mr.get("Expected",400)} · source <b>{baseline_source}</b> · <b>Entry decision remains with user.</b><br><span class="small-note">{mr.get("Reason","—")}. Sebelum open, baseline harus berasal dari Official EOD atau Auto EOD Recovery yang tervalidasi.</span></div>',unsafe_allow_html=True)
+    if not mr.get("Ready"):
+        st.error(f'🔒 **MORNING BLOCKED — {mr.get("Reason","EOD belum valid")}**. Top 3 EOD tidak ditampilkan sebagai kandidat pagi agar tidak terjadi false signal. Gunakan **🔄 Scan 400** hanya sebagai current view, bukan baseline EOD.')
+        st.stop()
     st.markdown("#### 🟩 Top 10 Opportunity — Opportunity Now")
     show_table(opp,["Ticker","Setup","Timing","OpportunityScore","MultiFactorScore","FactorCoveragePct","AnalysisMode","StockSetupGate","MarketGate","RiskGate","RiskFlag","Close","MA20","RSI","Entry","SL","TP1","TP2","RR","RiskPct","RiskATRMultiple","Status"])
     st.markdown("#### 📌 Decision Framework")
@@ -1131,7 +1446,11 @@ elif mode=="🏭 Sector Opportunity":
         st.caption("Sector Opportunity Score adalah agregasi kualitas/setup/opportunity/RR dari saham yang masuk snapshot. Klik sektor di atas untuk membuka daftar sahamnya; gunakan menu Saham Individu untuk Entry/SL/TP dan konfirmasi market gate.")
 
 elif mode=="🏆 Top 3 Actionable":
-    header("🏆 Top 3 Actionable","Risk-Gated execution candidates dari snapshot EOD."); show_top3(action,m,opp); show_rules()
+    eod_action=snap.get("top3",pd.DataFrame()) if snap else pd.DataFrame()
+    eod_meta=snap.get("meta",{}) if snap else {}
+    header("🏆 Top 3 Actionable","EOD candidates yang dikunci dari official snapshot + validasi Morning Action. Current Scan tidak mengganti baseline EOD.")
+    show_top3_cards(eod_action,eod_meta)
+    show_rules()
 elif mode=="🟩 Top 10 Opportunity":
     header("🟩 Top 10 Opportunity","Opportunity pool — bukan otomatis BUY."); show_top10(opp); show_rules()
 elif mode=="🟨 Top 50 Focus":
