@@ -10,8 +10,8 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.4 PRO GLOBAL MORNING INTELLIGENCE MOBILE"
-ENGINE_VERSION = "V11.4-GLOBAL-MORNING-INTELLIGENCE-MOBILE"
+APP_VERSION = "V11.5 PRO MOBILE-FIRST DECISION ENGINE"
+ENGINE_VERSION = "V11.5-MOBILE-FIRST-DECISION-ENGINE"
 RISK_GATE_VERSION = "2.5"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RECOVERY_DIR = os.path.join(BASE_DIR, "recovered_eod")
@@ -146,6 +146,14 @@ section[data-testid="stSidebar"] [data-testid="stSlider"] label { color:#cce8ff 
  .stButton>button,.stLinkButton>a{min-height:40px;font-size:12px}
 }
 @media (min-width:701px) and (max-width:1050px){.op10-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.pick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* V11.5 MOBILE-FIRST DECISION CARDS */
+.mobile-brief{background:linear-gradient(135deg,#071a2e,#0a3354);border:1px solid #2b638e;border-radius:16px;padding:13px;margin:10px 0 12px;box-shadow:0 10px 26px rgba(0,0,0,.18)}
+.mobile-brief-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:9px}.mobile-brief-card{background:#0a2035;border:1px solid #1f4968;border-radius:11px;padding:9px;min-height:70px}.mobile-brief-label{font-size:9px;color:#87a5bd;text-transform:uppercase;letter-spacing:.5px}.mobile-brief-value{font-size:18px;font-weight:850;color:#f4f9ff;margin-top:4px}.mobile-brief-sub{font-size:9px;color:#9bb4c9;margin-top:2px}
+.decision-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.decision-card{background:linear-gradient(160deg,#0b2540,#081a2d);border:1px solid #285573;border-radius:14px;padding:11px;box-shadow:0 7px 18px rgba(0,0,0,.15)}.decision-head{display:flex;justify-content:space-between;align-items:center;gap:7px}.decision-rank{width:25px;height:25px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#f7c84b;color:#142235;font-weight:900;font-size:11px;margin-right:5px}.decision-ticker{font-size:18px;font-weight:900;color:#fff}.decision-price{font-size:22px;font-weight:850;color:#fff;margin:5px 0 1px}.decision-setup{font-size:10px;color:#a9bfd4;line-height:1.35}.decision-zone{margin-top:7px;background:#0a2035;border:1px solid #173b58;border-radius:8px;padding:7px}.decision-zone b{color:#fff}.decision-metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:5px;margin-top:7px}.decision-metric{background:#0b2035;border:1px solid #173b58;border-radius:7px;padding:6px}.decision-metric span{display:block;color:#7894ad;font-size:8px;text-transform:uppercase}.decision-metric b{color:#edf7ff;font-size:11px}.decision-gates{margin-top:7px;font-size:9px;line-height:1.5;color:#a9bfd4}.decision-actions{display:flex;gap:6px;margin-top:8px}.decision-actions a{flex:1;text-align:center;text-decoration:none;background:#0b63ce;border:1px solid #2ca4ff;color:#fff;border-radius:8px;padding:7px;font-size:10px;font-weight:800}.decision-actions a:hover{background:#087ff1}.decision-why{margin-top:6px;font-size:9px;color:#8fa9c1}.watch-wrap{background:linear-gradient(135deg,#071a2e,#09263d);border:1px solid #245675;border-radius:15px;padding:11px;margin:10px 0}.watch-title{font-size:15px;font-weight:850;color:#fff}.watch-sub{font-size:10px;color:#9bb4c9;margin-top:2px}
+@media(max-width:700px){.block-container{padding:.4rem .5rem 1.1rem}.hero{padding:11px 12px;border-radius:13px}.hero h1{font-size:20px}.hero p{font-size:10px}.section-title{font-size:15px;margin:8px 0 5px}.mobile-brief{padding:10px;border-radius:13px}.mobile-brief-grid{grid-template-columns:repeat(2,1fr);gap:5px}.mobile-brief-card{min-height:62px;padding:8px}.mobile-brief-value{font-size:17px}.decision-grid{grid-template-columns:1fr;gap:7px}.decision-card{padding:10px;border-radius:12px}.decision-ticker{font-size:17px}.decision-price{font-size:21px}.decision-metrics{grid-template-columns:repeat(4,1fr);gap:4px}.decision-metric{padding:5px 3px}.decision-metric span{font-size:7px}.decision-metric b{font-size:10px}.decision-gates{font-size:9px}.decision-actions a{padding:8px 5px;font-size:10px}.op10-grid{grid-template-columns:1fr}.op10-card{padding:9px}.op10-metrics{grid-template-columns:repeat(3,1fr)}}
+@media(min-width:701px) and (max-width:1050px){.decision-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.mobile-brief-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -1116,37 +1124,86 @@ def risk_badge(gate):
     g=str(gate).upper(); cls='badge-green' if g=='PASS' else ('badge-yellow' if 'REVIEW' in g else 'badge-red')
     return f'<span class="badge {cls}">{g}</span>'
 
+def _decision_card_html(i, r, mr, mode="top3"):
+    ticker=str(r.get('Ticker','—')); setup=str(r.get('Setup','—'))
+    pref=fmt(mr.get('PreOpenReference',r.get('Close',np.nan)))
+    entry=fmt(r.get('Entry',np.nan)); lo=fmt(mr.get('EntryLow',r.get('Entry',np.nan))); hi=fmt(mr.get('EntryHigh',r.get('Entry',np.nan)))
+    sl=fmt(r.get('SL',np.nan)); tp1=fmt(r.get('TP1',np.nan)); rr=fmt(r.get('RR',np.nan),2)
+    score=fmt(r.get('MultiFactorScore',np.nan),1); eod_score=fmt(r.get('OpportunityScore',np.nan),0); cov=fmt(r.get('FactorCoveragePct',np.nan),0)
+    stock_gate=str(r.get('StockSetupGate','—')); market_gate=str(mr.get('MarketGate',r.get('MarketGate','—')))
+    mstatus=str(mr.get('MorningStatus','NOT VALIDATED')); reason=str(mr.get('MorningReason','—')); pos=str(mr.get('EntryPosition','—')); dist=fmt(mr.get('DistanceToEntryPct',np.nan),1)
+    data=str(mr.get('DataStatus','UNKNOWN')); age=mr.get('DataAgeDays',r.get('DataAgeDays','—')); eod_date=mr.get('LastDataDate',r.get('DataDate','—'))
+    risk=fmt(r.get('RiskPct',np.nan),1); atr=fmt(r.get('RiskATRMultiple',np.nan),1)
+    why=[]
+    if setup and setup!='WAIT': why.append(setup.lower())
+    if stock_gate.upper()=='PASS': why.append('stock setup PASS')
+    if pos=='IN ENTRY ZONE': why.append('inside entry zone')
+    if market_gate.upper()!='PASS': why.append(f'market {market_gate}')
+    why_text=' · '.join(why[:3]) or reason
+    rank_style='decision-rank' if mode=='top3' else 'op10-rank'
+    return f'''<div class="decision-card">
+<div class="decision-head"><div><span class="{rank_style}">{i}</span><span class="decision-ticker">{ticker}</span></div>{morning_status_badge(mstatus)}</div>
+<div class="decision-price">{pref}</div><div class="decision-setup"><b>{setup}</b> · {pos} · distance {dist}%</div>
+<div class="decision-zone"><span>ENTRY ZONE</span> <b>{lo}–{hi}</b></div>
+<div class="decision-metrics"><div class="decision-metric"><span>SL</span><b>{sl}</b></div><div class="decision-metric"><span>TP1</span><b>{tp1}</b></div><div class="decision-metric"><span>R/R</span><b>{rr}</b></div><div class="decision-metric"><span>RISK</span><b>{risk}%</b></div></div>
+<div class="decision-metrics"><div class="decision-metric"><span>EOD SCORE</span><b>{eod_score}</b></div><div class="decision-metric"><span>MULTI</span><b>{score}</b></div><div class="decision-metric"><span>COVERAGE</span><b>{cov}%</b></div><div class="decision-metric"><span>ATR</span><b>{atr}x</b></div></div>
+<div class="decision-gates"><b>Stock:</b> {stock_gate} · <b>Market:</b> {market_gate}<br><b>Data:</b> {data} · EOD {eod_date} · age {age}d<br><b>Why:</b> {why_text}</div>
+<div class="decision-actions"><a href="{tv_link(ticker)}" target="_blank">📈 TradingView</a></div>
+<div class="decision-why">Decision: <b>USER</b> · Sanggul tidak memberikan instruksi BUY/SELL.</div></div>'''
+
 def show_top3_cards(action, meta):
-    """Compact, mobile-first Top 3. EOD candidate and Morning Action are separated."""
-    st.markdown('<div class="top3-wrap"><div class="top3-head"><div><div class="top3-title">🏆 Top 3 + 🌅 Morning Action</div><div class="top3-sub">Ringkas untuk keputusan pagi. Entry tetap keputusan Anda.</div></div><span class="mode-pill">3 CARDS</span></div>', unsafe_allow_html=True)
+    st.markdown('<div class="top3-wrap"><div class="top3-head"><div><div class="top3-title">🏆 Top 3 Decision Cards</div><div class="top3-sub">Quick decision view untuk HP · EOD candidate + Morning Action dipisahkan.</div></div><span class="mode-pill">MOBILE FIRST</span></div>', unsafe_allow_html=True)
     if action is None or action.empty:
         st.markdown('<div class="small-note">Belum ada kandidat Top 3.</div></div>', unsafe_allow_html=True); return
     try:
-        morning = morning_confirm(action.head(3), str(meta.get("period", "2y")), meta.get("regime", "NEUTRAL / SIDEWAYS"))
-        morning_by = {str(r.get("Ticker")): r for _, r in morning.iterrows()} if not morning.empty else {}
-    except Exception:
-        morning_by = {}
-    cards=[]
+        morning=morning_confirm(action.head(3),str(meta.get("period","2y")),meta.get("regime","NEUTRAL / SIDEWAYS"))
+        morning_by={str(r.get("Ticker")):r for _,r in morning.iterrows()} if not morning.empty else {}
+    except Exception: morning_by={}
+    cards=[_decision_card_html(i,r,morning_by.get(str(r.get('Ticker')),{}),"top3") for i,(_,r) in enumerate(action.head(3).iterrows(),1)]
+    st.markdown('<div class="decision-grid">'+''.join(cards)+'</div></div>',unsafe_allow_html=True)
     for i,(_,r) in enumerate(action.head(3).iterrows(),1):
-        ticker=str(r.get('Ticker','—')); setup=str(r.get('Setup','—')); eod_close=fmt(r.get('Close',np.nan))
-        entry=fmt(r.get('Entry',np.nan)); sl=fmt(r.get('SL',np.nan)); tp1=fmt(r.get('TP1',np.nan)); rr=fmt(r.get('RR',np.nan),2)
-        score=fmt(r.get('MultiFactorScore',np.nan),1); cov=fmt(r.get('FactorCoveragePct',np.nan),0); risk=fmt(r.get('RiskPct',np.nan),1)
-        stock_gate=str(r.get('StockSetupGate','—')); market_gate=str(r.get('MarketGate','—'))
-        mr=morning_by.get(ticker,{})
-        mstatus=str(mr.get('MorningStatus','NOT VALIDATED')); mreason=str(mr.get('MorningReason','—'))
-        pref=fmt(mr.get('PreOpenReference',r.get('Close',np.nan))); m_gate=str(mr.get('MarketGate',market_gate)); decision=str(mr.get('Decision','USER DECISION'))
-        dist=fmt(mr.get('DistanceToEntryPct',np.nan),1); pos=str(mr.get('EntryPosition','—')); data_status=str(mr.get('DataStatus','UNKNOWN'))
-        cards.append(f'''<div class="pick-card">
-<div class="card-primary-line"><div><span class="pick-rank">{i}</span><span class="pick-ticker">{ticker}</span></div><span class="pick-status">{morning_status_badge(mstatus)}</span></div>
-<div class="pick-price">{pref}</div>
-<div class="card-secondary"><span><b>{setup}</b></span><span>{pos}</span></div>
-<div class="compact-note">Pre-open reference · {data_status} · Distance {dist}%</div>
-<div class="pick-metrics"><div class="pick-metric"><span>ENTRY</span><b>{entry}</b></div><div class="pick-metric"><span>SL</span><b>{sl}</b></div><div class="pick-metric"><span>TP1</span><b>{tp1}</b></div><div class="pick-metric"><span>R/R</span><b>{rr}</b></div></div>
-<div class="pick-metrics"><div class="pick-metric"><span>EOD SCORE</span><b>{score}</b></div><div class="pick-metric"><span>COVERAGE</span><b>{cov}%</b></div><div class="pick-metric"><span>RISK</span><b>{risk}%</b></div><div class="pick-metric"><span>STOCK</span><b>{stock_gate}</b></div></div>
-<div class="pick-setup"><b>Market:</b> {m_gate} · <b>Morning:</b> {mreason}</div>
-<div class="pick-setup"><b>Decision:</b> {decision} · <b>ATR:</b> {fmt(r.get('RiskATRMultiple',np.nan),1)}x</div>
-<div style="margin-top:7px"><a href="{tv_link(ticker)}" target="_blank" style="color:#62bdff;font-size:11px">📈 TradingView</a></div></div>''')
-    st.markdown('<div class="pick-grid">'+''.join(cards)+'</div></div>', unsafe_allow_html=True)
+        ticker=str(r.get('Ticker','—'))
+        with st.expander(f"🔎 WHY {ticker} · lihat alasan dan data detail",expanded=False):
+            st.markdown(f"**{ticker}** · Setup **{r.get('Setup','—')}** · Opportunity **{fmt(r.get('OpportunityScore',np.nan),0)}** · Multi-Factor **{fmt(r.get('MultiFactorScore',np.nan),1)}** · Coverage **{fmt(r.get('FactorCoveragePct',np.nan),0)}%**")
+            st.markdown(f"Entry **{fmt(r.get('Entry',np.nan))}** · SL **{fmt(r.get('SL',np.nan))}** · TP1 **{fmt(r.get('TP1',np.nan))}** · R/R **{fmt(r.get('RR',np.nan),2)}** · RSI **{fmt(r.get('RSI',np.nan),1)}** · MA20 **{fmt(r.get('MA20',np.nan),2)}**")
+            st.caption("EOD ranking bukan instruksi transaksi. Morning status memperhitungkan posisi terhadap entry dan Market Gate.")
+
+def dashboard_morning_brief(meta, analyzed, expected, regime, ihsg, ih20, ih50):
+    global_snap=us_market_snapshot(); rows=global_snap.get('rows',[]); us={r['Name']:r for r in rows}
+    def g(name):
+        r=us.get(name,{}); ch=float(r.get('ChangePct',0) or 0) if r else np.nan; return (fmt(r.get('Close',np.nan),2), (('+' if ch>0 else '')+f'{ch:.2f}%') if r else '—')
+    sp,spc=g('S&P 500'); nq,nqc=g('Nasdaq'); dow,dowc=g('Dow Jones'); vix,vixc=g('VIX')
+    cov=(analyzed/expected*100) if expected else 0; reg=str(regime).upper(); reg_cls='green' if reg.startswith('RISK-ON') else ('red' if reg.startswith('RISK-OFF') else 'yellow'); lead=str(global_snap.get('lead','UNAVAILABLE'))
+    st.markdown(f'''<div class="mobile-brief"><div class="global-head"><div><div class="global-title">🌅 Morning Brief · Mobile Decision View</div><div class="global-sub">Global context → IHSG → EOD baseline → Top 3 → Top 10. Detail dibuka saat diperlukan.</div></div><span class="mode-pill">GLOBAL {lead}</span></div>
+<div class="mobile-brief-grid">
+<div class="mobile-brief-card"><div class="mobile-brief-label">🇮🇩 IHSG</div><div class="mobile-brief-value">{fmt(ihsg,2)}</div><div class="mobile-brief-sub {reg_cls}">{reg} · MA20 {fmt(ih20,0)}</div></div>
+<div class="mobile-brief-card"><div class="mobile-brief-label">🌎 S&P 500</div><div class="mobile-brief-value">{sp}</div><div class="mobile-brief-sub">{spc}</div></div>
+<div class="mobile-brief-card"><div class="mobile-brief-label">NASDAQ</div><div class="mobile-brief-value">{nq}</div><div class="mobile-brief-sub">{nqc}</div></div>
+<div class="mobile-brief-card"><div class="mobile-brief-label">DOW JONES</div><div class="mobile-brief-value">{dow}</div><div class="mobile-brief-sub">{dowc}</div></div>
+<div class="mobile-brief-card"><div class="mobile-brief-label">VIX</div><div class="mobile-brief-value">{vix}</div><div class="mobile-brief-sub">{vixc} · volatility</div></div>
+<div class="mobile-brief-card"><div class="mobile-brief-label">EOD BASELINE</div><div class="mobile-brief-value">{meta.get('latest_data_date',meta.get('data_date','—'))}</div><div class="mobile-brief-sub">validated baseline</div></div>
+<div class="mobile-brief-card"><div class="mobile-brief-label">DATA COVERAGE</div><div class="mobile-brief-value">{analyzed}/{expected}</div><div class="mobile-brief-sub">{cov:.1f}%</div></div>
+<div class="mobile-brief-card"><div class="mobile-brief-label">MA50 IHSG</div><div class="mobile-brief-value">{fmt(ih50,0)}</div><div class="mobile-brief-sub">market context</div></div>
+</div></div>''',unsafe_allow_html=True)
+
+def show_top10_cards(opp, meta=None):
+    st.markdown('<div class="op10-wrap"><div class="top3-head"><div><div class="top3-title">🟩 Top 10 Opportunity Cards</div><div class="top3-sub">Quick scan untuk HP. Top 10 bukan otomatis BUY.</div></div><span class="mode-pill">10 CARDS</span></div>', unsafe_allow_html=True)
+    if opp is None or opp.empty:
+        st.info("Belum ada data Top 10."); st.markdown('</div>', unsafe_allow_html=True); return
+    try:
+        morning=morning_confirm(opp.head(10),str((meta or {}).get("period","2y")),(meta or {}).get("regime","NEUTRAL / SIDEWAYS")); morning_by={str(r.get('Ticker')):r for _,r in morning.iterrows()} if not morning.empty else {}
+    except Exception: morning_by={}
+    cards=[_decision_card_html(i,r,morning_by.get(str(r.get('Ticker')),{}),"top10") for i,(_,r) in enumerate(opp.head(10).iterrows(),1)]
+    st.markdown('<div class="decision-grid">'+''.join(cards)+'</div></div>',unsafe_allow_html=True)
+
+def show_morning_watchlist(conf):
+    if conf is None or conf.empty:return
+    options=conf.Ticker.astype(str).tolist(); selected=st.multiselect("⭐ My Morning Watchlist",options,default=options[:min(3,len(options))],key="morning_watchlist")
+    if not selected:return
+    sub=conf[conf.Ticker.astype(str).isin(selected)].copy()
+    st.markdown('<div class="watch-wrap"><div class="watch-title">⭐ My Morning Watchlist</div><div class="watch-sub">Watchlist pribadi untuk mempercepat akses; bukan ranking baru.</div></div>',unsafe_allow_html=True)
+    cards=[_decision_card_html(i,r,r.to_dict(),"top10") for i,(_,r) in enumerate(sub.iterrows(),1)]
+    st.markdown('<div class="decision-grid">'+''.join(cards)+'</div>',unsafe_allow_html=True)
 
 def dashboard_summary(active, meta, action, opp, focus, enrich, ihsg, ih20, ih50, regime):
     reg=str(regime).upper(); reg_cls='green' if reg.startswith('RISK-ON') else ('red' if reg.startswith('RISK-OFF') else 'yellow')
@@ -1158,24 +1215,6 @@ def dashboard_summary(active, meta, action, opp, focus, enrich, ihsg, ih20, ih50
 def show_top3(action,meta,opp=None):
     show_top3_cards(action, meta)
 
-def show_top10_cards(opp):
-    st.markdown('<div class="op10-wrap"><div class="top3-head"><div><div class="top3-title">🟩 Top 10 Opportunity</div><div class="top3-sub">Quick scan. Top 10 bukan otomatis BUY.</div></div><span class="mode-pill">10 CARDS</span></div>', unsafe_allow_html=True)
-    if opp is None or opp.empty:
-        st.info("Belum ada data Top 10."); st.markdown('</div>', unsafe_allow_html=True); return
-    cards=[]
-    for i,(_,r) in enumerate(opp.head(10).iterrows(),1):
-        ticker=str(r.get('Ticker','—')); setup=str(r.get('Setup','—')); timing=str(r.get('Timing','—'))
-        risk_gate=str(r.get('RiskGate','—')); status=str(r.get('Status','WAIT')); analysis=str(r.get('AnalysisMode','CORE TECHNICAL'))
-        opp_score=fmt(r.get('OpportunityScore',np.nan),0); mf=fmt(r.get('MultiFactorScore',np.nan),1); cov=fmt(r.get('FactorCoveragePct',np.nan),0)
-        close=fmt(r.get('Close',np.nan)); ma20=fmt(r.get('MA20',np.nan)); rsi=fmt(r.get('RSI',np.nan),1)
-        entry=fmt(r.get('Entry',np.nan)); sl=fmt(r.get('SL',np.nan)); tp1=fmt(r.get('TP1',np.nan)); rr=fmt(r.get('RR',np.nan),2)
-        cards.append(f'''<div class="op10-card">
-<div class="op10-head"><div><span class="op10-rank">{i}</span><span class="op10-ticker">{ticker}</span></div>{status_badge(status)}</div>
-<div class="op10-price">{close}</div><div class="op10-sub"><b>{setup}</b> · {timing}</div>
-<div class="op10-metrics"><div class="op10-metric"><span>OPPORTUNITY</span><b>{opp_score}</b></div><div class="op10-metric"><span>MULTI</span><b>{mf}</b></div><div class="op10-metric"><span>COVERAGE</span><b>{cov}%</b></div><div class="op10-metric"><span>RSI</span><b>{rsi}</b></div><div class="op10-metric"><span>MA20</span><b>{ma20}</b></div><div class="op10-metric"><span>R/R</span><b>{rr}</b></div><div class="op10-metric"><span>ENTRY</span><b>{entry}</b></div><div class="op10-metric"><span>SL</span><b>{sl}</b></div><div class="op10-metric"><span>TP1</span><b>{tp1}</b></div></div>
-<div class="op10-foot">{risk_badge(risk_gate)} · {analysis} · <a href="{tv_link(ticker)}" target="_blank" style="color:#62bdff">📈 TradingView</a></div></div>''')
-    st.markdown('<div class="op10-grid">'+''.join(cards)+'</div></div>', unsafe_allow_html=True)
-
 def show_morning_cards(conf):
     if conf is None or conf.empty: st.warning("Tidak ada kandidat Morning yang berhasil divalidasi."); return
     cards=[]
@@ -1184,8 +1223,8 @@ def show_morning_cards(conf):
         cards.append(f'''<div class="op10-card"><div class="op10-head"><div><span class="op10-rank">{i}</span><span class="op10-ticker">{ticker}</span></div>{morning_status_badge(ms)}</div><div class="op10-price">{pre}</div><div class="op10-sub"><b>{pos}</b> · {data}</div><div class="op10-metrics"><div class="op10-metric"><span>ENTRY ZONE</span><b>{lo}–{hi}</b></div><div class="op10-metric"><span>SL</span><b>{sl}</b></div><div class="op10-metric"><span>TP1</span><b>{tp1}</b></div><div class="op10-metric"><span>R/R</span><b>{rr}</b></div><div class="op10-metric"><span>DISTANCE</span><b>{dist}%</b></div><div class="op10-metric"><span>MARKET</span><b>{gate}</b></div></div><div class="op10-foot">{reason} · Decision: USER</div></div>''')
     st.markdown('<div class="op10-grid">'+''.join(cards)+'</div>',unsafe_allow_html=True)
 
-def show_top10(opp):
-    show_top10_cards(opp)
+def show_top10(opp,meta=None):
+    show_top10_cards(opp,meta)
 
 def show_top50(focus):
     st.markdown('<div class="section-title">🟨 Top 50 Focus — Focus List</div>',unsafe_allow_html=True)
@@ -1231,7 +1270,7 @@ def weekly_candidates(focus):
 header("📈 Sanggul Stock Scanner",f"{APP_VERSION} · 400 IDX · Global Morning Intelligence · EOD Persistent · Morning Confirmation · TradingView")
 
 with st.sidebar:
-    st.markdown('<div class="control-card"><div class="control-title">SANGGUL STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.4 · GLOBAL MORNING INTELLIGENCE</div><div class="small-note" style="margin-top:4px">Decision-support terminal · 400 IDX</div></div>',unsafe_allow_html=True)
+    st.markdown('<div class="control-card"><div class="control-title">SANGGUL STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.5 · MOBILE-FIRST DECISION ENGINE</div><div class="small-note" style="margin-top:4px">Decision-support terminal · 400 IDX</div></div>',unsafe_allow_html=True)
     st.markdown("### 🧭 MENU UTAMA")
     mode=st.radio("Navigasi",[
         "📊 Dashboard","⚡ Trading Harian","📅 Swing Trading Mingguan","🔎 Saham Individu","🏭 Sector Opportunity","🏆 Top 3 Actionable","🟩 Top 10 Opportunity","🟨 Top 50 Focus","🟦 Top 150 Enrich","🌅 Morning Confirmation","🌆 EOD Full Scan","📜 EOD Scan History","🧠 Multi-Factor Data Hub"],index=0)
@@ -1328,6 +1367,7 @@ if mode=="🌅 Morning Confirmation":
     conf=morning_confirm(snap["top10"],period,m.get("regime","NEUTRAL / SIDEWAYS"))
     if not conf.empty:
         st.markdown("#### 🌅 Morning Action Board")
+        show_morning_watchlist(conf)
         show_morning_cards(conf)
         with st.expander("📋 Buka tabel detail Morning", expanded=False):
             show_table(conf,["Ticker","Setup","MorningStatus","MorningReason","PreOpenReference","Entry","EntryLow","EntryHigh","DistanceToEntryPct","EntryPosition","SL","TP1","TP2","RR","DataStatus","LastDataDate","DataAgeDays","MarketGate","Decision"],"Tabel Morning Detail")
@@ -1407,6 +1447,9 @@ if mode=="📊 Dashboard":
     mr=morning_data_readiness(baseline,int(eod_meta.get("universe",400) or 400)) if baseline else {"Ready":False,"Level":"NO SNAPSHOT","Reason":"Belum ada EOD baseline yang tervalidasi"}
     # Critical safety rule: invalid/no official EOD snapshot must NEVER be rendered as Morning Top 3.
     display_action=eod_action if mr.get("Ready") else pd.DataFrame()
+    analyzed_now=int(mr.get("Analyzed",0) or 0); expected_now=int(mr.get("Expected",400) or 400)
+    brief_meta=dict(eod_meta or {}); brief_meta["latest_data_date"]=mr.get("LatestDataDate","—")
+    dashboard_morning_brief(brief_meta, analyzed_now, expected_now, regime, ihsg, ih20, ih50)
     dashboard_summary(active,m,display_action,opp,focus,enrich,ihsg,ih20,ih50,regime)
     if baseline:
         st.markdown(f'<div class="card"><b>🔒 EOD Baseline:</b> {baseline_source} · {eod_meta.get("timestamp",eod_meta.get("recovered_at","—"))} · data source {eod_meta.get("data_source","—")} · <b>Top 3 cards are locked to this baseline.</b><br><span class="small-note">🔄 Scan 400 / Update EOD is a separate current view and cannot overwrite the EOD baseline used for Morning Confirmation.</span></div>',unsafe_allow_html=True)
@@ -1414,10 +1457,8 @@ if mode=="📊 Dashboard":
     if not mr.get("Ready"):
         st.error(f'🔒 **MORNING BLOCKED — {mr.get("Reason","EOD belum valid")}**. Top 3 EOD tidak ditampilkan sebagai kandidat pagi agar tidak terjadi false signal. Gunakan **🔄 Scan 400** hanya sebagai current view, bukan baseline EOD.')
         st.stop()
-    st.markdown("#### 🌎 Global Market Context")
-    global_morning_brief()
-    st.markdown("#### 🟩 Top 10 Opportunity — Opportunity Now")
-    show_table(opp,["Ticker","Setup","Timing","OpportunityScore","MultiFactorScore","FactorCoveragePct","AnalysisMode","StockSetupGate","MarketGate","RiskGate","RiskFlag","Close","MA20","RSI","Entry","SL","TP1","TP2","RR","RiskPct","RiskATRMultiple","Status"])
+    st.markdown("#### 🟩 Top 10 Opportunity")
+    show_top10_cards(opp,m)
     st.markdown("#### 📌 Decision Framework")
     st.caption("Stock Setup = kualitas saham secara teknikal/risk. Market Environment = kondisi IHSG. Risk Gate menggabungkan keduanya. REVIEW bukan PASS dan bukan instruksi transaksi otomatis.")
     st.download_button("📥 Export Full Scan CSV",active["full"].to_csv(index=False).encode("utf-8"),"sanggul_v11_1_5_fix9_full_scan.csv","text/csv")
@@ -1528,7 +1569,7 @@ elif mode=="🏆 Top 3 Actionable":
     show_top3_cards(eod_action,eod_meta)
     show_rules()
 elif mode=="🟩 Top 10 Opportunity":
-    header("🟩 Top 10 Opportunity","Opportunity pool — bukan otomatis BUY."); show_top10(opp); show_rules()
+    header("🟩 Top 10 Opportunity","Opportunity pool — mobile-first cards; bukan otomatis BUY."); show_top10(opp,m); show_rules()
 elif mode=="🟨 Top 50 Focus":
     header("🟨 Top 50 Focus","Focused setup list dengan R/R minimum."); show_top50(focus); show_rules()
 elif mode=="🟦 Top 150 Enrich":
