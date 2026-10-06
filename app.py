@@ -1,4 +1,4 @@
-import os, json, glob
+import os, json, glob, urllib.parse, urllib.request
 from datetime import datetime
 try:
     from zoneinfo import ZoneInfo
@@ -10,8 +10,8 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.5 PRO MOBILE-FIRST DECISION ENGINE"
-ENGINE_VERSION = "V11.5-MOBILE-FIRST-DECISION-ENGINE"
+APP_VERSION = "V11.5.5 PRO IHSG MORNING EOD LOCK"
+ENGINE_VERSION = "V11.5.5-IHSG-MORNING-EOD-LOCK"
 RISK_GATE_VERSION = "2.5"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RECOVERY_DIR = os.path.join(BASE_DIR, "recovered_eod")
@@ -211,14 +211,27 @@ def analyze(df):
     opportunity=setup+(5 if near_support else 0)+(5 if breakout else 0)+(4 if pullback else 0)+(3 if 50<=x.RSI<=65 else 0)+(3 if 1.25<=vr<=3 else 0)+(4 if rr>=2 else 0)
     ready=trend>=2 and momentum>=3 and rr>=2 and (near_support or breakout or pullback or rejection) and close>=ma20*.96 and close>=ma50*.98
     setup_type="BREAKOUT" if breakout else ("PULLBACK" if pullback and near_support else ("REJECTION SUPPORT" if rejection and near_support else "WAIT"))
-    status="AVOID" if close<ma50 and x.MACD<x.MACDsig else ("READY" if ready else "WAIT")
     timing="SORE / CLOSE CONFIRM" if breakout else ("PAGI CONFIRM" if near_support or pullback else "WATCH")
     atr14=float(x.ATR14) if pd.notna(x.ATR14) and x.ATR14>0 else np.nan
     risk_pct=risk/entry*100
     risk_atr=(risk/atr14) if pd.notna(atr14) and atr14>0 else np.nan
     overext=max(close/ma20-1,0)*100 if ma20>0 else np.nan
     entry_gap=abs(entry-close)/close*100 if close>0 else np.nan
-    return {"Close":close,"MA20":ma20,"MA50":ma50,"MA200":ma200,"Return20D":ret20*100,"Return60D":ret60*100,"RSI":float(x.RSI),"MACD":float(x.MACD),"VolumeRatio":vr,"ATR14":atr14,"Support":support,"Resistance":resistance,"Entry":entry,"SL":sl,"TP1":tp1,"TP2":tp2,"RR":rr,"RiskPct":risk_pct,"StopDistancePct":risk_pct,"RiskATRMultiple":risk_atr,"OverextensionPct":overext,"EntryGapPct":entry_gap,"QualityScore":quality,"SetupScore":setup,"OpportunityScore":opportunity,"Status":status,"Setup":setup_type,"Timing":timing,"Candle":candle,"DataDate":pd.Timestamp(d.index[-1]).strftime("%Y-%m-%d"),"DataPoints":int(len(d)),"DataSource":"Yahoo Finance EOD"}
+
+    # Decision-support status: AVOID means a hard setup/risk condition is currently invalid.
+    # WAIT means the setup is not yet ready but is not structurally invalid.
+    avoid_reasons=[]
+    if close < ma50 and x.MACD < x.MACDsig:
+        avoid_reasons.append("price below MA50 + MACD bearish")
+    if not np.isfinite(risk_pct) or risk_pct > 15:
+        avoid_reasons.append("stop distance > 15%")
+    if not np.isfinite(risk_atr) or risk_atr > 3.0:
+        avoid_reasons.append("ATR risk > 3x")
+    if not np.isfinite(rr) or rr < 1.50:
+        avoid_reasons.append("R/R below 1.50")
+    status="AVOID" if avoid_reasons else ("READY" if ready else "WAIT")
+    avoid_reason="; ".join(avoid_reasons) if avoid_reasons else "—"
+    return {"Close":close,"MA20":ma20,"MA50":ma50,"MA200":ma200,"Return20D":ret20*100,"Return60D":ret60*100,"RSI":float(x.RSI),"MACD":float(x.MACD),"VolumeRatio":vr,"ATR14":atr14,"Support":support,"Resistance":resistance,"Entry":entry,"SL":sl,"TP1":tp1,"TP2":tp2,"RR":rr,"RiskPct":risk_pct,"StopDistancePct":risk_pct,"RiskATRMultiple":risk_atr,"OverextensionPct":overext,"EntryGapPct":entry_gap,"QualityScore":quality,"SetupScore":setup,"OpportunityScore":opportunity,"Status":status,"AvoidReason":avoid_reason,"Setup":setup_type,"Timing":timing,"Candle":candle,"DataDate":pd.Timestamp(d.index[-1]).strftime("%Y-%m-%d"),"DataPoints":int(len(d)),"DataSource":"Yahoo Finance EOD"}
 
 # =========================================================
 # MULTI-FACTOR ENGINE — Technical + Fundamental + Flow + Sector
@@ -797,6 +810,118 @@ def build_layers(result,min_rr):
     action['Layer']='TOP 3 ACTIONABLE'
     return enrich,focus,opp,action
 
+def _normalize_index_frame(d):
+    """Normalize Yahoo index frames to one consistent timezone convention.
+
+    Yahoo/yfinance can return tz-aware DatetimeIndex objects while the quote-page
+    repair row is deliberately tz-naive. Mixing the two makes pandas fail during
+    concat/sort_index with: "Cannot compare tz-naive and tz-aware timestamps".
+    For EOD market data we preserve the displayed calendar date and strip timezone
+    information after conversion to a DatetimeIndex.
+    """
+    if d is None or d.empty: return pd.DataFrame()
+    if isinstance(d.columns,pd.MultiIndex):
+        lvl0=set(map(str,d.columns.get_level_values(0)))
+        d=d.copy(); d.columns=d.columns.get_level_values(0) if "Close" in lvl0 else d.columns.get_level_values(1)
+    d=d.copy(); d.columns=[str(c) for c in d.columns]
+    if "Close" not in d.columns: return pd.DataFrame()
+
+    # Critical: make every source use tz-naive timestamps before concat/sort.
+    # Preserve the source's calendar date rather than shifting an EOD session.
+    try:
+        idx=pd.DatetimeIndex(pd.to_datetime(d.index,errors="coerce"))
+        if idx.tz is not None:
+            idx=idx.tz_localize(None)
+        d.index=idx
+    except Exception:
+        return pd.DataFrame()
+    d=d[~d.index.isna()].copy()
+    d=d[[c for c in ["Open","High","Low","Close","Volume"] if c in d.columns]].copy()
+    d["Close"]=pd.to_numeric(d["Close"],errors="coerce")
+    d=d.dropna(subset=["Close"])
+    return d
+
+def _completed_eod_cutoff_date():
+    """Latest calendar date that is allowed to be treated as completed EOD.
+
+    Before the IDX close/lock time, today's date is NEVER an EOD date. This is
+    the key morning-safety rule: a live 06-Oct quote cannot become 06-Oct EOD.
+    After 16:20 WIB, today's completed session may be accepted.
+    """
+    now=jakarta_now()
+    if (now.hour > 16) or (now.hour == 16 and now.minute >= 20):
+        return now.date()
+    from datetime import timedelta
+    return now.date()-timedelta(days=1)
+
+def fetch_jkse_eod(min_date=None):
+    """Fetch IHSG EOD with a strict morning EOD lock.
+
+    Rules:
+      * Before 16:20 WIB, the current calendar date is forbidden as EOD.
+      * Intraday/regularMarketPrice is never used as an EOD close.
+      * All candidate sources are normalized to tz-naive calendar dates.
+      * The latest accepted date must satisfy the requested synchronization date.
+      * We prefer the freshest completed EOD, not the freshest live quote.
+    """
+    cutoff=_completed_eod_cutoff_date()
+    candidates=[]
+    try:
+        d=yf.download("^JKSE",period="1y",interval="1d",auto_adjust=False,progress=False,threads=False,group_by="column")
+        d=_normalize_index_frame(d)
+        if not d.empty: candidates.append((d,"Yahoo Finance fresh EOD"))
+    except Exception:
+        pass
+    try:
+        hist=yf.Ticker("^JKSE").history(period="1y",interval="1d",auto_adjust=False,repair=False)
+        d=_normalize_index_frame(hist)
+        if not d.empty: candidates.append((d,"Yahoo Finance ticker history"))
+    except Exception:
+        pass
+    for host in ["query1.finance.yahoo.com","query2.finance.yahoo.com"]:
+        try:
+            url=f"https://{host}/v8/finance/chart/%5EJKSE?range=1y&interval=1d&events=history"
+            req=urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0"})
+            with urllib.request.urlopen(req,timeout=15) as resp:
+                payload=json.loads(resp.read().decode("utf-8"))
+            r=payload.get("chart",{}).get("result",[None])[0]
+            if r:
+                ts=r.get("timestamp",[]); q=r.get("indicators",{}).get("quote",[{}])[0]
+                idx=pd.to_datetime(ts,unit="s",utc=True).tz_convert("Asia/Jakarta").tz_localize(None)
+                d=pd.DataFrame({"Open":q.get("open",[]),"High":q.get("high",[]),"Low":q.get("low",[]),"Close":q.get("close",[]),"Volume":q.get("volume",[])},index=idx)
+                d=_normalize_index_frame(d)
+                if not d.empty: candidates.append((d,f"Yahoo Chart API ({host})"))
+        except Exception:
+            pass
+
+    target=pd.Timestamp(min_date).date() if min_date is not None else None
+    valid=[]
+    for d,source in candidates:
+        try:
+            dates=pd.to_datetime(d.index,errors="coerce")
+            d=d.loc[dates.notna()].copy()
+            d=d.loc[[pd.Timestamp(x).date() <= cutoff for x in d.index]]
+            if d.empty: continue
+            d=d[~d.index.duplicated(keep="last")].sort_index()
+            latest=pd.Timestamp(d.index[-1]).date()
+            if target is not None and latest < target:
+                continue
+            valid.append((d,source))
+        except Exception:
+            continue
+
+    if valid:
+        valid.sort(key=lambda x:(pd.Timestamp(x[0].index[-1]).date(),len(x[0])),reverse=True)
+        return valid[0]
+    return pd.DataFrame(), f"DATA STALE / BLOCKED (completed EOD cutoff {cutoff.isoformat()})"
+
+def _latest_stock_data_date(df):
+    try:
+        dates=pd.to_datetime(df.get("DataDate"),errors="coerce").dropna()
+        return dates.max().date() if not dates.empty else None
+    except Exception:
+        return None
+
 def run_full_scan(period,n,min_rr,max_stop_pct=15.0,save_eod=True):
     # Keep enough history internally for MA200/RSI/MACD, while the selected
     # period controls the EOD review window saved in the snapshot.
@@ -810,13 +935,18 @@ def run_full_scan(period,n,min_rr,max_stop_pct=15.0,save_eod=True):
         prog.progress(i/len(uni),text=f"Scanning {i}/{len(uni)} • berhasil {len(rows)}")
     prog.empty(); result=pd.DataFrame(rows)
     if result.empty:return None
-    result=factor_enrich(result); ih=load_data("^JKSE",engine_period,"1d")
-    if len(ih)>=220:
-        ic=ih.Close; ihsg=float(ic.iloc[-1]); ih20=float(ic.rolling(20).mean().iloc[-1]); ih50=float(ic.rolling(50).mean().iloc[-1]); regime="RISK-ON" if ihsg>ih20>ih50 else ("NEUTRAL / SIDEWAYS" if ihsg>=ih50 else "RISK-OFF")
-    else: ihsg=ih20=ih50=np.nan; regime="DATA INSUFFICIENT"
+    result=factor_enrich(result)
+    stock_date=_latest_stock_data_date(result)
+    market_target=min(stock_date, _completed_eod_cutoff_date()) if stock_date is not None else _completed_eod_cutoff_date()
+    ih,ih_source=fetch_jkse_eod(market_target)
+    ih_date=pd.Timestamp(ih.index[-1]).strftime("%Y-%m-%d") if not ih.empty else None
+    if len(ih)>=220 and (stock_date is None or pd.Timestamp(ih.index[-1]).date()>=stock_date):
+        ic=pd.to_numeric(ih.Close,errors="coerce").dropna(); ihsg=float(ic.iloc[-1]); ih20=float(ic.rolling(20).mean().iloc[-1]); ih50=float(ic.rolling(50).mean().iloc[-1]); regime="RISK-ON" if ihsg>ih20>ih50 else ("NEUTRAL / SIDEWAYS" if ihsg>=ih50 else "RISK-OFF")
+    else:
+        ihsg=ih20=ih50=np.nan; regime="DATA STALE / MISMATCH"
     result=apply_risk_gate(result,min_rr,max_stop_pct,regime)
     enrich,focus,opp,action=build_layers(result,min_rr)
-    meta={"timestamp":jakarta_now().isoformat(timespec="seconds"),"period":period,"engine_period":engine_period,"universe":n,"analyzed":len(result),"min_rr":min_rr,"max_stop_pct":max_stop_pct,"ihsg":ihsg,"ihsg_ma20":ih20,"ihsg_ma50":ih50,"regime":regime,"analysis_mode":"HYBRID","engine_version":ENGINE_VERSION,"risk_gate_version":RISK_GATE_VERSION,"data_source":"Yahoo Finance EOD","data_contract":"No fabricated pre-open quote; latest validated EOD close is pre-open reference","scan_type":"OFFICIAL_EOD" if save_eod else "CURRENT_SCAN","eod_locked":bool(save_eod),"eod_data_date":(result["DataDate"].dropna().max() if "DataDate" in result.columns and not result["DataDate"].dropna().empty else None)}
+    meta={"timestamp":jakarta_now().isoformat(timespec="seconds"),"period":period,"engine_period":engine_period,"universe":n,"analyzed":len(result),"min_rr":min_rr,"max_stop_pct":max_stop_pct,"ihsg":ihsg,"ihsg_ma20":ih20,"ihsg_ma50":ih50,"ihsg_data_date":ih_date,"ihsg_data_source":ih_source,"regime":regime,"analysis_mode":"HYBRID","engine_version":ENGINE_VERSION,"risk_gate_version":RISK_GATE_VERSION,"data_source":"Yahoo Finance EOD + Yahoo Chart API + Yahoo quote-page EOD repair","data_contract":"IHSG uses the latest completed EOD only; before 16:20 WIB today's date is forbidden as EOD; intraday/stale/mismatched index data is blocked","scan_type":"OFFICIAL_EOD" if save_eod else "CURRENT_SCAN","eod_locked":bool(save_eod),"eod_data_date":(result["DataDate"].dropna().max() if "DataDate" in result.columns and not result["DataDate"].dropna().empty else None)}
     if save_eod:
         return save_snapshot(result,enrich,focus,opp,action,meta)
     current_meta=dict(meta); current_meta["scan_type"]="CURRENT_SCAN"
@@ -825,25 +955,33 @@ def run_full_scan(period,n,min_rr,max_stop_pct=15.0,save_eod=True):
     return "CURRENT_SCAN"
 
 def market_metrics(period):
-    """Return clean market metrics; fall back to the latest EOD snapshot when live Yahoo data is unavailable."""
-    ih=load_data("^JKSE","2y","1d")
+    """Return IHSG metrics synchronized to the latest completed stock EOD date.
+    Never fall back to an older index close merely to fill the card.
+    """
+    target=None
+    current=st.session_state.get("current_scan")
+    if current and not current.get("full",pd.DataFrame()).empty:
+        stock_target=_latest_stock_data_date(current["full"])
+        cutoff=_completed_eod_cutoff_date()
+        if stock_target is not None:
+            target=min(stock_target, cutoff)
+    if target is None:
+        sp=latest_snapshot()
+        if sp:
+            try:
+                sm=json.load(open(os.path.join(sp,"meta.json"),encoding="utf-8")); target=pd.Timestamp(sm.get("eod_data_date")).date() if sm.get("eod_data_date") else None
+            except Exception: pass
+    ih,source=fetch_jkse_eod(target)
     if len(ih)>=50:
         c=pd.to_numeric(ih["Close"],errors="coerce").dropna()
+        latest_date=pd.Timestamp(ih.index[-1]).strftime("%Y-%m-%d")
         if len(c)>=50:
             a=float(c.iloc[-1]); b=float(c.rolling(20).mean().iloc[-1]); d=float(c.rolling(50).mean().iloc[-1])
             regime="🟢 RISK-ON" if a>b>d else ("🟡 NEUTRAL / SIDEWAYS" if a>=d else "🔴 RISK-OFF")
+            st.session_state["market_data_meta"]={"date":latest_date,"source":source,"status":"VALID"}
             return a,b,d,regime
-    try:
-        sp=latest_snapshot()
-        if sp:
-            meta=json.load(open(os.path.join(sp,"meta.json"),encoding="utf-8"))
-            a=float(meta.get("ihsg")); b=float(meta.get("ihsg_ma20")); d=float(meta.get("ihsg_ma50"))
-            if all(np.isfinite([a,b,d])):
-                rg=str(meta.get("regime","DATA INSUFFICIENT")).upper()
-                return a,b,d,("🟢 RISK-ON" if "RISK-ON" in rg else ("🔴 RISK-OFF" if "RISK-OFF" in rg else "🟡 NEUTRAL / SIDEWAYS"))
-    except Exception:
-        pass
-    return None,None,None,"🟡 DATA INSUFFICIENT"
+    st.session_state["market_data_meta"]={"date":"—","source":source,"status":"STALE / BLOCKED"}
+    return None,None,None,"🟡 DATA STALE / BLOCKED"
 
 def jakarta_now():
     try:
@@ -936,8 +1074,12 @@ def morning_confirm(top10,period,market_regime="NEUTRAL / SIDEWAYS"):
         data_age=_days_since(last_date) if last_date else 999
         eod_entry=float(r.get("Entry",np.nan)); sl=float(r.get("SL",np.nan))
         entry_low=eod_entry*.985; entry_high=eod_entry*1.025
+        base_status=str(r.get("Status","WAIT")).upper()
+        avoid_reason=str(r.get("AvoidReason","—"))
         if data_age>5:
             status="DATA STALE"; reason="Official EOD data terlalu lama"
+        elif base_status=="AVOID":
+            status="AVOID — SETUP"; reason=avoid_reason if avoid_reason not in {"","—","nan"} else "Setup/risk condition tidak memenuhi"
         elif np.isfinite(sl) and ref<sl:
             status="CANCEL"; reason="EOD reference berada di bawah SL"
         elif market.startswith("RISK-OFF"):
@@ -1096,7 +1238,7 @@ def status_badge(s):
 def morning_status_badge(s):
     s=str(s).upper()
     if s.startswith("CONFIRM"): cls="badge-green"
-    elif s.startswith("CANCEL") or s.startswith("DATA STALE"): cls="badge-red"
+    elif s.startswith("CANCEL") or s.startswith("AVOID") or s.startswith("DATA STALE"): cls="badge-red"
     else: cls="badge-yellow"
     return f'<span class="badge {cls}">{s}</span>'
 
@@ -1228,11 +1370,11 @@ def show_top10(opp,meta=None):
 
 def show_top50(focus):
     st.markdown('<div class="section-title">🟨 Top 50 Focus — Focus List</div>',unsafe_allow_html=True)
-    show_table(focus,["Ticker","Setup","SetupScore","QualityScore","MultiFactorScore","FactorCoveragePct","RiskGate","Close","MA20","RSI","MACD","VolumeRatio","Entry","SL","TP1","TP2","RR","Status","Timing"])
+    show_table(focus,["Ticker","Setup","SetupScore","QualityScore","MultiFactorScore","FactorCoveragePct","RiskGate","Close","MA20","RSI","MACD","VolumeRatio","Entry","SL","TP1","TP2","RR","Status","AvoidReason","Timing"])
 
 def show_top150(enrich):
     st.markdown('<div class="section-title">🟦 Top 150 Enrich — Quality Pool</div>',unsafe_allow_html=True)
-    show_table(enrich,["Ticker","QualityScore","SetupScore","OpportunityScore","MultiFactorScore","FactorCoveragePct","RiskGate","Close","RSI","MACD","MA20","MA50","MA200","Support","Resistance","Status","Setup"])
+    show_table(enrich,["Ticker","QualityScore","SetupScore","OpportunityScore","MultiFactorScore","FactorCoveragePct","RiskGate","Close","RSI","MACD","MA20","MA50","MA200","Support","Resistance","Status","AvoidReason","Setup"])
 
 def show_rules():
     with st.expander("📋 Execution Rule",expanded=False):
@@ -1267,10 +1409,10 @@ def weekly_candidates(focus):
 # =========================================================
 # HEADER + SIDEBAR
 # =========================================================
-header("📈 Sanggul Stock Scanner",f"{APP_VERSION} · 400 IDX · Global Morning Intelligence · EOD Persistent · Morning Confirmation · TradingView")
+header("📈 Sanggul Stock Scanner",f"{APP_VERSION} · 400 IDX · IHSG Reliable Fallback · Global Morning Intelligence · EOD Persistent · Morning Confirmation · TradingView")
 
 with st.sidebar:
-    st.markdown('<div class="control-card"><div class="control-title">SANGGUL STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.5 · MOBILE-FIRST DECISION ENGINE</div><div class="small-note" style="margin-top:4px">Decision-support terminal · 400 IDX</div></div>',unsafe_allow_html=True)
+    st.markdown('<div class="control-card"><div class="control-title">SANGGUL STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.5.5 · PRO IHSG MORNING EOD LOCK</div><div class="small-note" style="margin-top:4px">Decision-support terminal · 400 IDX</div></div>',unsafe_allow_html=True)
     st.markdown("### 🧭 MENU UTAMA")
     mode=st.radio("Navigasi",[
         "📊 Dashboard","⚡ Trading Harian","📅 Swing Trading Mingguan","🔎 Saham Individu","🏭 Sector Opportunity","🏆 Top 3 Actionable","🟩 Top 10 Opportunity","🟨 Top 50 Focus","🟦 Top 150 Enrich","🌅 Morning Confirmation","🌆 EOD Full Scan","📜 EOD Scan History","🧠 Multi-Factor Data Hub"],index=0)
@@ -1284,16 +1426,23 @@ with st.sidebar:
     st.caption("Periode EOD: 1B / 3B / 6B / 2T · engine indikator minimum 2T")
     scan_now=st.button("🔄 Scan 400 Saham / Update EOD",type="primary",use_container_width=True)
 
-# Market strip
-ihsg,ih20,ih50,regime=market_metrics(period)
-metric_strip([("IHSG",fmt(ihsg)),("MA20",fmt(ih20)),("MA50",fmt(ih50)),("Market Gate",regime)])
-global_us=global_morning_brief()
-
+# Load current/EOD state before market metrics so IHSG can be date-synchronized to the scan.
 snap=read_snapshot(latest_snapshot())
 current_scan=st.session_state.get("current_scan") or load_current_scan()
 if current_scan is not None:
     current_scan=_ensure_layers(current_scan)
     st.session_state["current_scan"]=current_scan
+
+# Market strip — V11.5.2 blocks stale/mismatched IHSG instead of silently showing an older close.
+ihsg,ih20,ih50,regime=market_metrics(period)
+market_meta=st.session_state.get("market_data_meta",{})
+ihsg_label=fmt(ihsg) if ihsg is not None else "DATA BLOCKED"
+metric_strip([("IHSG",ihsg_label),("MA20",fmt(ih20) if ih20 is not None else "—"),("MA50",fmt(ih50) if ih50 is not None else "—"),("Market Gate",regime)])
+if market_meta.get("status")=="VALID":
+    st.caption(f"IHSG reference: **EOD {market_meta.get('date','—')}** · {market_meta.get('source','—')} · synchronized with stock scan baseline")
+else:
+    st.warning(f"⚠️ IHSG DATA BLOCKED — {market_meta.get('source','stale/unavailable')}. Sanggul tidak menggunakan angka IHSG lama atau intraday untuk Market Gate.")
+global_us=global_morning_brief()
 
 # Scan 400 is a current/dynamic view and does not overwrite the official EOD snapshot.
 
