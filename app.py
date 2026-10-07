@@ -10,8 +10,8 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.5.5 PRO IHSG MORNING EOD LOCK"
-ENGINE_VERSION = "V11.5.5-IHSG-MORNING-EOD-LOCK"
+APP_VERSION = "V11.5.7 PRO 600 LIVE PRICE OVERLAY"
+ENGINE_VERSION = "V11.5.7-600-LIVE-PRICE-OVERLAY"
 RISK_GATE_VERSION = "2.5"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RECOVERY_DIR = os.path.join(BASE_DIR, "recovered_eod")
@@ -425,7 +425,7 @@ def load_universe():
     """Load the IDX universe robustly on local and Streamlit Cloud deployments.
 
     Priority: universe.csv beside app.py, current working directory, then an
-    embedded 400-ticker fallback. The embedded fallback prevents a deployment
+    embedded 600-ticker fallback. The embedded fallback prevents a deployment
     from failing simply because a companion CSV was not copied into the repo.
     """
     candidates = [
@@ -452,8 +452,8 @@ def load_universe():
         except Exception:
             pass
 
-    # Embedded fallback: use the same 400-ticker universe shipped with this build.
-    fallback = ['BBCA', 'BBRI', 'DCII', 'BREN', 'BYAN', 'BMRI', 'AMMN', 'TLKM', 'MORA', 'ASII', 'DSSA', 'TPIA', 'SRAJ', 'BRPT', 'DNET', 'BBNI', 'SMMA', 'MPRO', 'EMAS', 'CUAN', 'BRMS', 'CASA', 'PANI', 'AADI', 'IMPC', 'UNTR', 'ICBP', 'CDIA', 'ANTM', 'ISAT', 'BNLI', 'MDKA', 'HMSP', 'ADRO', 'BRIS', 'BUMI', 'ADMR', 'UNVR', 'INDF', 'NCKL', 'MBMA', 'PTRO', 'PGUN', 'AMRT', 'GOTO', 'MLPT', 'CPIN', 'INCO', 'SUPR', 'INKP', 'MEGA', 'PGEO', 'EXCL', 'BNGA', 'BDMN', 'GEMS', 'BELI', 'MTEL', 'TAPG', 'VKTR', 'MEDC', 'CMRY', 'TINS', 'PTBA', 'PGAS', 'KLBF', 'ARCI', 'GGRM', 'ENRG', 'MYOR', 'TBIG', 'JARR', 'MGLV', 'NISP', 'AKRA', 'ITMG', 'EMTK', 'SILO', 'JPFA', 'LIFE', 'FAPA', 'MAPI', 'BINA', 'BTPN', 'GIAA', 'SRTG', 'MIKA', 'MDIY', 'TOWR', 'TKIM', 'SINI', 'ULTJ', 'PNBN', 'CBDK', 'MKPI', 'AVIA', 'JSMR', 'BSIM', 'MAPA', 'BBHI', 'ADES', 'NSSS', 'SOHO', 'PACK', 'SMAR', 'INTP', 'BUVA', 'SUPA', 'BBSI', 'AUTO', 'DSNG', 'BBTN', 'POWR', 'AALI', 'RAJA', 'DEWA', 'INDY', 'JRPT', 'BNBR', 'MSIN', 'BNII', 'PSAB', 'MLBI', 'BSSR', 'BFIN', 'CITA', 'FASW', 'POLU', 'PWON', 'CARE', 'STAA', 'MCOL', 'COIN', 'RLCO', 'CMNT', 'ARTO', 'STTP', 'BSDE', 'TSPC', 'RISE', 'HRUM', 'SGER', 'IBST', 'GOOD', 'ARKO', 'BKSL', 'ALII', 'SCMA', 'RATU', 'SMGR', 'AGII', 'YUPI', 'LSIP', 'ADMF', 'CTRA', 'PRAY', 'HRTA', 'ESSA', 'SIDO', 'NATO', 'SSMS', 'SMMT', 'CLEO', 'BUKA', 'WIFI', 'SMSM', 'HEAL', 'EDGE', 'ERAA', 'BIPI', 'BBKP', 'CMNP', 'BMAS', 'SIMP', 'DMAS', 'PLIN', 'DUTI', 'XSPI', 'RMKE', 'BHAT', 'MIDI', 'SGRO', 'WIKA', 'TMAS', 'SSIA', 'FILM', 'BJBR', 'INPP', 'BBMD', 'BJTM', 'TLDN', 'ABMM', 'TCPI', 'CNMA', 'BTPS', 'MDIA', 'INET', 'FORE', 'CYBR', 'EPMT', 'SHIP', 'CLAY', 'GMFI', 'SMCB', 'VICI', 'PNLF', 'SMDR', 'PKPK', 'DMND', 'MTDL', 'BULL', 'TRIM', 'ACES', 'BOGA', 'KPIG', 'YULE', 'UNIC', 'WBSA', 'TOTL', 'OMED', 'BSWD', 'TUGU', 'MAYA', 'ANJT', 'BALI', 'MBSS', 'MSJA', 'SAME', 'ELSA', 'UANG', 'BPII', 'APIC', 'SOCI', 'NICL', 'JECX', 'ELPI', 'MASB', 'TGKA', 'DRMA', 'PALM', 'GJTL', 'MPMX', 'SURE', 'HATM', 'LINK', 'KRAS', 'SMRA', 'TOBA', 'MSTI', 'MARK', 'MMIX', 'AMAR', 'NOBU', 'TFCO', 'GGRP', 'VISI', 'JTPE', 'BIRD', 'MTLA', 'PBID', 'KIJA', 'SMIL', 'ARGO', 'CASS', 'EURO', 'ALKA', 'DKFT', 'TBLA', 'LPKR', 'BWPT', 'PSGO', 'BEEF', 'MKAP', 'RDTX', 'NIRO', 'ARNA', 'BANK', 'AGRO', 'CBRE', 'LPPF', 'IATA', 'JSPT', 'IMAS', 'HEXA', 'GOLF', 'KEJU', 'CENT', 'ROTI', 'DOOH', 'WIIM', 'SAMF', 'DAAZ', 'KEEN', 'NEST', 'ABDA', 'SKRN', 'FISH', 'SDRA', 'INPC', 'BESS', 'BBYB', 'CBUT', 'CPRO', 'FPNI', 'MDLA', 'BNBA', 'PNIN', 'OMRE', 'ASGR', 'ISSP', 'AGRS', 'JAWA', 'LPCK', 'APLN', 'BGTG', 'KETR', 'ROCK', 'IRSX', 'DAYA', 'SFAN', 'BUKK', 'PNGO', 'MAPB', 'PORT', 'VICO', 'TEBE', 'PYFA', 'ASLI', 'ALDO', 'WINS', 'PRDA', 'MCOR', 'SMDM', 'BCIC', 'TOTO', 'ASRI', 'RANS', 'PBSA', 'MGRO', 'GTSI', 'CTBN', 'MAHA', 'KAEF', 'AGAR', 'HUMI', 'MINA', 'RALS', 'PTSN', 'PSKT', 'MYOH', 'BACA', 'DATA', 'BABP', 'ASSA', 'SCCO', 'MNCN', 'NICE', 'MMLP', 'MBAP', 'BISI', 'BCAP', 'DWGL', 'DNAR', 'BRAM', 'KMTR', 'BHIT', 'UCID', 'NETV', 'STAR', 'AYAM', 'IMJS', 'IFII', 'KOTA', 'IPCC', 'IFSH', 'INDR', 'PNBS', 'LPGI', 'MTMH', 'AMAG', 'FAST', 'RONY', 'DGWG', 'KINO', 'PMJS', 'BOLT', 'CARS', 'POLI', 'NICK', 'ACST', 'BMTR', 'FUTR', 'OASA', 'PSSI', 'DVLA', 'BKSW', 'BLTZ', 'BLES', 'BMHS', 'MERK']
+    # Embedded fallback: use the same 600-ticker universe shipped with this build.
+    fallback = ['BBCA', 'BBRI', 'DCII', 'BREN', 'BYAN', 'BMRI', 'AMMN', 'TLKM', 'MORA', 'ASII', 'DSSA', 'TPIA', 'SRAJ', 'BRPT', 'DNET', 'BBNI', 'SMMA', 'MPRO', 'EMAS', 'CUAN', 'BRMS', 'CASA', 'PANI', 'AADI', 'IMPC', 'UNTR', 'ICBP', 'CDIA', 'ANTM', 'ISAT', 'BNLI', 'MDKA', 'HMSP', 'ADRO', 'BRIS', 'BUMI', 'ADMR', 'UNVR', 'INDF', 'NCKL', 'MBMA', 'PTRO', 'PGUN', 'AMRT', 'GOTO', 'MLPT', 'CPIN', 'INCO', 'SUPR', 'INKP', 'MEGA', 'PGEO', 'EXCL', 'BNGA', 'BDMN', 'GEMS', 'BELI', 'MTEL', 'TAPG', 'VKTR', 'MEDC', 'CMRY', 'TINS', 'PTBA', 'PGAS', 'KLBF', 'ARCI', 'GGRM', 'ENRG', 'MYOR', 'TBIG', 'JARR', 'MGLV', 'NISP', 'AKRA', 'ITMG', 'EMTK', 'SILO', 'JPFA', 'LIFE', 'FAPA', 'MAPI', 'BINA', 'BTPN', 'GIAA', 'SRTG', 'MIKA', 'MDIY', 'TOWR', 'TKIM', 'SINI', 'ULTJ', 'PNBN', 'CBDK', 'MKPI', 'AVIA', 'JSMR', 'BSIM', 'MAPA', 'BBHI', 'ADES', 'NSSS', 'SOHO', 'PACK', 'SMAR', 'INTP', 'BUVA', 'SUPA', 'BBSI', 'AUTO', 'DSNG', 'BBTN', 'POWR', 'AALI', 'RAJA', 'DEWA', 'INDY', 'JRPT', 'BNBR', 'MSIN', 'BNII', 'PSAB', 'MLBI', 'BSSR', 'BFIN', 'CITA', 'FASW', 'POLU', 'PWON', 'CARE', 'STAA', 'MCOL', 'COIN', 'RLCO', 'CMNT', 'ARTO', 'STTP', 'BSDE', 'TSPC', 'RISE', 'HRUM', 'SGER', 'IBST', 'GOOD', 'ARKO', 'BKSL', 'ALII', 'SCMA', 'RATU', 'SMGR', 'AGII', 'YUPI', 'LSIP', 'ADMF', 'CTRA', 'PRAY', 'HRTA', 'ESSA', 'SIDO', 'NATO', 'SSMS', 'SMMT', 'CLEO', 'BUKA', 'WIFI', 'SMSM', 'HEAL', 'EDGE', 'ERAA', 'BIPI', 'BBKP', 'CMNP', 'BMAS', 'SIMP', 'DMAS', 'PLIN', 'DUTI', 'XSPI', 'RMKE', 'BHAT', 'MIDI', 'SGRO', 'WIKA', 'TMAS', 'SSIA', 'FILM', 'BJBR', 'INPP', 'BBMD', 'BJTM', 'TLDN', 'ABMM', 'TCPI', 'CNMA', 'BTPS', 'MDIA', 'INET', 'FORE', 'CYBR', 'EPMT', 'SHIP', 'CLAY', 'GMFI', 'SMCB', 'VICI', 'PNLF', 'SMDR', 'PKPK', 'DMND', 'MTDL', 'BULL', 'TRIM', 'ACES', 'BOGA', 'KPIG', 'YULE', 'UNIC', 'WBSA', 'TOTL', 'OMED', 'BSWD', 'TUGU', 'MAYA', 'ANJT', 'BALI', 'MBSS', 'MSJA', 'SAME', 'ELSA', 'UANG', 'BPII', 'APIC', 'SOCI', 'NICL', 'JECX', 'ELPI', 'MASB', 'TGKA', 'DRMA', 'PALM', 'GJTL', 'MPMX', 'SURE', 'HATM', 'LINK', 'KRAS', 'SMRA', 'TOBA', 'MSTI', 'MARK', 'MMIX', 'AMAR', 'NOBU', 'TFCO', 'GGRP', 'VISI', 'JTPE', 'BIRD', 'MTLA', 'PBID', 'KIJA', 'SMIL', 'ARGO', 'CASS', 'EURO', 'ALKA', 'DKFT', 'TBLA', 'LPKR', 'BWPT', 'PSGO', 'BEEF', 'MKAP', 'RDTX', 'NIRO', 'ARNA', 'BANK', 'AGRO', 'CBRE', 'LPPF', 'IATA', 'JSPT', 'IMAS', 'HEXA', 'GOLF', 'KEJU', 'CENT', 'ROTI', 'DOOH', 'WIIM', 'SAMF', 'DAAZ', 'KEEN', 'NEST', 'ABDA', 'SKRN', 'FISH', 'SDRA', 'INPC', 'BESS', 'BBYB', 'CBUT', 'CPRO', 'FPNI', 'MDLA', 'BNBA', 'PNIN', 'OMRE', 'ASGR', 'ISSP', 'AGRS', 'JAWA', 'LPCK', 'APLN', 'BGTG', 'KETR', 'ROCK', 'IRSX', 'DAYA', 'SFAN', 'BUKK', 'PNGO', 'MAPB', 'PORT', 'VICO', 'TEBE', 'PYFA', 'ASLI', 'ALDO', 'WINS', 'PRDA', 'MCOR', 'SMDM', 'BCIC', 'TOTO', 'ASRI', 'RANS', 'PBSA', 'MGRO', 'GTSI', 'CTBN', 'MAHA', 'KAEF', 'AGAR', 'HUMI', 'MINA', 'RALS', 'PTSN', 'PSKT', 'MYOH', 'BACA', 'DATA', 'BABP', 'ASSA', 'SCCO', 'MNCN', 'NICE', 'MMLP', 'MBAP', 'BISI', 'BCAP', 'DWGL', 'DNAR', 'BRAM', 'KMTR', 'BHIT', 'UCID', 'NETV', 'STAR', 'AYAM', 'IMJS', 'IFII', 'KOTA', 'IPCC', 'IFSH', 'INDR', 'PNBS', 'LPGI', 'MTMH', 'AMAG', 'FAST', 'RONY', 'DGWG', 'KINO', 'PMJS', 'BOLT', 'CARS', 'POLI', 'NICK', 'ACST', 'BMTR', 'FUTR', 'OASA', 'PSSI', 'DVLA', 'BKSW', 'BLTZ', 'BLES', 'BMHS', 'MERK', 'IOTF', 'IPAC', 'IPCM', 'IPOL', 'IPTV', 'IRRA', 'ISAP', 'ISEA', 'ITIC', 'ITMA', 'JAST', 'JATI', 'JAYA', 'JECC', 'JGLE', 'JIHD', 'JKON', 'JMAS', 'KAQI', 'KARW', 'KBAG', 'KBLI', 'KBLM', 'KBLV', 'KDSI', 'KDTN', 'KICI', 'KING', 'KIOS', 'KJEN', 'KKES', 'KKGI', 'KLAS', 'KLIN', 'KMDS', 'KOBX', 'KOCI', 'KOIN', 'KOKA', 'KONI', 'KOPI', 'KREN', 'KRYA', 'KSIX', 'KUAS', 'LABS', 'LAJU', 'LAND', 'LAPD', 'LCKM', 'LEAD', 'LFLO', 'LION', 'LIVE', 'LMAX', 'LMPI', 'LOPI', 'LPIN', 'LPLI', 'LPPS', 'LRNA', 'LTLS', 'LUCK', 'LUCY', 'MAIN', 'MANG', 'MARI', 'MAXI', 'MBTO', 'MCAS', 'MDKI', 'MDLN', 'MDRN', 'MEDS', 'MEJA', 'MENN', 'MERI', 'MFIN', 'MGNA', 'MHKI', 'MICE', 'MINE', 'MIRA', 'MITI', 'MKTR', 'MLIA', 'MLPL', 'MOLI', 'MPIX', 'MPOW', 'MPPA', 'MPXL', 'MRAT', 'MREI', 'MSIE', 'MSKY', 'MTFN', 'MTPS', 'MTWI', 'MUTU', 'NAIK', 'NANO', 'NASA', 'NASI', 'NAYZ', 'NELY', 'NFCX', 'NIKL', 'NPGF', 'NRCA', 'NTBK', 'NZIA', 'OBAT', 'OBMD', 'OILS', 'OKAS', 'OLIV', 'OPMS', 'PADA', 'PADI', 'PAMG', 'PANR', 'PANS', 'PART', 'PBRX', 'PCAR', 'PDES', 'PDPP', 'PEGE', 'PEHA', 'PEVE', 'PGJO', 'PGLI', 'PICO', 'PIPA', 'PJAA', 'PLAN', 'PMUI', 'PNSE', 'POLA', 'POLY', 'PPGL', 'PPRE', 'PPRI', 'PRIM', 'PSAT', 'PSDN', 'PTIS', 'PTMP', 'PTPP', 'PTPS', 'PTPW', 'PTSP', 'PUDP', 'PURA', 'PURI', 'PZZA', 'RAAM', 'RANC', 'RBMS', 'RCCC', 'REAL', 'RELF', 'RELI', 'RGAS', 'RICY', 'RIGS', 'RMKO', 'RODA', 'RSCH', 'RUIS', 'RUNS', 'SAFE', 'SAGE', 'SAPX', 'SATU', 'SBMA', 'SCNP', 'SDMU', 'SDPC', 'SEMA', 'SHID', 'SICO', 'SIPD', 'SKBM', 'SKLT', 'SLIS', 'SMBR', 'SMGA', 'SMKL', 'SMKM', 'SMLE', 'SNLK', 'SOFA', 'SOLA', 'SONA', 'SOSS', 'SOTS', 'SOUL', 'SPMA']
     if fallback:
         return fallback
     raise FileNotFoundError("Universe IDX tidak tersedia. Pastikan universe.csv tersedia atau gunakan build Streamlit Cloud yang menyertakan embedded universe.")
@@ -492,6 +492,58 @@ def load_data(ticker,period="2y",interval="1d"):
     except Exception:
         return pd.DataFrame()
 
+
+def _download_live_quote_batch(tickers, interval="5m"):
+    """Fetch latest intraday quote in batches. Display/refresh layer only;
+    technical indicators and official EOD snapshots continue to use completed daily candles.
+    """
+    symbols=[str(t).upper().replace(".JK","")+".JK" for t in tickers if str(t).strip()]
+    out={}
+    if not symbols:
+        return out
+    for start in range(0,len(symbols),50):
+        chunk=symbols[start:start+50]
+        try:
+            q=yf.download(chunk,period="1d",interval=interval,auto_adjust=False,progress=False,threads=True,group_by="ticker",prepost=False)
+            if q is None or q.empty:
+                continue
+            if isinstance(q.columns,pd.MultiIndex):
+                lvl0=[str(x) for x in q.columns.get_level_values(0)]
+                lvl1=[str(x) for x in q.columns.get_level_values(1)]
+                first=set(lvl0); second=set(lvl1)
+                for sym in chunk:
+                    base=sym.replace(".JK","")
+                    candidates=[sym,base]
+                    if base in first or sym in first:
+                        key=base if base in first else sym
+                        try: sub=q[key]
+                        except Exception: continue
+                    elif "Close" in second:
+                        cols=[c for c in q.columns if str(c[0]) in candidates]
+                        if not cols: continue
+                        sub=q.loc[:,cols].copy(); sub.columns=[c[1] for c in cols]
+                    else:
+                        continue
+                    if "Close" not in sub.columns: continue
+                    close=pd.to_numeric(sub["Close"],errors="coerce").dropna()
+                    if close.empty: continue
+                    ts=pd.Timestamp(close.index[-1])
+                    if ts.tzinfo is not None: ts=ts.tz_convert("Asia/Jakarta").tz_localize(None)
+                    out[base]={"price":float(close.iloc[-1]),"time":ts.strftime("%Y-%m-%d %H:%M:%S")}
+            else:
+                if "Close" in q.columns and len(chunk)==1:
+                    close=pd.to_numeric(q["Close"],errors="coerce").dropna()
+                    if not close.empty:
+                        ts=pd.Timestamp(close.index[-1])
+                        if ts.tzinfo is not None: ts=ts.tz_convert("Asia/Jakarta").tz_localize(None)
+                        out[chunk[0].replace(".JK","")]={"price":float(close.iloc[-1]),"time":ts.strftime("%Y-%m-%d %H:%M:%S")}
+        except Exception:
+            continue
+    return out
+
+def load_live_prices(tickers):
+    """Current quote overlay for ad-hoc scans. Never writes/changes official EOD data."""
+    return _download_live_quote_batch(tickers,"5m")
 
 @st.cache_data(ttl=900, show_spinner=False)
 def us_market_snapshot():
@@ -620,7 +672,7 @@ def latest_recovered_eod():
     ds=sorted([p for p in glob.glob(os.path.join(RECOVERY_DIR,"*")) if os.path.isdir(p)],reverse=True)
     return _read_saved_bundle(RECOVERY_DIR,os.path.basename(ds[0])) if ds else None
 
-def _validate_recovery_bundle(bundle, expected_universe=400):
+def _validate_recovery_bundle(bundle, expected_universe=600):
     if not bundle: return False, "NO RECOVERY DATA"
     meta=bundle.get("meta",{}); full=bundle.get("full",pd.DataFrame())
     if str(meta.get("scan_type","")).upper() != "RECOVERED_EOD": return False, "NOT RECOVERED EOD"
@@ -642,8 +694,8 @@ def save_recovered_eod(bundle, source_label):
     bundle["meta"]=meta
     return bundle
 
-def recover_eod_from_current_or_scan(period, n=400, min_rr=2.0, max_stop_pct=15.0):
-    """Morning fallback: reuse a validated current scan first; otherwise build a fresh 400-stock completed-EOD scan. Never overwrites official EOD history."""
+def recover_eod_from_current_or_scan(period, n=600, min_rr=2.0, max_stop_pct=15.0):
+    """Morning fallback: reuse a validated current scan first; otherwise build a fresh 600-stock completed-EOD scan. Never overwrites official EOD history."""
     current=load_current_scan()
     if current:
         full=current.get("full",pd.DataFrame()).copy(); meta=current.get("meta",{})
@@ -658,7 +710,7 @@ def recover_eod_from_current_or_scan(period, n=400, min_rr=2.0, max_stop_pct=15.
             if ok:
                 return save_recovered_eod(recovered,"CURRENT_SCAN validated as completed EOD")
 
-    # No usable current scan: perform a fresh 400-stock scan. load_data() removes today's partial candle before 16:20 WIB.
+    # No usable current scan: perform a fresh 600-stock scan. load_data() removes today's partial candle before 16:20 WIB.
     path=run_full_scan(period,n,min_rr,max_stop_pct,save_eod=False)
     current=load_current_scan() if path else None
     if not current: return None
@@ -666,9 +718,9 @@ def recover_eod_from_current_or_scan(period, n=400, min_rr=2.0, max_stop_pct=15.
     recovered=_ensure_layers(recovered)
     recovered["meta"]["scan_type"]="RECOVERED_EOD"
     ok,reason=_validate_recovery_bundle(recovered,n)
-    return save_recovered_eod(recovered,"FRESH 400 CURRENT SCAN validated as completed EOD") if ok else None
+    return save_recovered_eod(recovered,"FRESH 600 CURRENT SCAN validated as completed EOD") if ok else None
 
-def morning_baseline(period, n=400, min_rr=2.0, max_stop_pct=15.0):
+def morning_baseline(period, n=600, min_rr=2.0, max_stop_pct=15.0):
     """Return official EOD if valid; otherwise use a validated non-official EOD recovery."""
     official=read_snapshot(latest_snapshot())
     if official:
@@ -935,6 +987,20 @@ def run_full_scan(period,n,min_rr,max_stop_pct=15.0,save_eod=True):
         prog.progress(i/len(uni),text=f"Scanning {i}/{len(uni)} • berhasil {len(rows)}")
     prog.empty(); result=pd.DataFrame(rows)
     if result.empty:return None
+
+    # CURRENT SCAN gets a fresh intraday quote overlay. Official EOD scans do not
+    # use this value, so the EOD close remains locked and reproducible.
+    if not save_eod:
+        live=load_live_prices(result["Ticker"].astype(str).tolist())
+        result["CurrentPrice"]=result["Ticker"].map(lambda t: live.get(str(t).upper(),{}).get("price",np.nan))
+        result["CurrentQuoteTime"]=result["Ticker"].map(lambda t: live.get(str(t).upper(),{}).get("time","—"))
+        result["PriceMode"]=np.where(pd.to_numeric(result["CurrentPrice"],errors="coerce").notna(),"CURRENT QUOTE","EOD FALLBACK")
+        result["CurrentChangePct"]=np.nan
+        valid=result["CurrentPrice"].notna()
+        result.loc[valid,"CurrentChangePct"]=(pd.to_numeric(result.loc[valid,"CurrentPrice"],errors="coerce")/pd.to_numeric(result.loc[valid,"Close"],errors="coerce")-1)*100
+    else:
+        result["CurrentPrice"]=np.nan; result["CurrentQuoteTime"]="—"; result["PriceMode"]="OFFICIAL EOD"; result["CurrentChangePct"]=np.nan
+
     result=factor_enrich(result)
     stock_date=_latest_stock_data_date(result)
     market_target=min(stock_date, _completed_eod_cutoff_date()) if stock_date is not None else _completed_eod_cutoff_date()
@@ -999,7 +1065,7 @@ def eod_lock_open():
     now = jakarta_now()
     return (now.hour > 16) or (now.hour == 16 and now.minute >= 20)
 
-def official_eod_snapshot_valid(snap, expected_universe=400):
+def official_eod_snapshot_valid(snap, expected_universe=600):
     """Strict gate for the morning dashboard. Never treat a current/ad-hoc scan as EOD."""
     if not snap:
         return False, "NO OFFICIAL EOD SNAPSHOT"
@@ -1022,7 +1088,7 @@ def official_eod_snapshot_valid(snap, expected_universe=400):
         return False, "UNKNOWN DATA SOURCE"
     return True, "OFFICIAL EOD VALID"
 
-def morning_data_readiness(snap, expected_universe=400):
+def morning_data_readiness(snap, expected_universe=600):
     if not snap:
         return {"Ready":False,"Level":"NO SNAPSHOT","Reason":"Belum ada EOD baseline yang dapat divalidasi."}
     meta=snap.get("meta",{}); scan_type=str(meta.get("scan_type","")).upper()
@@ -1268,12 +1334,23 @@ def risk_badge(gate):
 
 def _decision_card_html(i, r, mr, mode="top3"):
     ticker=str(r.get('Ticker','—')); setup=str(r.get('Setup','—'))
-    pref=fmt(mr.get('PreOpenReference',r.get('Close',np.nan)))
+    live_price=pd.to_numeric(pd.Series([r.get('CurrentPrice',np.nan)]),errors='coerce').iloc[0]
+    is_current=str(r.get('PriceMode','')).upper()=='CURRENT QUOTE' and np.isfinite(live_price)
+    pref=fmt(live_price if is_current else mr.get('PreOpenReference',r.get('Close',np.nan)))
+    price_label='CURRENT QUOTE' if is_current else 'EOD REFERENCE'
+    quote_time=str(r.get('CurrentQuoteTime','')) if is_current else ''
     entry=fmt(r.get('Entry',np.nan)); lo=fmt(mr.get('EntryLow',r.get('Entry',np.nan))); hi=fmt(mr.get('EntryHigh',r.get('Entry',np.nan)))
     sl=fmt(r.get('SL',np.nan)); tp1=fmt(r.get('TP1',np.nan)); rr=fmt(r.get('RR',np.nan),2)
     score=fmt(r.get('MultiFactorScore',np.nan),1); eod_score=fmt(r.get('OpportunityScore',np.nan),0); cov=fmt(r.get('FactorCoveragePct',np.nan),0)
     stock_gate=str(r.get('StockSetupGate','—')); market_gate=str(mr.get('MarketGate',r.get('MarketGate','—')))
     mstatus=str(mr.get('MorningStatus','NOT VALIDATED')); reason=str(mr.get('MorningReason','—')); pos=str(mr.get('EntryPosition','—')); dist=fmt(mr.get('DistanceToEntryPct',np.nan),1)
+    # In a current/ad-hoc scan, the displayed position is recalculated from the
+    # refreshed quote. Morning Confirmation itself still uses the locked EOD reference.
+    if is_current and np.isfinite(live_price):
+        e=float(r.get('Entry',np.nan)); lo_c=e*.985 if np.isfinite(e) else np.nan; hi_c=e*1.025 if np.isfinite(e) else np.nan
+        if np.isfinite(e) and e>0:
+            dist=fmt((live_price-e)/e*100.0,1)
+            pos='BELOW ENTRY' if live_price<lo_c else ('IN ENTRY ZONE' if live_price<=hi_c else 'ABOVE ENTRY')
     data=str(mr.get('DataStatus','UNKNOWN')); age=mr.get('DataAgeDays',r.get('DataAgeDays','—')); eod_date=mr.get('LastDataDate',r.get('DataDate','—'))
     risk=fmt(r.get('RiskPct',np.nan),1); atr=fmt(r.get('RiskATRMultiple',np.nan),1)
     why=[]
@@ -1285,7 +1362,7 @@ def _decision_card_html(i, r, mr, mode="top3"):
     rank_style='decision-rank' if mode=='top3' else 'op10-rank'
     return f'''<div class="decision-card">
 <div class="decision-head"><div><span class="{rank_style}">{i}</span><span class="decision-ticker">{ticker}</span></div>{morning_status_badge(mstatus)}</div>
-<div class="decision-price">{pref}</div><div class="decision-setup"><b>{setup}</b> · {pos} · distance {dist}%</div>
+<div class="decision-price">{pref}</div><div class="decision-setup"><b>{price_label}</b>{(' · '+quote_time) if quote_time else ''} · <b>{setup}</b> · {pos} · distance {dist}%</div>
 <div class="decision-zone"><span>ENTRY ZONE</span> <b>{lo}–{hi}</b></div>
 <div class="decision-metrics"><div class="decision-metric"><span>SL</span><b>{sl}</b></div><div class="decision-metric"><span>TP1</span><b>{tp1}</b></div><div class="decision-metric"><span>R/R</span><b>{rr}</b></div><div class="decision-metric"><span>RISK</span><b>{risk}%</b></div></div>
 <div class="decision-metrics"><div class="decision-metric"><span>EOD SCORE</span><b>{eod_score}</b></div><div class="decision-metric"><span>MULTI</span><b>{score}</b></div><div class="decision-metric"><span>COVERAGE</span><b>{cov}%</b></div><div class="decision-metric"><span>ATR</span><b>{atr}x</b></div></div>
@@ -1350,8 +1427,8 @@ def show_morning_watchlist(conf):
 def dashboard_summary(active, meta, action, opp, focus, enrich, ihsg, ih20, ih50, regime):
     reg=str(regime).upper(); reg_cls='green' if reg.startswith('RISK-ON') else ('red' if reg.startswith('RISK-OFF') else 'yellow')
     full=active.get('full',pd.DataFrame()) if isinstance(active,dict) else pd.DataFrame(); analyzed=len(full); ready=int((full.get('Status',pd.Series(dtype=str)).astype(str).str.upper()=='READY').sum()) if not full.empty else 0; full_pass=int((full.get('RiskGate',pd.Series(dtype=str)).astype(str).str.upper()=='PASS').sum()) if not full.empty else 0
-    st.markdown(f'''<div class="dashboard-grid"><div class="dashboard-panel"><div class="panel-kicker">IHSG</div><div class="big-number">{fmt(ihsg,2)}</div><div class="{reg_cls}" style="font-size:13px;font-weight:800">{reg}</div><div class="stat-row"><span>MA20</span><b>{fmt(ih20,2)}</b></div><div class="stat-row"><span>MA50</span><b>{fmt(ih50,2)}</b></div></div><div class="dashboard-panel"><div class="panel-kicker">Market Regime</div><div class="regime {reg_cls}">{reg}</div><div class="small-note">Stock Setup dan Market Environment ditampilkan terpisah agar alasan REVIEW lebih mudah dibaca.</div><div style="margin-top:12px"><span class="mode-pill">HYBRID ENGINE</span> <span class="mode-pill">400 IDX</span></div></div><div class="dashboard-panel"><div class="panel-kicker">Statistik Scan</div><div class="stat-list"><div class="stat-row"><span>Saham dianalisis</span><b>{analyzed}</b></div><div class="stat-row"><span>READY</span><b>{ready}</b></div><div class="stat-row"><span>Risk Gate PASS</span><b>{full_pass}</b></div><div class="stat-row"><span>Top 10</span><b>{len(opp)}</b></div><div class="stat-row"><span>Top 3</span><b>{min(3,len(action))}</b></div></div></div></div>''',unsafe_allow_html=True)
-    st.markdown('<div class="pipeline"><div class="pipe">UNIVERSE<b>400</b></div><div class="pipe">QUALITY<b>150</b></div><div class="pipe">FOCUS<b>50</b></div><div class="pipe">OPPORTUNITY<b>10</b></div><div class="pipe">RISK GATE<b>2.3</b></div><div class="pipe">ACTIONABLE<b>3</b></div></div>',unsafe_allow_html=True)
+    st.markdown(f'''<div class="dashboard-grid"><div class="dashboard-panel"><div class="panel-kicker">IHSG</div><div class="big-number">{fmt(ihsg,2)}</div><div class="{reg_cls}" style="font-size:13px;font-weight:800">{reg}</div><div class="stat-row"><span>MA20</span><b>{fmt(ih20,2)}</b></div><div class="stat-row"><span>MA50</span><b>{fmt(ih50,2)}</b></div></div><div class="dashboard-panel"><div class="panel-kicker">Market Regime</div><div class="regime {reg_cls}">{reg}</div><div class="small-note">Stock Setup dan Market Environment ditampilkan terpisah agar alasan REVIEW lebih mudah dibaca.</div><div style="margin-top:12px"><span class="mode-pill">HYBRID ENGINE</span> <span class="mode-pill">600 IDX</span></div></div><div class="dashboard-panel"><div class="panel-kicker">Statistik Scan</div><div class="stat-list"><div class="stat-row"><span>Saham dianalisis</span><b>{analyzed}</b></div><div class="stat-row"><span>READY</span><b>{ready}</b></div><div class="stat-row"><span>Risk Gate PASS</span><b>{full_pass}</b></div><div class="stat-row"><span>Top 10</span><b>{len(opp)}</b></div><div class="stat-row"><span>Top 3</span><b>{min(3,len(action))}</b></div></div></div></div>''',unsafe_allow_html=True)
+    st.markdown('<div class="pipeline"><div class="pipe">UNIVERSE<b>600</b></div><div class="pipe">QUALITY<b>150</b></div><div class="pipe">FOCUS<b>50</b></div><div class="pipe">OPPORTUNITY<b>10</b></div><div class="pipe">RISK GATE<b>2.3</b></div><div class="pipe">ACTIONABLE<b>3</b></div></div>',unsafe_allow_html=True)
     show_top3_cards(action,meta)
 
 def show_top3(action,meta,opp=None):
@@ -1370,11 +1447,11 @@ def show_top10(opp,meta=None):
 
 def show_top50(focus):
     st.markdown('<div class="section-title">🟨 Top 50 Focus — Focus List</div>',unsafe_allow_html=True)
-    show_table(focus,["Ticker","Setup","SetupScore","QualityScore","MultiFactorScore","FactorCoveragePct","RiskGate","Close","MA20","RSI","MACD","VolumeRatio","Entry","SL","TP1","TP2","RR","Status","AvoidReason","Timing"])
+    show_table(focus,["Ticker","Setup","SetupScore","QualityScore","MultiFactorScore","FactorCoveragePct","RiskGate","CurrentPrice","CurrentChangePct","CurrentQuoteTime","Close","MA20","RSI","MACD","VolumeRatio","Entry","SL","TP1","TP2","RR","Status","AvoidReason","Timing"])
 
 def show_top150(enrich):
     st.markdown('<div class="section-title">🟦 Top 150 Enrich — Quality Pool</div>',unsafe_allow_html=True)
-    show_table(enrich,["Ticker","QualityScore","SetupScore","OpportunityScore","MultiFactorScore","FactorCoveragePct","RiskGate","Close","RSI","MACD","MA20","MA50","MA200","Support","Resistance","Status","AvoidReason","Setup"])
+    show_table(enrich,["Ticker","QualityScore","SetupScore","OpportunityScore","MultiFactorScore","FactorCoveragePct","RiskGate","CurrentPrice","CurrentChangePct","CurrentQuoteTime","Close","RSI","MACD","MA20","MA50","MA200","Support","Resistance","Status","AvoidReason","Setup"])
 
 def show_rules():
     with st.expander("📋 Execution Rule",expanded=False):
@@ -1409,22 +1486,23 @@ def weekly_candidates(focus):
 # =========================================================
 # HEADER + SIDEBAR
 # =========================================================
-header("📈 Sanggul Stock Scanner",f"{APP_VERSION} · 400 IDX · IHSG Reliable Fallback · Global Morning Intelligence · EOD Persistent · Morning Confirmation · TradingView")
+header("📈 Sanggul Stock Scanner",f"{APP_VERSION} · 600 IDX · IHSG Reliable Fallback · Global Morning Intelligence · EOD Persistent · Morning Confirmation · TradingView")
 
 with st.sidebar:
-    st.markdown('<div class="control-card"><div class="control-title">SANGGUL STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.5.5 · PRO IHSG MORNING EOD LOCK</div><div class="small-note" style="margin-top:4px">Decision-support terminal · 400 IDX</div></div>',unsafe_allow_html=True)
+    st.markdown('<div class="control-card"><div class="control-title">SANGGUL STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.5.6 · PRO 600 IDX EXPANDED UNIVERSE</div><div class="small-note" style="margin-top:4px">Decision-support terminal · 600 IDX</div></div>',unsafe_allow_html=True)
     st.markdown("### 🧭 MENU UTAMA")
     mode=st.radio("Navigasi",[
         "📊 Dashboard","⚡ Trading Harian","📅 Swing Trading Mingguan","🔎 Saham Individu","🏭 Sector Opportunity","🏆 Top 3 Actionable","🟩 Top 10 Opportunity","🟨 Top 50 Focus","🟦 Top 150 Enrich","🌅 Morning Confirmation","🌆 EOD Full Scan","📜 EOD Scan History","🧠 Multi-Factor Data Hub"],index=0)
     st.divider(); st.markdown("### ⚙️ PENGATURAN")
     st.markdown('<div class="control-card"><div class="control-title">SCAN CONTROL</div><div class="small-note">Widget di bawah dibuat kontras agar nilai mudah dibaca di dark mode.</div></div>',unsafe_allow_html=True)
     period=st.selectbox("Data historis EOD",["1mo","3mo","6mo","2y"],index=3, format_func=lambda x: {"1mo":"1 Bulan","3mo":"3 Bulan","6mo":"6 Bulan","2y":"2 Tahun"}[x])
-    n=st.slider("Jumlah saham saat EOD scan",50,400,400,50)
+    n=st.slider("Jumlah saham saat Scan / EOD",50,600,600,50)
     min_rr=st.number_input("Minimum R/R",1.5,4.0,2.0,0.5)
     max_stop_pct=st.number_input("Max Stop Distance (%)",5.0,40.0,15.0,1.0,help="Risk Gate 2.1: kandidat dengan jarak Entry–SL di atas batas ini masuk RISK REVIEW. ATR Risk juga wajib tersedia untuk PASS.")
     st.divider(); st.caption("📌 EOD = screening utama · Pagi = konfirmasi · Harian = tactical · Mingguan = swing · External factors = optional enrichment")
     st.caption("Periode EOD: 1B / 3B / 6B / 2T · engine indikator minimum 2T")
-    scan_now=st.button("🔄 Scan 400 Saham / Update EOD",type="primary",use_container_width=True)
+    scan_now=st.button("🔄 Scan 600 Saham / Update EOD",type="primary",use_container_width=True)
+    st.caption("Current Scan = refresh harga terkini + screening dinamis. EOD Full Scan = kunci harga penutupan resmi untuk baseline pagi.")
 
 # Load current/EOD state before market metrics so IHSG can be date-synchronized to the scan.
 snap=read_snapshot(latest_snapshot())
@@ -1444,12 +1522,12 @@ else:
     st.warning(f"⚠️ IHSG DATA BLOCKED — {market_meta.get('source','stale/unavailable')}. Sanggul tidak menggunakan angka IHSG lama atau intraday untuk Market Gate.")
 global_us=global_morning_brief()
 
-# Scan 400 is a current/dynamic view and does not overwrite the official EOD snapshot.
+# Scan 600 is a current/dynamic view and does not overwrite the official EOD snapshot.
 
 if scan_now:
-    with st.spinner(f"Menjalankan current scan {n} saham..."):
+    with st.spinner(f"Menjalankan current scan {n} saham + refresh harga terkini..."):
         path=run_full_scan(period,n,min_rr,max_stop_pct,save_eod=False)
-    if path: st.success("Current Scan selesai. Ini hanya view dinamis; Official EOD Snapshot tidak diubah dan tidak dipakai sebagai Morning baseline."); st.rerun()
+    if path: st.success("Current Scan selesai. Harga terkini diperbarui dari quote intraday provider; EOD reference tetap tidak berubah. Official EOD Snapshot tidak diubah."); st.rerun()
     else: st.error("Tidak ada data yang berhasil dianalisis.")
 
 # Current Scan takes precedence for analytical menus during this session;
@@ -1468,7 +1546,7 @@ if mode=="🌆 EOD Full Scan":
     now_jkt=jakarta_now()
     st.info("Gunakan setelah candle harian selesai. Official EOD snapshot menjadi baseline Dashboard dan Morning Confirmation; sebelum market close jangan jadikan scan ini sebagai snapshot resmi.")
     if now_jkt.hour < 16 or (now_jkt.hour == 16 and now_jkt.minute < 20):
-        st.warning(f"🔒 EOD LOCK — waktu Jakarta {now_jkt.strftime('%H:%M')}. Official EOD Scan dibuka mulai 16:20 WIB agar candle hari berjalan tidak masuk sebagai EOD final. Untuk screening saat ini gunakan 🔄 Scan 400 Saham / Update EOD; hasilnya tidak mengganti EOD Snapshot.")
+        st.warning(f"🔒 EOD LOCK — waktu Jakarta {now_jkt.strftime('%H:%M')}. Official EOD Scan dibuka mulai 16:20 WIB agar candle hari berjalan tidak masuk sebagai EOD final. Untuk screening saat ini gunakan 🔄 Scan 600 Saham / Update EOD; hasilnya tidak mengganti EOD Snapshot.")
     else:
         if st.button("🚀 Jalankan EOD Full Scan",type="primary"):
             path=run_full_scan(period,n,min_rr,max_stop_pct)
@@ -1481,23 +1559,23 @@ if mode=="🌅 Morning Confirmation":
     if st.button("🔄 Refresh Morning Data",type="primary"):
         load_data.clear(); st.session_state.pop("morning_recovery_attempted",None); st.rerun()
     m0= snap.get("meta",{}) if snap else {}
-    baseline, baseline_source = morning_baseline(period, int(m0.get("universe",400) or 400), min_rr, max_stop_pct)
+    baseline, baseline_source = morning_baseline(period, int(m0.get("universe",600) or 600), min_rr, max_stop_pct)
     if baseline is None and not st.session_state.get("morning_recovery_attempted",False):
         st.session_state["morning_recovery_attempted"]=True
         with st.spinner("🌅 Menyiapkan EOD baseline tervalidasi dari data yang sudah selesai..."):
-            baseline, baseline_source = morning_baseline(period, 400, min_rr, max_stop_pct)
+            baseline, baseline_source = morning_baseline(period, 600, min_rr, max_stop_pct)
         if baseline is None:
-            with st.spinner("🔄 Auto EOD Recovery: scan 400 saham completed-EOD..."):
-                baseline=recover_eod_from_current_or_scan(period,400,min_rr,max_stop_pct)
+            with st.spinner("🔄 Auto EOD Recovery: scan 600 saham completed-EOD..."):
+                baseline=recover_eod_from_current_or_scan(period,600,min_rr,max_stop_pct)
                 baseline_source="AUTO EOD RECOVERY" if baseline else "NO VALID EOD BASELINE"
     if baseline is None:
         st.error("🔒 MORNING DATA BLOCKED — tidak ditemukan EOD baseline yang tervalidasi. Tidak ada Top 3 pagi yang ditampilkan.")
-        st.info("Jalankan 🌆 EOD Full Scan setelah market close, atau gunakan 🔄 Scan 400 Saham / Update EOD. Current Scan akan dipakai untuk recovery hanya jika data terakhir lengkap dan bukan candle hari berjalan.")
+        st.info("Jalankan 🌆 EOD Full Scan setelah market close, atau gunakan 🔄 Scan 600 Saham / Update EOD. Current Scan akan dipakai untuk recovery hanya jika data terakhir lengkap dan bukan candle hari berjalan.")
         st.stop()
     snap=baseline
-    m=snap["meta"]; ready=morning_data_readiness(snap,int(m.get("universe",400) or 400))
+    m=snap["meta"]; ready=morning_data_readiness(snap,int(m.get("universe",600) or 600))
     analyzed=int(ready.get("Analyzed",0) or 0)
-    expected=int(ready.get("Expected",400) or 400)
+    expected=int(ready.get("Expected",600) or 600)
     coverage_pct=(analyzed/expected*100.0) if expected else 0.0
     source_label="OFFICIAL EOD" if baseline_source=="OFFICIAL EOD" else "AUTO EOD RECOVERY"
     baseline_created=m.get("timestamp",m.get("recovered_at","—"))
@@ -1541,7 +1619,7 @@ if mode=="🧠 Multi-Factor Data Hub":
     st.markdown("#### 📊 Data Quality")
     q=data_quality_table(universe)
     st.dataframe(q,use_container_width=True,hide_index=True)
-    st.caption("Coverage = persentase ticker pada universe 400 yang memiliki data faktor. Data external tidak pernah dibuat/fiktif.")
+    st.caption("Coverage = persentase ticker pada universe 600 yang memiliki data faktor. Data external tidak pernah dibuat/fiktif.")
     st.markdown("**Mode:** 🟢 FULL MULTI-FACTOR · 🟡 PARTIAL ENRICHED · 🔵 CORE TECHNICAL + SECTOR")
     st.markdown("#### 📥 Import data EOD / external factors")
     st.caption("Upload CSV atau Excel. Header yang umum seperti Ticker/Kode, DER, PER, PBV, Foreign Net 1D/5D/20D akan dinormalisasi otomatis.")
@@ -1570,41 +1648,41 @@ if mode=="🧠 Multi-Factor Data Hub":
     st.caption("BEI menyediakan statistik perdagangan dan data pasar EOD; untuk data berlisensi gunakan akses resmi yang Anda miliki. Data foreign investor di statistik BEI dikategorikan berdasarkan transaction domicile, bukan identitas investor aktual.")
     st.link_button("🌐 IDX Data Pasar", "https://www.idx.co.id/id/data-pasar/", use_container_width=False)
     st.link_button("🌐 IDX Statistik", "https://www.idx.co.id/id/data-pasar/laporan-statistik/statistik", use_container_width=False)
-    st.info("Setelah data tersimpan, jalankan **🔄 Scan 400 Saham / Update EOD** agar Multi-Factor Score dan Risk Gate dihitung ulang. Tanpa external data pun scanner tetap dapat menghasilkan kandidat melalui CORE TECHNICAL + SECTOR. Scan 400 tidak menghapus snapshot EOD lama sampai Anda menjalankan EOD Full Scan.")
+    st.info("Setelah data tersimpan, jalankan **🔄 Scan 600 Saham / Update EOD** agar Multi-Factor Score dan Risk Gate dihitung ulang. Tanpa external data pun scanner tetap dapat menghasilkan kandidat melalui CORE TECHNICAL + SECTOR. Scan 600 tidak menghapus snapshot EOD lama sampai Anda menjalankan EOD Full Scan.")
     st.stop()
 
 if not active:
-    st.warning("Belum ada data scan. Gunakan **🔄 Scan 400 Saham / Update EOD** atau **🌆 EOD Full Scan**."); st.stop()
+    st.warning("Belum ada data scan. Gunakan **🔄 Scan 600 Saham / Update EOD** atau **🌆 EOD Full Scan**."); st.stop()
 
 m=active["meta"]; action,opp,focus,enrich=active["top3"],active["top10"],active["top50"],active["top150"]
 if mode in ["📊 Dashboard","🏆 Top 3 Actionable","🟩 Top 10 Opportunity","🟨 Top 50 Focus","🟦 Top 150 Enrich"]:
     snap_engine=str(m.get("engine_version",m.get("engine_version_current","LEGACY")))
     if snap_engine != ENGINE_VERSION:
-        st.warning(f"⚠️ Snapshot lama/legacy terdeteksi ({snap_engine}). Risk Gate dan layer telah dihitung ulang di memori dengan {ENGINE_VERSION}. Jalankan 🔄 Scan 400 untuk membuat hasil baru yang tersimpan.")
+        st.warning(f"⚠️ Snapshot lama/legacy terdeteksi ({snap_engine}). Risk Gate dan layer telah dihitung ulang di memori dengan {ENGINE_VERSION}. Jalankan 🔄 Scan 600 untuk membuat hasil baru yang tersimpan.")
 
 # =========================================================
 # DASHBOARD / OLD MENUS
 # =========================================================
 if mode=="📊 Dashboard":
-    header("Dashboard","Ringkasan market, pipeline 400 saham, EOD candidates, dan Morning Ready status — gaya terminal trading modern.")
+    header("Dashboard","Ringkasan market, pipeline 600 saham, EOD candidates, dan Morning Ready status — gaya terminal trading modern.")
     # Dashboard Top 3 is anchored to the official EOD snapshot.
     # Current Scan remains available elsewhere as an ad-hoc/dynamic view and must never
     # replace the historical EOD baseline on the morning decision card.
-    baseline, baseline_source = morning_baseline(period, 400, min_rr, max_stop_pct)
+    baseline, baseline_source = morning_baseline(period, 600, min_rr, max_stop_pct)
     eod_action=baseline.get("top3",pd.DataFrame()) if baseline else pd.DataFrame()
     eod_meta=baseline.get("meta",{}) if baseline else {}
-    mr=morning_data_readiness(baseline,int(eod_meta.get("universe",400) or 400)) if baseline else {"Ready":False,"Level":"NO SNAPSHOT","Reason":"Belum ada EOD baseline yang tervalidasi"}
+    mr=morning_data_readiness(baseline,int(eod_meta.get("universe",600) or 600)) if baseline else {"Ready":False,"Level":"NO SNAPSHOT","Reason":"Belum ada EOD baseline yang tervalidasi"}
     # Critical safety rule: invalid/no official EOD snapshot must NEVER be rendered as Morning Top 3.
     display_action=eod_action if mr.get("Ready") else pd.DataFrame()
-    analyzed_now=int(mr.get("Analyzed",0) or 0); expected_now=int(mr.get("Expected",400) or 400)
+    analyzed_now=int(mr.get("Analyzed",0) or 0); expected_now=int(mr.get("Expected",600) or 600)
     brief_meta=dict(eod_meta or {}); brief_meta["latest_data_date"]=mr.get("LatestDataDate","—")
     dashboard_morning_brief(brief_meta, analyzed_now, expected_now, regime, ihsg, ih20, ih50)
     dashboard_summary(active,m,display_action,opp,focus,enrich,ihsg,ih20,ih50,regime)
     if baseline:
-        st.markdown(f'<div class="card"><b>🔒 EOD Baseline:</b> {baseline_source} · {eod_meta.get("timestamp",eod_meta.get("recovered_at","—"))} · data source {eod_meta.get("data_source","—")} · <b>Top 3 cards are locked to this baseline.</b><br><span class="small-note">🔄 Scan 400 / Update EOD is a separate current view and cannot overwrite the EOD baseline used for Morning Confirmation.</span></div>',unsafe_allow_html=True)
-    st.markdown(f'<div class="card"><b>🌅 Morning Ready Status:</b> <span class="mode-pill">{mr.get("Level","REVIEW")}</span> · EOD {mr.get("LatestDataDate","—")} · analyzed {mr.get("Analyzed",0)}/{mr.get("Expected",400)} · source <b>{baseline_source}</b> · <b>Entry decision remains with user.</b><br><span class="small-note">{mr.get("Reason","—")}. Sebelum open, baseline harus berasal dari Official EOD atau Auto EOD Recovery yang tervalidasi.</span></div>',unsafe_allow_html=True)
+        st.markdown(f'<div class="card"><b>🔒 EOD Baseline:</b> {baseline_source} · {eod_meta.get("timestamp",eod_meta.get("recovered_at","—"))} · data source {eod_meta.get("data_source","—")} · <b>Top 3 cards are locked to this baseline.</b><br><span class="small-note">🔄 Scan 600 / Update EOD is a separate current view and cannot overwrite the EOD baseline used for Morning Confirmation.</span></div>',unsafe_allow_html=True)
+    st.markdown(f'<div class="card"><b>🌅 Morning Ready Status:</b> <span class="mode-pill">{mr.get("Level","REVIEW")}</span> · EOD {mr.get("LatestDataDate","—")} · analyzed {mr.get("Analyzed",0)}/{mr.get("Expected",600)} · source <b>{baseline_source}</b> · <b>Entry decision remains with user.</b><br><span class="small-note">{mr.get("Reason","—")}. Sebelum open, baseline harus berasal dari Official EOD atau Auto EOD Recovery yang tervalidasi.</span></div>',unsafe_allow_html=True)
     if not mr.get("Ready"):
-        st.error(f'🔒 **MORNING BLOCKED — {mr.get("Reason","EOD belum valid")}**. Top 3 EOD tidak ditampilkan sebagai kandidat pagi agar tidak terjadi false signal. Gunakan **🔄 Scan 400** hanya sebagai current view, bukan baseline EOD.')
+        st.error(f'🔒 **MORNING BLOCKED — {mr.get("Reason","EOD belum valid")}**. Top 3 EOD tidak ditampilkan sebagai kandidat pagi agar tidak terjadi false signal. Gunakan **🔄 Scan 600** hanya sebagai current view, bukan baseline EOD.')
         st.stop()
     st.markdown("#### 🟩 Top 10 Opportunity")
     show_top10_cards(opp,m)
@@ -1618,7 +1696,7 @@ elif mode=="⚡ Trading Harian":
     if d.empty: st.info("Belum ada kandidat trading harian yang memenuhi filter.")
     else:
         metric_strip([("Kandidat",str(len(d))), ("Ready",str((d.Status=="READY").sum())), ("Breakout",str((d.Setup=="BREAKOUT").sum())), ("Pullback",str((d.Setup=="PULLBACK").sum()))])
-        show_table(d,["Ticker","TradingMode","Setup","Timing","Status","Close","MA20","MA50","MA200","RSI","MACD","VolumeRatio","Support","Resistance","Entry","SL","TP1","TP2","RR","OpportunityScore"])
+        show_table(d,["Ticker","TradingMode","Setup","Timing","Status","CurrentPrice","CurrentChangePct","CurrentQuoteTime","Close","MA20","MA50","MA200","RSI","MACD","VolumeRatio","Support","Resistance","Entry","SL","TP1","TP2","RR","OpportunityScore"])
         st.markdown("#### 🔗 TradingView — Daily / Tactical")
         ticker=st.selectbox("Pilih saham",d.Ticker.tolist(),key="daily_ticker")
         row=d[d.Ticker==ticker].iloc[0]
@@ -1627,7 +1705,7 @@ elif mode=="⚡ Trading Harian":
 
 elif mode=="📅 Swing Trading Mingguan":
     header("📅 Swing Trading Mingguan","Horizon beberapa hari hingga beberapa minggu · daily setup + weekly trend confirmation.")
-    st.info("Untuk menjaga kecepatan, validasi weekly dilakukan pada kandidat Top 50 EOD, bukan mengunduh ulang 400 saham.")
+    st.info("Untuk menjaga kecepatan, validasi weekly dilakukan pada kandidat Top 50 EOD, bukan mengunduh ulang 600 saham.")
     w=weekly_candidates(focus)
     if w.empty: st.warning("Belum ada kandidat weekly. Pastikan EOD snapshot tersedia dan data weekly dapat diambil.")
     else:
