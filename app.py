@@ -10,8 +10,8 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.7.5 PRO CURRENT SCAN LIVE HYDRATION · DATA TRUST"
-ENGINE_VERSION = "V11.7.5-CURRENT-LIVE-HYDRATION"
+APP_VERSION = "V11.7.6 PRO CURRENT SCAN LIVE HYDRATION FIX · DATA TRUST"
+ENGINE_VERSION = "V11.7.7-FIX1-MODE-AWARE-REGIME-SAFE"
 RISK_GATE_VERSION = "2.7"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RECOVERY_DIR = os.path.join(BASE_DIR, "recovered_eod")
@@ -563,6 +563,7 @@ def _download_live_quote_batch(tickers, interval="5m"):
         except Exception: continue
     return out
 
+@st.cache_data(ttl=300, show_spinner=False)
 def load_live_prices(tickers):
     return _download_live_quote_batch(tickers,"5m")
 
@@ -834,8 +835,45 @@ def _ensure_layers(snap):
             full["IntradayDataAgeMin"]=np.nan
         if "IntradayBarCount" not in full.columns:
             full["IntradayBarCount"]=0
-        # If a prior current scan has a quote timestamp but no intraday payload,
-        # classify the quote freshness without inventing VWAP/volume values.
+        # Current scans may have been persisted by an older build with only a
+        # quote overlay. If the intraday payload is missing and the IDX session is
+        # currently open, re-hydrate it from the same 5m provider used by a fresh
+        # Scan 600. The cached loader prevents repeated 600-ticker downloads on
+        # ordinary Streamlit reruns. Never fabricate VWAP/volume when hydration
+        # is unavailable.
+        required_live={"IntradayVWAP","LiveVolumeRatio","SessionOpen","SessionHigh","SessionLow","LiveBullishBar","LastBarChangePct","SessionChangePct"}
+        missing_payload=(not required_live.issubset(set(full.columns)))
+        if not missing_payload:
+            numeric_live=full[["IntradayVWAP","LiveVolumeRatio","SessionOpen","SessionHigh","SessionLow"]].apply(pd.to_numeric,errors="coerce")
+            missing_payload=bool(numeric_live.notna().sum().sum()==0)
+        now_jkt=jakarta_now()
+        session_open=now_jkt.hour>9 or (now_jkt.hour==9 and now_jkt.minute>=0)
+        session_closed=now_jkt.hour>16 or (now_jkt.hour==16 and now_jkt.minute>=0)
+        if missing_payload and session_open and not session_closed and "Ticker" in full.columns:
+            try:
+                live=load_live_prices(full["Ticker"].astype(str).tolist())
+                if live:
+                    mappings={
+                        "CurrentPrice":"price","CurrentQuoteTime":"time","SessionOpen":"session_open",
+                        "SessionHigh":"session_high","SessionLow":"session_low","IntradayVWAP":"intraday_vwap",
+                        "LiveVolumeRatio":"live_volume_ratio","LastBarChangePct":"last_bar_change_pct",
+                        "SessionChangePct":"session_change_pct","LiveBullishBar":"bullish_bar",
+                        "IntradayDataQuality":"data_quality","IntradayDataAgeMin":"data_age_min","IntradayBarCount":"bar_count"
+                    }
+                    for col,key in mappings.items():
+                        default=False if col=="LiveBullishBar" else (0 if col=="IntradayBarCount" else np.nan)
+                        full[col]=full["Ticker"].map(lambda t: live.get(str(t).upper(),{}).get(key,default))
+                    if "PriceMode" not in full.columns: full["PriceMode"]="EOD FALLBACK"
+                    full["PriceMode"]=np.where(pd.to_numeric(full["CurrentPrice"],errors="coerce").notna(),"CURRENT QUOTE",full["PriceMode"])
+                    cp=pd.to_numeric(full["CurrentPrice"],errors="coerce"); cl=pd.to_numeric(full.get("Close",np.nan),errors="coerce")
+                    full["CurrentChangePct"]=np.where(cp.notna() & cl.notna() & (cl!=0),(cp/cl-1)*100,np.nan)
+            except Exception:
+                pass
+
+        # Derive freshness only after any optional hydration. If a current scan
+        # has a recent quote but no trustworthy intraday payload, force
+        # INSUFFICIENT rather than allowing a quote timestamp to masquerade as a
+        # live trading signal.
         if "CurrentQuoteTime" in full.columns:
             now_naive=jakarta_now().replace(tzinfo=None)
             def _quote_age(v):
@@ -846,16 +884,13 @@ def _ensure_layers(snap):
                     return max(0.0,(now_naive-ts).total_seconds()/60.0)
                 except Exception: return np.nan
             ages=full["CurrentQuoteTime"].map(_quote_age)
-            missing_intraday=~full.columns.isin(["IntradayVWAP","LiveVolumeRatio","SessionOpen","SessionChangePct","LiveBullishBar"]).any()
-            # The boolean above is only a column-existence check; per-row freshness
-            # remains based on quote age. Preserve existing valid provider quality.
             full["IntradayDataAgeMin"]=pd.to_numeric(full["IntradayDataAgeMin"],errors="coerce").where(pd.to_numeric(full["IntradayDataAgeMin"],errors="coerce").notna(),ages)
             existing=full["IntradayDataQuality"].astype(str).str.upper()
             derived=np.select([ages.le(10),ages.le(20),ages.le(30),ages.gt(30)], ["LIVE","DELAYED","STALE","INVALID"], default="INSUFFICIENT")
+            payload_ok=full["IntradayVWAP"].notna() & full["SessionOpen"].notna() & full["LiveVolumeRatio"].notna()
+            derived=np.where(payload_ok,derived,"INSUFFICIENT")
             full["IntradayDataQuality"]=existing.where(~existing.isin({"","NAN","NONE","INSUFFICIENT"}),pd.Series(derived,index=full.index))
-        # Apply the same live gate used by a fresh current scan. If required raw
-        # fields are absent, the gate safely returns WAIT — LIVE DATA instead of
-        # inheriting Morning Confirmation status.
+            full.loc[~payload_ok,"IntradayDataQuality"]="INSUFFICIENT"
         full=apply_live_action_gate(full,regime)
     enrich,focus,opp,action=build_layers(full,min_rr)
     snap.update({"full":full,"top150":enrich,"top50":focus,"top10":opp,"top3":action})
@@ -1220,6 +1255,13 @@ def _latest_stock_data_date(df):
         return None
 
 def run_full_scan(period,n,min_rr,max_stop_pct=15.0,save_eod=True):
+    # FIX1: initialize market regime before any conditional path.
+    # This prevents UnboundLocalError when the market-data path is incomplete
+    # or when a future refactor changes the IHSG branch.
+    regime="NEUTRAL / SIDEWAYS"
+    ihsg=ih20=ih50=np.nan
+    ih_date=None
+    ih_source="NOT LOADED"
     # Keep enough history internally for MA200/RSI/MACD, while the selected
     # period controls the EOD review window saved in the snapshot.
     engine_period="2y"
@@ -1609,7 +1651,7 @@ def _decision_card_html(i, r, mr, mode="top3"):
     stock_gate=str(r.get('StockSetupGate','—')); market_gate=str(mr.get('MarketGate',r.get('MarketGate','—')))
     mstatus=str(mr.get('MorningStatus','NOT VALIDATED')); reason=str(mr.get('MorningReason','—')); pos=str(mr.get('EntryPosition','—')); dist=fmt(mr.get('DistanceToEntryPct',np.nan),1)
     live_status=str(r.get('LiveActionStatus','—')); live_pressure=str(r.get('LivePressure','—'))
-    display_status=live_status if is_current and live_status not in {'—','EOD LOCKED'} else mstatus
+    display_status=(live_status if is_current and live_status not in {'—','EOD LOCKED'} else ('WAIT — LIVE DATA' if is_current else mstatus))
     # In a current/ad-hoc scan, the displayed position is recalculated from the
     # refreshed quote. Morning Confirmation itself still uses the locked EOD reference.
     if is_current and np.isfinite(live_price):
@@ -1635,7 +1677,11 @@ def _decision_card_html(i, r, mr, mode="top3"):
     if is_current and live_pressure not in {'—','UNKNOWN','MIXED'}: why.append(live_pressure.lower())
     if intraday_q in {'STALE','INVALID'} and is_current:
         why.append('live data not fresh')
-    why_text=' · '.join(why[:3]) or reason
+    
+    if is_current and intraday_q in {'—','INSUFFICIENT'} and live_status in {'—','UNKNOWN','DATA INSUFFICIENT'}:
+        why_text='live intraday layer unavailable — refresh current scan'
+    else:
+        why_text=' · '.join(why[:3]) or reason
     rank_style='decision-rank' if mode=='top3' else 'op10-rank'
     opp_rank=r.get('OpportunityRank','—'); entry_rank=r.get('EntryRank','—')
     entry_priority=fmt(r.get('EntryPriorityScore',np.nan),0) if pd.notna(pd.to_numeric(pd.Series([r.get('EntryPriorityScore',np.nan)]),errors='coerce').iloc[0]) else 'N/A'
