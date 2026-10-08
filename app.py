@@ -10,9 +10,9 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.5.7 PRO 600 LIVE PRICE OVERLAY"
-ENGINE_VERSION = "V11.5.7-600-LIVE-PRICE-OVERLAY"
-RISK_GATE_VERSION = "2.5"
+APP_VERSION = "V11.7.1 PRO OPPORTUNITY vs ENTRY ENGINE · INTRADAY DATA QUALITY FIX1"
+ENGINE_VERSION = "V11.7.1-OPPORTUNITY-ENTRY-INTRADAY-DATA-QUALITY-FIX1"
+RISK_GATE_VERSION = "2.7"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RECOVERY_DIR = os.path.join(BASE_DIR, "recovered_eod")
 os.makedirs(RECOVERY_DIR, exist_ok=True)
@@ -494,56 +494,223 @@ def load_data(ticker,period="2y",interval="1d"):
 
 
 def _download_live_quote_batch(tickers, interval="5m"):
-    """Fetch latest intraday quote in batches. Display/refresh layer only;
-    technical indicators and official EOD snapshots continue to use completed daily candles.
+    """Fetch current intraday quote plus basic price/volume pressure context.
+    Live overlay only; completed daily candles remain the EOD technical reference.
     """
     symbols=[str(t).upper().replace(".JK","")+".JK" for t in tickers if str(t).strip()]
     out={}
-    if not symbols:
-        return out
     for start in range(0,len(symbols),50):
         chunk=symbols[start:start+50]
         try:
             q=yf.download(chunk,period="1d",interval=interval,auto_adjust=False,progress=False,threads=True,group_by="ticker",prepost=False)
-            if q is None or q.empty:
-                continue
-            if isinstance(q.columns,pd.MultiIndex):
-                lvl0=[str(x) for x in q.columns.get_level_values(0)]
-                lvl1=[str(x) for x in q.columns.get_level_values(1)]
-                first=set(lvl0); second=set(lvl1)
-                for sym in chunk:
-                    base=sym.replace(".JK","")
-                    candidates=[sym,base]
-                    if base in first or sym in first:
-                        key=base if base in first else sym
-                        try: sub=q[key]
-                        except Exception: continue
-                    elif "Close" in second:
-                        cols=[c for c in q.columns if str(c[0]) in candidates]
-                        if not cols: continue
-                        sub=q.loc[:,cols].copy(); sub.columns=[c[1] for c in cols]
+            if q is None or q.empty: continue
+            for sym in chunk:
+                base=sym.replace(".JK","")
+                try:
+                    if isinstance(q.columns,pd.MultiIndex):
+                        lvl0=[str(x) for x in q.columns.get_level_values(0)]; lvl1=[str(x) for x in q.columns.get_level_values(1)]
+                        if base in set(lvl0) or sym in set(lvl0):
+                            sub=q[base if base in set(lvl0) else sym].copy()
+                        elif "Close" in set(lvl1):
+                            cols=[c for c in q.columns if str(c[0]) in {base,sym}]
+                            if not cols: continue
+                            sub=q.loc[:,cols].copy(); sub.columns=[c[1] for c in cols]
+                        else: continue
                     else:
-                        continue
-                    if "Close" not in sub.columns: continue
-                    close=pd.to_numeric(sub["Close"],errors="coerce").dropna()
-                    if close.empty: continue
-                    ts=pd.Timestamp(close.index[-1])
-                    if ts.tzinfo is not None: ts=ts.tz_convert("Asia/Jakarta").tz_localize(None)
-                    out[base]={"price":float(close.iloc[-1]),"time":ts.strftime("%Y-%m-%d %H:%M:%S")}
-            else:
-                if "Close" in q.columns and len(chunk)==1:
-                    close=pd.to_numeric(q["Close"],errors="coerce").dropna()
-                    if not close.empty:
-                        ts=pd.Timestamp(close.index[-1])
-                        if ts.tzinfo is not None: ts=ts.tz_convert("Asia/Jakarta").tz_localize(None)
-                        out[chunk[0].replace(".JK","")]={"price":float(close.iloc[-1]),"time":ts.strftime("%Y-%m-%d %H:%M:%S")}
-        except Exception:
-            continue
+                        if len(chunk)!=1 or "Close" not in q.columns: continue
+                        sub=q.copy()
+                    cols=[c for c in ["Open","High","Low","Close","Volume"] if c in sub.columns]
+                    sub=sub[cols].copy()
+                    for c in cols: sub[c]=pd.to_numeric(sub[c],errors="coerce")
+                    sub=sub.dropna(subset=["Close"])
+                    if sub.empty: continue
+                    idx=pd.DatetimeIndex(pd.to_datetime(sub.index,errors="coerce"))
+                    if idx.tz is not None: idx=idx.tz_convert("Asia/Jakarta").tz_localize(None)
+                    sub.index=idx; sub=sub[~sub.index.isna()].sort_index()
+                    latest=float(sub["Close"].iloc[-1]); ts=pd.Timestamp(sub.index[-1])
+                    op=sub["Open"].dropna(); session_open=float(op.iloc[0]) if not op.empty else np.nan
+                    last_open=float(sub["Open"].iloc[-1]) if pd.notna(sub["Open"].iloc[-1]) else np.nan
+                    vols=sub["Volume"].dropna(); last_vol=float(vols.iloc[-1]) if not vols.empty else np.nan
+                    base_vol=vols.iloc[:-1].tail(12) if len(vols)>1 else pd.Series(dtype=float)
+                    med_vol=float(base_vol.median()) if not base_vol.empty else np.nan
+                    vol_ratio=(last_vol/med_vol) if pd.notna(last_vol) and pd.notna(med_vol) and med_vol>0 else np.nan
+                    typical=(sub["High"]+sub["Low"]+sub["Close"])/3.0
+                    valid=typical.notna() & sub["Volume"].notna() & (sub["Volume"]>0)
+                    vwap=float((typical[valid]*sub.loc[valid,"Volume"]).sum()/sub.loc[valid,"Volume"].sum()) if valid.any() else np.nan
+                    now_jkt=jakarta_now().replace(tzinfo=None)
+                    age_min=max(0.0,(now_jkt-ts).total_seconds()/60.0)
+                    bar_count=len(sub)
+                    if bar_count < 3:
+                        data_quality="PARTIAL"
+                    elif age_min <= 10:
+                        data_quality="LIVE"
+                    elif age_min <= 20:
+                        data_quality="DELAYED"
+                    else:
+                        data_quality="STALE"
+                    out[base]={
+                        "price":latest,"time":ts.strftime("%Y-%m-%d %H:%M:%S"),
+                        "data_quality":data_quality,"data_age_min":age_min,"bar_count":bar_count,
+                        "session_open":session_open,"session_high":float(sub["High"].max()),"session_low":float(sub["Low"].min()),
+                        "last_bar_open":last_open,"last_bar_volume":last_vol,"intraday_vwap":vwap,"live_volume_ratio":vol_ratio,
+                        "last_bar_change_pct":((latest/last_open)-1)*100 if pd.notna(last_open) and last_open else np.nan,
+                        "session_change_pct":((latest/session_open)-1)*100 if pd.notna(session_open) and session_open else np.nan,
+                        "bullish_bar":bool(pd.notna(last_open) and latest>=last_open)
+                    }
+                except Exception: continue
+        except Exception: continue
     return out
 
 def load_live_prices(tickers):
-    """Current quote overlay for ad-hoc scans. Never writes/changes official EOD data."""
     return _download_live_quote_batch(tickers,"5m")
+
+def apply_live_action_gate(result, market_regime="NEUTRAL / SIDEWAYS"):
+    """Live decision layer v5.
+
+    Robustness rule: every input row must produce exactly one output row.  The
+    previous implementation could leave output arrays shorter than the input
+    DataFrame when a row had unusual/missing intraday values, causing pandas
+    Length-of-values mismatch errors.  This version processes by position and
+    has a per-row safety fallback.
+    """
+    x=result.copy().reset_index(drop=True)
+    n=len(x)
+    statuses=["DATA INSUFFICIENT"]*n; pressures=["UNKNOWN"]*n; pconf=["NONE"]*n
+    reasons=["current quote unavailable"]*n; eqs=[np.nan]*n; triggers=["wait for fresh intraday data"]*n
+    invalids=["do not act on stale intraday data"]*n; rooms=[np.nan]*n; room_cls=["UNKNOWN"]*n; dq=["INSUFFICIENT"]*n
+
+    def num(v):
+        try:
+            z=pd.to_numeric(v,errors="coerce")
+            return float(z) if pd.notna(z) and np.isscalar(z) else np.nan
+        except Exception:
+            return np.nan
+
+    def scalar(v, default=False):
+        try:
+            if isinstance(v,(pd.Series,pd.DataFrame,np.ndarray,list,tuple)):
+                if len(v)==0: return default
+                v=v.iloc[0] if isinstance(v,pd.Series) else v[0]
+            return v
+        except Exception:
+            return default
+
+    for i in range(n):
+        r=x.iloc[i]
+        try:
+            p=num(r.get("CurrentPrice",np.nan)); entry=num(r.get("Entry",np.nan)); sl=num(r.get("SL",np.nan))
+            support=num(r.get("Support",np.nan)); resistance=num(r.get("Resistance",np.nan))
+            vwap=num(r.get("IntradayVWAP",np.nan)); sess_open=num(r.get("SessionOpen",np.nan))
+            vr=num(r.get("LiveVolumeRatio",np.nan)); sess_chg=num(r.get("SessionChangePct",np.nan))
+            bullish=bool(scalar(r.get("LiveBullishBar",False),False))
+            quality=str(scalar(r.get("IntradayDataQuality",r.get("LiveDataQuality","UNKNOWN")),"UNKNOWN")).upper()
+            dq[i]=quality
+
+            if not pd.notna(p) or quality in {"INSUFFICIENT","STALE"}:
+                statuses[i]="DATA INSUFFICIENT" if quality=="INSUFFICIENT" or not pd.notna(p) else "WAIT — LIVE DATA"
+                pressures[i]="UNKNOWN" if not pd.notna(p) else "MIXED"; pconf[i]="NONE" if not pd.notna(p) else "LOW"
+                reasons[i]="current quote unavailable" if not pd.notna(p) else f"intraday data {quality.lower()} — live pressure not fully trusted"
+                continue
+
+            lo=entry*.985 if pd.notna(entry) else np.nan; hi=entry*1.025 if pd.notna(entry) else np.nan
+            below_vwap=bool(pd.notna(vwap) and p < vwap); below_open=bool(pd.notna(sess_open) and p < sess_open)
+            above_vwap=bool(pd.notna(vwap) and p >= vwap); above_open=bool(pd.notna(sess_open) and p >= sess_open)
+            high_volume=bool(pd.notna(vr) and vr >= 1.5)
+            sell_score=int(not bullish)+int(below_vwap)+int(below_open)+int(high_volume and not bullish)
+            buy_score=int(bullish)+int(above_vwap)+int(above_open)+int(high_volume and bullish)
+            if quality in {"PARTIAL","DELAYED"}:
+                pressure="SELL PRESSURE" if sell_score>=3 else ("POSITIVE" if buy_score>=3 else "MIXED")
+            else:
+                pressure=("STRONG SELL PRESSURE" if sell_score>=3 else ("SELL PRESSURE" if sell_score>=2 else ("POSITIVE" if buy_score>=3 else "MIXED")))
+            if pressure.startswith("STRONG SELL"):
+                confidence="HIGH" if quality=="LIVE" and pd.notna(vr) and vr>=2.0 else "MEDIUM"
+            elif pressure=="SELL PRESSURE":
+                confidence="MEDIUM" if quality=="LIVE" and pd.notna(vr) and vr>=1.5 else "LOW"
+            elif pressure=="POSITIVE":
+                confidence="HIGH" if quality=="LIVE" and pd.notna(vr) and vr>=1.2 else "MEDIUM"
+            else: confidence="LOW"
+            pressures[i]=pressure; pconf[i]=confidence
+
+            room=((resistance-p)/p*100) if pd.notna(resistance) and p>0 else np.nan; rooms[i]=room
+            if not pd.notna(room): rc="UNKNOWN"
+            elif room<1: rc="VERY TIGHT"
+            elif room<3: rc="TIGHT"
+            elif room<5: rc="MODERATE"
+            elif room<8: rc="GOOD"
+            else: rc="EXCELLENT"
+            room_cls[i]=rc
+
+            score=50.0
+            if pd.notna(entry) and entry>0:
+                if lo <= p <= hi: score += 12
+                elif p < lo: score += 2
+                else: score -= 8
+            if above_vwap: score += 10
+            elif pd.notna(vwap): score -= 8
+            if above_open: score += 5
+            elif pd.notna(sess_open): score -= 5
+            if bullish: score += 8
+            else: score -= 8
+            if pd.notna(vr):
+                if 1.2 <= vr <= 4.0 and bullish: score += 7
+                elif vr >= 4.0 and bullish: score += 4
+                elif vr >= 1.5 and not bullish: score -= 8
+                elif vr < 0.8 and not bullish: score -= 1
+            if pd.notna(sess_chg): score += 4 if sess_chg > 0 else (-4 if sess_chg < -1 else 0)
+            if pd.notna(room):
+                if room >= 8: score += 7
+                elif room >= 5: score += 5
+                elif room >= 3: score += 3
+                elif room >= 1: score -= 2
+                elif room >= 0: score -= 6
+                else: score -= 8
+            if pressure=="STRONG SELL PRESSURE" and confidence=="HIGH": score -= 4
+            if pressure=="SELL PRESSURE" and confidence=="LOW": score += 1
+            if str(market_regime).upper().startswith("RISK-OFF"): score -= 5
+            if quality=="DELAYED": score -= 3
+            if quality=="PARTIAL": score -= 5
+            eqs[i]=float(np.clip(score,0,100))
+
+            setup=str(scalar(r.get("Setup",""),"")).upper()
+            if pd.notna(vwap) and p < vwap:
+                trigger=f"reclaim VWAP +0.5% ({fmt(vwap*1.005,0)}) and hold"
+            elif pd.notna(vwap) and p <= vwap*1.005:
+                trigger=f"hold above VWAP +0.5% ({fmt(vwap*1.005,0)})"
+            elif pd.notna(resistance) and p < resistance:
+                trigger=f"hold above VWAP and test resistance {fmt(resistance,0)}"
+            elif pd.notna(resistance): trigger="hold above resistance / breakout retest"
+            else: trigger="hold entry zone with improving volume"
+            triggers[i]=trigger
+            invalids[i]=(f"break support {fmt(support,0)} with expanding volume" if pd.notna(support) and support>0 else (f"price at/below SL {fmt(sl,0)}" if pd.notna(sl) else "structure breakdown / loss of entry zone"))
+
+            if pd.notna(sl) and p<=sl: status="CANCEL"; reason="current price at/below stop-loss reference"
+            elif pd.notna(support) and p < support and high_volume: status="CANCEL"; reason="support broken with elevated volume"
+            elif pd.notna(lo) and p<lo: status="WAIT — BELOW ENTRY"; reason="current price below live entry zone"
+            elif pd.notna(hi) and p>hi and (not pd.notna(resistance) or p < resistance): status="WAIT — CHASE"; reason="current price already extended above live entry zone"
+            elif pd.notna(room) and room >= 0 and room < 0.75 and setup != "BREAKOUT": status="WAIT — RESISTANCE"; reason=f"resistance only {room:.1f}% above current price"
+            elif pressure == "STRONG SELL PRESSURE": status="WAIT — LIVE PRESSURE"; reason=f"strong intraday selling-pressure context ({confidence.lower()} confidence)"
+            elif pressure == "SELL PRESSURE": status="WAIT — LIVE PRESSURE"; reason=f"intraday selling-pressure context ({confidence.lower()} confidence)"
+            elif str(market_regime).upper().startswith("RISK-OFF") and pressure != "POSITIVE": status="WAIT — MARKET"; reason="entry zone valid but IHSG market gate is risk-off"
+            elif pressure == "POSITIVE" and eqs[i] >= 72 and quality=="LIVE": status="CONFIRM CANDIDATE"; reason="entry zone plus positive live confirmation"
+            elif pressure == "POSITIVE": status="READY — CONFIRM"; reason=f"setup valid; positive intraday context but data quality is {quality.lower()}"
+            else: status="READY — WATCH"; reason="setup valid but intraday confirmation is mixed"
+            statuses[i]=status; reasons[i]=reason
+        except Exception as exc:
+            # Never abort the 600-stock scan because one row is malformed.
+            statuses[i]="DATA INSUFFICIENT"; pressures[i]="UNKNOWN"; pconf[i]="NONE"
+            reasons[i]=f"row-level live analysis unavailable: {type(exc).__name__}"; eqs[i]=np.nan
+            triggers[i]="wait for valid intraday data"; invalids[i]="do not act until data is valid"
+            rooms[i]=np.nan; room_cls[i]="UNKNOWN"; dq[i]=dq[i] if dq[i] else "INSUFFICIENT"
+
+    # Explicit length guard: this should always match the reset index length.
+    cols={"LiveActionStatus":statuses,"LivePressure":pressures,"PressureConfidence":pconf,"LiveActionReason":reasons,
+          "EntryQualityScore":eqs,"DistanceToResistancePct":rooms,"ResistanceRoomClass":room_cls,"NextTrigger":triggers,
+          "Invalidation":invalids,"IntradayDataQuality":dq}
+    for col,values in cols.items():
+        if len(values)!=len(x):
+            values=list(values[:len(x)]) + [np.nan]*(len(x)-len(values))
+        x[col]=values
+    return x
 
 @st.cache_data(ttl=900, show_spinner=False)
 def us_market_snapshot():
@@ -841,25 +1008,31 @@ def build_layers(result,min_rr):
     enrich=sortdf(result,['MultiFactorScore','QualityScore','SetupScore','RR']).head(150).copy(); enrich['Layer']='TOP 150 ENRICH'
     focus=sortdf(result[result.RR>=min_rr],['MultiFactorScore','SetupScore','QualityScore','RR']).head(50).copy(); focus['Layer']='TOP 50 FOCUS'
     opp=sortdf(result[result.RR>=min_rr],['MultiFactorScore','OpportunityScore','SetupScore','RR']).head(10).copy(); opp['Layer']='TOP 10 OPPORTUNITY'
-    # Top 3 policy: always surface up to 3 best available non-WAIT candidates.
-    # PASS candidates are preferred; if fewer than 3 pass, fill with the next
-    # best READY candidates and preserve their RiskGate (REVIEW/FACTOR REVIEW).
-    # This keeps the dashboard populated without falsely labeling REVIEW as PASS.
-    actionable_setups=['BREAKOUT','PULLBACK','REJECTION SUPPORT']
-    base=opp.copy()
-    action_pool=base[(base.Status.astype(str).str.upper()=='READY')&(base.Setup.astype(str).str.upper().isin(actionable_setups))].copy()
+    if not opp.empty:
+        opp=opp.copy(); opp['OpportunityRank']=range(1,len(opp)+1)
+    action_pool=opp[(opp.Status.astype(str).str.upper()=='READY') & (opp.Setup.astype(str).str.upper().isin(['BREAKOUT','PULLBACK','REJECTION SUPPORT']))].copy()
     gate_rank={'PASS':0,'RISK REVIEW':1,'FACTOR REVIEW':2,'MARKET REVIEW':3,'WAIT':9}
+    live_rank={'CONFIRM CANDIDATE':0,'READY — CONFIRM':1,'READY — WATCH':2,'WAIT — LIVE':3,'WAIT — MARKET':4,'WAIT — RESISTANCE':5,'WAIT — BELOW ENTRY':6,'WAIT — LIVE PRESSURE':7,'WAIT — CHASE':8,'DATA INSUFFICIENT':9,'WAIT — LIVE DATA':10,'CANCEL':11,'EOD LOCKED':0}
     if not action_pool.empty:
         action_pool['_gate_rank']=action_pool['RiskGate'].astype(str).str.upper().map(gate_rank).fillna(8)
+        action_pool['_live_rank']=action_pool['LiveActionStatus'].astype(str).map(live_rank).fillna(7) if 'LiveActionStatus' in action_pool.columns else 7
+        action_pool['_eq_sort']=pd.to_numeric(action_pool.get('EntryQualityScore',np.nan),errors='coerce').fillna(-999)
+        action_pool['_opp_sort']=pd.to_numeric(action_pool.get('OpportunityScore',np.nan),errors='coerce').fillna(-999)
         action_pool['_risk_sort']=pd.to_numeric(action_pool.get('RiskPct',np.nan),errors='coerce').fillna(999)
-        action=action_pool.sort_values(['_gate_rank','MultiFactorScore','TechnicalScore','SetupScore','_risk_sort'],ascending=[True,False,False,False,True]).head(3).copy()
-        action.drop(columns=['_gate_rank','_risk_sort'],errors='ignore',inplace=True)
+        action_pool['EntryPriorityScore']=action_pool['_eq_sort']
+        action=action_pool.sort_values(['_live_rank','_gate_rank','EntryPriorityScore','_opp_sort','MultiFactorScore','TechnicalScore','_risk_sort'],ascending=[True,True,False,False,False,False,True]).head(3).copy()
+        action.drop(columns=['_gate_rank','_live_rank','_eq_sort','_opp_sort','_risk_sort'],errors='ignore',inplace=True)
     else:
-        # Last-resort candidate pool: use READY rows from the full scan even if
-        # the setup is not yet actionable. They are explicitly labeled WAIT/REVIEW.
         ready_all=result[result.Status.astype(str).str.upper()=='READY'].copy()
         action=sortdf(ready_all,['MultiFactorScore','TechnicalScore','OpportunityScore','SetupScore']).head(3).copy()
+        action['EntryPriorityScore']=pd.to_numeric(action.get('EntryQualityScore',np.nan),errors='coerce')
     action['Layer']='TOP 3 ACTIONABLE'
+    if not action.empty:
+        action=action.copy()
+        opp_rank_map={str(t):i+1 for i,t in enumerate(opp['Ticker'].astype(str))} if not opp.empty and 'Ticker' in opp.columns else {}
+        action['OpportunityRank']=action['Ticker'].astype(str).map(opp_rank_map)
+        action=action.sort_values(['EntryPriorityScore','MultiFactorScore'],ascending=[False,False]).reset_index(drop=True)
+        action['EntryRank']=range(1,len(action)+1)
     return enrich,focus,opp,action
 
 def _normalize_index_frame(d):
@@ -996,6 +1169,19 @@ def run_full_scan(period,n,min_rr,max_stop_pct=15.0,save_eod=True):
         result["CurrentQuoteTime"]=result["Ticker"].map(lambda t: live.get(str(t).upper(),{}).get("time","—"))
         result["PriceMode"]=np.where(pd.to_numeric(result["CurrentPrice"],errors="coerce").notna(),"CURRENT QUOTE","EOD FALLBACK")
         result["CurrentChangePct"]=np.nan
+        result["SessionOpen"]=result["Ticker"].map(lambda t: live.get(str(t).upper(),{}).get("session_open",np.nan))
+        result["SessionHigh"]=result["Ticker"].map(lambda t: live.get(str(t).upper(),{}).get("session_high",np.nan))
+        result["SessionLow"]=result["Ticker"].map(lambda t: live.get(str(t).upper(),{}).get("session_low",np.nan))
+        result["IntradayVWAP"]=result["Ticker"].map(lambda t: live.get(str(t).upper(),{}).get("intraday_vwap",np.nan))
+        result["LiveVolumeRatio"]=result["Ticker"].map(lambda t: live.get(str(t).upper(),{}).get("live_volume_ratio",np.nan))
+        result["LastBarChangePct"]=result["Ticker"].map(lambda t: live.get(str(t).upper(),{}).get("last_bar_change_pct",np.nan))
+        result["SessionChangePct"]=result["Ticker"].map(lambda t: live.get(str(t).upper(),{}).get("session_change_pct",np.nan))
+        result["LiveBullishBar"]=result["Ticker"].map(lambda t: live.get(str(t).upper(),{}).get("bullish_bar",False))
+        result["IntradayDataQuality"]=result["Ticker"].map(lambda t: live.get(str(t).upper(),{}).get("data_quality","INSUFFICIENT"))
+        result["IntradayDataAgeMin"]=result["Ticker"].map(lambda t: live.get(str(t).upper(),{}).get("data_age_min",np.nan))
+        result["IntradayBarCount"]=result["Ticker"].map(lambda t: live.get(str(t).upper(),{}).get("bar_count",0))
+        result["LiveBelowVWAP"]=np.where(pd.to_numeric(result["IntradayVWAP"],errors="coerce").notna(),pd.to_numeric(result["CurrentPrice"],errors="coerce")<pd.to_numeric(result["IntradayVWAP"],errors="coerce"),False)
+        result["LiveBelowSessionOpen"]=np.where(pd.to_numeric(result["SessionOpen"],errors="coerce").notna(),pd.to_numeric(result["CurrentPrice"],errors="coerce")<pd.to_numeric(result["SessionOpen"],errors="coerce"),False)
         valid=result["CurrentPrice"].notna()
         result.loc[valid,"CurrentChangePct"]=(pd.to_numeric(result.loc[valid,"CurrentPrice"],errors="coerce")/pd.to_numeric(result.loc[valid,"Close"],errors="coerce")-1)*100
     else:
@@ -1011,6 +1197,12 @@ def run_full_scan(period,n,min_rr,max_stop_pct=15.0,save_eod=True):
     else:
         ihsg=ih20=ih50=np.nan; regime="DATA STALE / MISMATCH"
     result=apply_risk_gate(result,min_rr,max_stop_pct,regime)
+    if not save_eod:
+        if "IntradayDataQuality" not in result.columns:
+            result["IntradayDataQuality"]="INSUFFICIENT"
+        result=apply_live_action_gate(result,regime)
+    else:
+        result["LiveActionStatus"]="EOD LOCKED"; result["LivePressure"]="NOT APPLICABLE"; result["PressureConfidence"]="NONE"; result["LiveActionReason"]="official EOD snapshot — use Morning Confirmation for next session"; result["EntryQualityScore"]=np.nan; result["DistanceToResistancePct"]=np.nan; result["ResistanceRoomClass"]="NOT APPLICABLE"; result["NextTrigger"]="Morning Confirmation / next-session validation"; result["Invalidation"]="see EOD SL / structure"; result["IntradayDataQuality"]="EOD LOCKED"; result["IntradayDataAgeMin"]=np.nan; result["IntradayBarCount"]=0
     enrich,focus,opp,action=build_layers(result,min_rr)
     meta={"timestamp":jakarta_now().isoformat(timespec="seconds"),"period":period,"engine_period":engine_period,"universe":n,"analyzed":len(result),"min_rr":min_rr,"max_stop_pct":max_stop_pct,"ihsg":ihsg,"ihsg_ma20":ih20,"ihsg_ma50":ih50,"ihsg_data_date":ih_date,"ihsg_data_source":ih_source,"regime":regime,"analysis_mode":"HYBRID","engine_version":ENGINE_VERSION,"risk_gate_version":RISK_GATE_VERSION,"data_source":"Yahoo Finance EOD + Yahoo Chart API + Yahoo quote-page EOD repair","data_contract":"IHSG uses the latest completed EOD only; before 16:20 WIB today's date is forbidden as EOD; intraday/stale/mismatched index data is blocked","scan_type":"OFFICIAL_EOD" if save_eod else "CURRENT_SCAN","eod_locked":bool(save_eod),"eod_data_date":(result["DataDate"].dropna().max() if "DataDate" in result.columns and not result["DataDate"].dropna().empty else None)}
     if save_eod:
@@ -1344,6 +1536,8 @@ def _decision_card_html(i, r, mr, mode="top3"):
     score=fmt(r.get('MultiFactorScore',np.nan),1); eod_score=fmt(r.get('OpportunityScore',np.nan),0); cov=fmt(r.get('FactorCoveragePct',np.nan),0)
     stock_gate=str(r.get('StockSetupGate','—')); market_gate=str(mr.get('MarketGate',r.get('MarketGate','—')))
     mstatus=str(mr.get('MorningStatus','NOT VALIDATED')); reason=str(mr.get('MorningReason','—')); pos=str(mr.get('EntryPosition','—')); dist=fmt(mr.get('DistanceToEntryPct',np.nan),1)
+    live_status=str(r.get('LiveActionStatus','—')); live_pressure=str(r.get('LivePressure','—'))
+    display_status=live_status if is_current and live_status not in {'—','EOD LOCKED'} else mstatus
     # In a current/ad-hoc scan, the displayed position is recalculated from the
     # refreshed quote. Morning Confirmation itself still uses the locked EOD reference.
     if is_current and np.isfinite(live_price):
@@ -1353,25 +1547,33 @@ def _decision_card_html(i, r, mr, mode="top3"):
             pos='BELOW ENTRY' if live_price<lo_c else ('IN ENTRY ZONE' if live_price<=hi_c else 'ABOVE ENTRY')
     data=str(mr.get('DataStatus','UNKNOWN')); age=mr.get('DataAgeDays',r.get('DataAgeDays','—')); eod_date=mr.get('LastDataDate',r.get('DataDate','—'))
     risk=fmt(r.get('RiskPct',np.nan),1); atr=fmt(r.get('RiskATRMultiple',np.nan),1)
+    live_vwap=fmt(r.get('IntradayVWAP',np.nan),0); live_vr=fmt(r.get('LiveVolumeRatio',np.nan),1)
+    eq=fmt(r.get('EntryQualityScore',np.nan),0); res_room=fmt(r.get('DistanceToResistancePct',np.nan),1)
+    trigger=str(r.get('NextTrigger','—')); invalidation=str(r.get('Invalidation','—'))
     why=[]
     if setup and setup!='WAIT': why.append(setup.lower())
     if stock_gate.upper()=='PASS': why.append('stock setup PASS')
     if pos=='IN ENTRY ZONE': why.append('inside entry zone')
     if market_gate.upper()!='PASS': why.append(f'market {market_gate}')
+    if is_current and live_pressure not in {'—','UNKNOWN','MIXED'}: why.append(live_pressure.lower())
     why_text=' · '.join(why[:3]) or reason
     rank_style='decision-rank' if mode=='top3' else 'op10-rank'
+    opp_rank=r.get('OpportunityRank','—'); entry_rank=r.get('EntryRank','—'); entry_priority=fmt(r.get('EntryPriorityScore',np.nan),0)
+    intraday_q=str(r.get('IntradayDataQuality','—')); intraday_age=fmt(r.get('IntradayDataAgeMin',np.nan),0)
+    opp_num=pd.to_numeric(pd.Series([opp_rank]),errors='coerce').iloc[0]; ent_num=pd.to_numeric(pd.Series([entry_rank]),errors='coerce').iloc[0]
+    rank_label=(f"Opportunity #{int(opp_num)} · Entry #{int(ent_num)}" if mode=='top3' and pd.notna(opp_num) and pd.notna(ent_num) else f"Opportunity #{opp_rank}")
     return f'''<div class="decision-card">
-<div class="decision-head"><div><span class="{rank_style}">{i}</span><span class="decision-ticker">{ticker}</span></div>{morning_status_badge(mstatus)}</div>
+<div class="decision-head"><div><span class="{rank_style}">{i}</span><span class="decision-ticker">{ticker}</span><div class="decision-rank-sub">{rank_label}</div></div>{morning_status_badge(display_status)}</div>
 <div class="decision-price">{pref}</div><div class="decision-setup"><b>{price_label}</b>{(' · '+quote_time) if quote_time else ''} · <b>{setup}</b> · {pos} · distance {dist}%</div>
 <div class="decision-zone"><span>ENTRY ZONE</span> <b>{lo}–{hi}</b></div>
 <div class="decision-metrics"><div class="decision-metric"><span>SL</span><b>{sl}</b></div><div class="decision-metric"><span>TP1</span><b>{tp1}</b></div><div class="decision-metric"><span>R/R</span><b>{rr}</b></div><div class="decision-metric"><span>RISK</span><b>{risk}%</b></div></div>
 <div class="decision-metrics"><div class="decision-metric"><span>EOD SCORE</span><b>{eod_score}</b></div><div class="decision-metric"><span>MULTI</span><b>{score}</b></div><div class="decision-metric"><span>COVERAGE</span><b>{cov}%</b></div><div class="decision-metric"><span>ATR</span><b>{atr}x</b></div></div>
-<div class="decision-gates"><b>Stock:</b> {stock_gate} · <b>Market:</b> {market_gate}<br><b>Data:</b> {data} · EOD {eod_date} · age {age}d<br><b>Why:</b> {why_text}</div>
+<div class="decision-gates"><b>Stock:</b> {stock_gate} · <b>Market:</b> {market_gate}<br><b>Live Action:</b> {live_status} · <b>Pressure:</b> {live_pressure} ({r.get("PressureConfidence","—")})<br><b>VWAP:</b> {live_vwap} · <b>Vol 5m:</b> {live_vr}x · <b>Room:</b> {res_room}% ({r.get("ResistanceRoomClass","—")})<br><b>Entry Quality:</b> {eq}/100 · <b>Entry Priority:</b> {entry_priority}<br><b>Intraday Data:</b> {intraday_q} · age {intraday_age}m · bars {r.get('IntradayBarCount',0)}<br><b>Data:</b> {data} · EOD {eod_date} · age {age}d<br><b>Why:</b> {why_text}<br><b>Live Why:</b> {r.get('LiveActionReason','—')}<br><b>Next Trigger:</b> {trigger}<br><b>Invalidation:</b> {invalidation}</div>
 <div class="decision-actions"><a href="{tv_link(ticker)}" target="_blank">📈 TradingView</a></div>
 <div class="decision-why">Decision: <b>USER</b> · Sanggul tidak memberikan instruksi BUY/SELL.</div></div>'''
 
 def show_top3_cards(action, meta):
-    st.markdown('<div class="top3-wrap"><div class="top3-head"><div><div class="top3-title">🏆 Top 3 Decision Cards</div><div class="top3-sub">Quick decision view untuk HP · EOD candidate + Morning Action dipisahkan.</div></div><span class="mode-pill">MOBILE FIRST</span></div>', unsafe_allow_html=True)
+    st.markdown('<div class="top3-wrap"><div class="top3-head"><div><div class="top3-title">🏆 Top 3 Decision Cards</div><div class="top3-sub">Quick decision view untuk HP · Opportunity Rank dipisahkan dari Entry Priority dan Live Action.</div></div><span class="mode-pill">MOBILE FIRST</span></div>', unsafe_allow_html=True)
     if action is None or action.empty:
         st.markdown('<div class="small-note">Belum ada kandidat Top 3.</div></div>', unsafe_allow_html=True); return
     try:
@@ -1385,6 +1587,7 @@ def show_top3_cards(action, meta):
         with st.expander(f"🔎 WHY {ticker} · lihat alasan dan data detail",expanded=False):
             st.markdown(f"**{ticker}** · Setup **{r.get('Setup','—')}** · Opportunity **{fmt(r.get('OpportunityScore',np.nan),0)}** · Multi-Factor **{fmt(r.get('MultiFactorScore',np.nan),1)}** · Coverage **{fmt(r.get('FactorCoveragePct',np.nan),0)}%**")
             st.markdown(f"Entry **{fmt(r.get('Entry',np.nan))}** · SL **{fmt(r.get('SL',np.nan))}** · TP1 **{fmt(r.get('TP1',np.nan))}** · R/R **{fmt(r.get('RR',np.nan),2)}** · RSI **{fmt(r.get('RSI',np.nan),1)}** · MA20 **{fmt(r.get('MA20',np.nan),2)}**")
+            st.markdown(f"**Live Action:** {r.get('LiveActionStatus','EOD LOCKED')} · **Pressure:** {r.get('LivePressure','NOT APPLICABLE')} · **VWAP:** {fmt(r.get('IntradayVWAP',np.nan),0)} · **5m Vol Ratio:** {fmt(r.get('LiveVolumeRatio',np.nan),1)}x")
             st.caption("EOD ranking bukan instruksi transaksi. Morning status memperhitungkan posisi terhadap entry dan Market Gate.")
 
 def dashboard_morning_brief(meta, analyzed, expected, regime, ihsg, ih20, ih50):
@@ -1447,11 +1650,11 @@ def show_top10(opp,meta=None):
 
 def show_top50(focus):
     st.markdown('<div class="section-title">🟨 Top 50 Focus — Focus List</div>',unsafe_allow_html=True)
-    show_table(focus,["Ticker","Setup","SetupScore","QualityScore","MultiFactorScore","FactorCoveragePct","RiskGate","CurrentPrice","CurrentChangePct","CurrentQuoteTime","Close","MA20","RSI","MACD","VolumeRatio","Entry","SL","TP1","TP2","RR","Status","AvoidReason","Timing"])
+    show_table(focus,["Ticker","Setup","SetupScore","QualityScore","MultiFactorScore","FactorCoveragePct","RiskGate","LiveActionStatus","LivePressure","CurrentPrice","CurrentChangePct","CurrentQuoteTime","IntradayVWAP","LiveVolumeRatio","Close","MA20","RSI","MACD","VolumeRatio","Entry","SL","TP1","TP2","RR","Status","AvoidReason","Timing"])
 
 def show_top150(enrich):
     st.markdown('<div class="section-title">🟦 Top 150 Enrich — Quality Pool</div>',unsafe_allow_html=True)
-    show_table(enrich,["Ticker","QualityScore","SetupScore","OpportunityScore","MultiFactorScore","FactorCoveragePct","RiskGate","CurrentPrice","CurrentChangePct","CurrentQuoteTime","Close","RSI","MACD","MA20","MA50","MA200","Support","Resistance","Status","AvoidReason","Setup"])
+    show_table(enrich,["Ticker","QualityScore","SetupScore","OpportunityScore","MultiFactorScore","FactorCoveragePct","RiskGate","LiveActionStatus","LivePressure","CurrentPrice","CurrentChangePct","CurrentQuoteTime","IntradayVWAP","LiveVolumeRatio","Close","RSI","MACD","MA20","MA50","MA200","Support","Resistance","Status","AvoidReason","Setup"])
 
 def show_rules():
     with st.expander("📋 Execution Rule",expanded=False):
@@ -1486,7 +1689,7 @@ def weekly_candidates(focus):
 # =========================================================
 # HEADER + SIDEBAR
 # =========================================================
-header("📈 Sanggul Stock Scanner",f"{APP_VERSION} · 600 IDX · IHSG Reliable Fallback · Global Morning Intelligence · EOD Persistent · Morning Confirmation · TradingView")
+header("📈 Sanggul Stock Scanner",f"{APP_VERSION} · 600 IDX · IHSG Reliable Fallback · Global Morning Intelligence · EOD Persistent · Morning Confirmation · Opportunity vs Entry · Intraday Data Quality · TradingView")
 
 with st.sidebar:
     st.markdown('<div class="control-card"><div class="control-title">SANGGUL STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.5.6 · PRO 600 IDX EXPANDED UNIVERSE</div><div class="small-note" style="margin-top:4px">Decision-support terminal · 600 IDX</div></div>',unsafe_allow_html=True)
@@ -1723,7 +1926,16 @@ elif mode=="🔎 Saham Individu":
     ticker=st.selectbox("Pilih saham IDX",universe,index=universe.index("BBCA") if "BBCA" in universe else 0)
     d=load_data(ticker,"2y","1d"); a=analyze(d)
     if a is None: st.warning("Data teknikal belum cukup untuk dianalisis."); st.stop()
-    metric_strip([("Ticker",ticker),("Last",fmt(a["Close"])),("RSI",fmt(a["RSI"],1)),("R/R",fmt(a["RR"],2)),("Setup",a["Setup"]),("Status",a["Status"])])
+    live=load_live_prices([ticker]).get(str(ticker).upper(),{})
+    for k,src in [("CurrentPrice","price"),("CurrentQuoteTime","time"),("SessionOpen","session_open"),("SessionHigh","session_high"),("SessionLow","session_low"),("IntradayVWAP","intraday_vwap"),("LiveVolumeRatio","live_volume_ratio"),("LastBarChangePct","last_bar_change_pct"),("SessionChangePct","session_change_pct")]: a[k]=live.get(src,np.nan if k!="CurrentQuoteTime" else "—")
+    a["LiveBullishBar"]=live.get("bullish_bar",False)
+    a["LiveBelowVWAP"]=bool(pd.notna(a.get("IntradayVWAP")) and pd.notna(a.get("CurrentPrice")) and a["CurrentPrice"]<a["IntradayVWAP"])
+    a["LiveBelowSessionOpen"]=bool(pd.notna(a.get("SessionOpen")) and pd.notna(a.get("CurrentPrice")) and a["CurrentPrice"]<a["SessionOpen"])
+    live_df=apply_live_action_gate(pd.DataFrame([a]),"NEUTRAL / SIDEWAYS")
+    if not live_df.empty: a=live_df.iloc[0].to_dict()
+    display_last= a.get("CurrentPrice") if pd.notna(a.get("CurrentPrice",np.nan)) else a["Close"]
+    display_status=a.get("LiveActionStatus",a["Status"])
+    metric_strip([("Ticker",ticker),("Last",fmt(display_last)),("RSI",fmt(a["RSI"],1)),("R/R",fmt(a["RR"],2)),("Setup",a["Setup"]),("Status",display_status)])
     left,right=st.columns([1.25,1])
     with left:
         st.markdown("#### 🔗 TradingView Penuh")
@@ -1735,9 +1947,9 @@ elif mode=="🔎 Saham Individu":
     with right:
         st.markdown("#### Ringkasan Teknis")
         
-        st.markdown(f'<div class="card">Trend MA20/50/200: <b>{"Bullish" if a["MA20"]>a["MA50"] else "Mixed"}</b><br>MA20: <b>{fmt(a["MA20"])}</b><br>MA50: <b>{fmt(a["MA50"])}</b><br>MA200: <b>{fmt(a["MA200"])}</b><br>Price vs MA20: <b>{fmt((a["Close"]-a["MA20"])/a["MA20"]*100,1)}%</b><br>RSI: <b>{fmt(a["RSI"],1)}</b><br>MACD: <b>{fmt(a["MACD"],2)}</b><br>Volume ratio: <b>{fmt(a["VolumeRatio"],2)}x</b><br>Support: <b>{fmt(a["Support"])}</b><br>Resistance: <b>{fmt(a["Resistance"])}</b><br>Candle: <b>{a["Candle"]}</b></div>',unsafe_allow_html=True)
+        st.markdown(f'<div class="card">Trend MA20/50/200: <b>{"Bullish" if a["MA20"]>a["MA50"] else "Mixed"}</b><br>MA20: <b>{fmt(a["MA20"])}</b><br>MA50: <b>{fmt(a["MA50"])}</b><br>MA200: <b>{fmt(a["MA200"])}</b><br>Price vs MA20: <b>{fmt((a["Close"]-a["MA20"])/a["MA20"]*100,1)}%</b><br>RSI: <b>{fmt(a["RSI"],1)}</b><br>MACD: <b>{fmt(a["MACD"],2)}</b><br>EOD Volume ratio: <b>{fmt(a["VolumeRatio"],2)}x</b><br>Current: <b>{fmt(a.get("CurrentPrice",np.nan))}</b> · VWAP: <b>{fmt(a.get("IntradayVWAP",np.nan))}</b><br>Live 5m volume ratio: <b>{fmt(a.get("LiveVolumeRatio",np.nan),1)}x</b> · Pressure: <b>{a.get("LivePressure","—")}</b><br>Support: <b>{fmt(a["Support"])}</b><br>Resistance: <b>{fmt(a["Resistance"])}</b> · Room: <b>{fmt(a.get("DistanceToResistancePct",np.nan),1)}%</b><br>Candle: <b>{a["Candle"]}</b></div>',unsafe_allow_html=True)
         st.markdown("#### Trade Plan")
-        st.markdown(f'<div class="card">Setup <b>{a["Setup"]}</b><br>Entry <b>{fmt(a["Entry"])}</b><br>Stop Loss <b>{fmt(a["SL"])}</b><br>TP1 <b>{fmt(a["TP1"])}</b><br>TP2 <b>{fmt(a["TP2"])}</b><br>R/R <b>{fmt(a["RR"],2)}</b><br>Status {status_badge(a["Status"])}</div>',unsafe_allow_html=True)
+        st.markdown(f'<div class="card">Setup <b>{a["Setup"]}</b><br>Entry <b>{fmt(a["Entry"])}</b><br>Stop Loss <b>{fmt(a["SL"])}</b><br>TP1 <b>{fmt(a["TP1"])}</b><br>TP2 <b>{fmt(a["TP2"])}</b><br>R/R <b>{fmt(a["RR"],2)}</b><br>Entry Quality <b>{fmt(a.get("EntryQualityScore",np.nan),0)}/100</b><br>Status {status_badge(str(a.get("LiveActionStatus",a["Status"])))}<br><b>Next Trigger:</b> {a.get("NextTrigger","—")}<br><b>Invalidation:</b> {a.get("Invalidation","—")}</div>',unsafe_allow_html=True)
         st.link_button("📊 Buka TradingView Supercharts — Daily ↗", tv_link(ticker,"1D"), use_container_width=True)
 
 elif mode=="🏭 Sector Opportunity":
