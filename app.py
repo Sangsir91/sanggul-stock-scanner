@@ -10,8 +10,8 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.7.4 PRO DATA TRUST · RANKING INTEGRITY · INTRADAY FRESHNESS"
-ENGINE_VERSION = "V11.7.4-DATA-TRUST-RANKING-INTEGRITY"
+APP_VERSION = "V11.7.5 PRO CURRENT SCAN LIVE HYDRATION · DATA TRUST"
+ENGINE_VERSION = "V11.7.5-CURRENT-LIVE-HYDRATION"
 RISK_GATE_VERSION = "2.7"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RECOVERY_DIR = os.path.join(BASE_DIR, "recovered_eod")
@@ -819,6 +819,44 @@ def _ensure_layers(snap):
     regime=str(meta.get("regime","NEUTRAL / SIDEWAYS"))
     max_stop=float(meta.get("max_stop_pct",15.0) or 15.0)
     full=apply_risk_gate(full,min_rr,max_stop,regime)
+
+    # Current-scan hydration: persisted current scans from older builds may contain
+    # CurrentPrice/CurrentQuoteTime but not the newer intraday decision columns.
+    # Reconstruct a trustworthy data-quality state from the quote timestamp so the
+    # UI never falls back to Morning WAIT—MARKET while live fields are actually
+    # unavailable. If raw intraday fields exist, run the full live gate again.
+    scan_type=str(meta.get("scan_type","" )).upper()
+    is_current_scan=scan_type=="CURRENT_SCAN"
+    if is_current_scan:
+        if "IntradayDataQuality" not in full.columns:
+            full["IntradayDataQuality"]="INSUFFICIENT"
+        if "IntradayDataAgeMin" not in full.columns:
+            full["IntradayDataAgeMin"]=np.nan
+        if "IntradayBarCount" not in full.columns:
+            full["IntradayBarCount"]=0
+        # If a prior current scan has a quote timestamp but no intraday payload,
+        # classify the quote freshness without inventing VWAP/volume values.
+        if "CurrentQuoteTime" in full.columns:
+            now_naive=jakarta_now().replace(tzinfo=None)
+            def _quote_age(v):
+                try:
+                    ts=pd.Timestamp(v)
+                    if ts.tzinfo is not None: ts=ts.tz_localize(None)
+                    if pd.isna(ts): return np.nan
+                    return max(0.0,(now_naive-ts).total_seconds()/60.0)
+                except Exception: return np.nan
+            ages=full["CurrentQuoteTime"].map(_quote_age)
+            missing_intraday=~full.columns.isin(["IntradayVWAP","LiveVolumeRatio","SessionOpen","SessionChangePct","LiveBullishBar"]).any()
+            # The boolean above is only a column-existence check; per-row freshness
+            # remains based on quote age. Preserve existing valid provider quality.
+            full["IntradayDataAgeMin"]=pd.to_numeric(full["IntradayDataAgeMin"],errors="coerce").where(pd.to_numeric(full["IntradayDataAgeMin"],errors="coerce").notna(),ages)
+            existing=full["IntradayDataQuality"].astype(str).str.upper()
+            derived=np.select([ages.le(10),ages.le(20),ages.le(30),ages.gt(30)], ["LIVE","DELAYED","STALE","INVALID"], default="INSUFFICIENT")
+            full["IntradayDataQuality"]=existing.where(~existing.isin({"","NAN","NONE","INSUFFICIENT"}),pd.Series(derived,index=full.index))
+        # Apply the same live gate used by a fresh current scan. If required raw
+        # fields are absent, the gate safely returns WAIT — LIVE DATA instead of
+        # inheriting Morning Confirmation status.
+        full=apply_live_action_gate(full,regime)
     enrich,focus,opp,action=build_layers(full,min_rr)
     snap.update({"full":full,"top150":enrich,"top50":focus,"top10":opp,"top3":action})
     return snap
@@ -1735,7 +1773,7 @@ def weekly_candidates(focus):
 header("📈 Sanggul Stock Scanner",f"{APP_VERSION} · 600 IDX · IHSG Reliable Fallback · Global Morning Intelligence · EOD Persistent · Morning Confirmation · Opportunity vs Entry · Intraday Data Quality · TradingView")
 
 with st.sidebar:
-    st.markdown('<div class="control-card"><div class="control-title">SANGGUL STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.5.6 · PRO 600 IDX EXPANDED UNIVERSE</div><div class="small-note" style="margin-top:4px">Decision-support terminal · 600 IDX</div></div>',unsafe_allow_html=True)
+    st.markdown('<div class="control-card"><div class="control-title">SANGGUL STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.7.5 · PRO 600 IDX CURRENT LIVE HYDRATION</div><div class="small-note" style="margin-top:4px">Decision-support terminal · 600 IDX</div></div>',unsafe_allow_html=True)
     st.markdown("### 🧭 MENU UTAMA")
     mode=st.radio("Navigasi",[
         "📊 Dashboard","⚡ Trading Harian","📅 Swing Trading Mingguan","🔎 Saham Individu","🏭 Sector Opportunity","🏆 Top 3 Actionable","🟩 Top 10 Opportunity","🟨 Top 50 Focus","🟦 Top 150 Enrich","🌅 Morning Confirmation","🌆 EOD Full Scan","📜 EOD Scan History","🧠 Multi-Factor Data Hub"],index=0)
