@@ -10,8 +10,8 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.7.1 PRO OPPORTUNITY vs ENTRY ENGINE · INTRADAY DATA QUALITY FIX1"
-ENGINE_VERSION = "V11.7.1-OPPORTUNITY-ENTRY-INTRADAY-DATA-QUALITY-FIX1"
+APP_VERSION = "V11.7.4 PRO DATA TRUST · RANKING INTEGRITY · INTRADAY FRESHNESS"
+ENGINE_VERSION = "V11.7.4-DATA-TRUST-RANKING-INTEGRITY"
 RISK_GATE_VERSION = "2.7"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RECOVERY_DIR = os.path.join(BASE_DIR, "recovered_eod")
@@ -546,8 +546,10 @@ def _download_live_quote_batch(tickers, interval="5m"):
                         data_quality="LIVE"
                     elif age_min <= 20:
                         data_quality="DELAYED"
-                    else:
+                    elif age_min <= 30:
                         data_quality="STALE"
+                    else:
+                        data_quality="INVALID"
                     out[base]={
                         "price":latest,"time":ts.strftime("%Y-%m-%d %H:%M:%S"),
                         "data_quality":data_quality,"data_age_min":age_min,"bar_count":bar_count,
@@ -606,7 +608,7 @@ def apply_live_action_gate(result, market_regime="NEUTRAL / SIDEWAYS"):
             quality=str(scalar(r.get("IntradayDataQuality",r.get("LiveDataQuality","UNKNOWN")),"UNKNOWN")).upper()
             dq[i]=quality
 
-            if not pd.notna(p) or quality in {"INSUFFICIENT","STALE"}:
+            if not pd.notna(p) or quality in {"INSUFFICIENT","STALE","INVALID"}:
                 statuses[i]="DATA INSUFFICIENT" if quality=="INSUFFICIENT" or not pd.notna(p) else "WAIT — LIVE DATA"
                 pressures[i]="UNKNOWN" if not pd.notna(p) else "MIXED"; pconf[i]="NONE" if not pd.notna(p) else "LOW"
                 reasons[i]="current quote unavailable" if not pd.notna(p) else f"intraday data {quality.lower()} — live pressure not fully trusted"
@@ -1002,6 +1004,13 @@ def apply_risk_gate(result,min_rr,max_stop_pct=15.0,market_regime="NEUTRAL / SID
     return x
 
 def build_layers(result,min_rr):
+    """Build layered opportunity/entry pools with strict ranking integrity.
+
+    OpportunityRank answers: how attractive is the candidate?
+    EntryRank answers: how ready is the candidate for a fresh live entry?
+    Missing/stale live data never receives a fake numeric EntryRank or score.
+    Internal sentinel values are used only for sorting and are never exposed.
+    """
     def sortdf(df, cols):
         use=[c for c in cols if c in df.columns]
         return df.sort_values(use,ascending=[False]*len(use)) if use else df
@@ -1010,29 +1019,54 @@ def build_layers(result,min_rr):
     opp=sortdf(result[result.RR>=min_rr],['MultiFactorScore','OpportunityScore','SetupScore','RR']).head(10).copy(); opp['Layer']='TOP 10 OPPORTUNITY'
     if not opp.empty:
         opp=opp.copy(); opp['OpportunityRank']=range(1,len(opp)+1)
+
     action_pool=opp[(opp.Status.astype(str).str.upper()=='READY') & (opp.Setup.astype(str).str.upper().isin(['BREAKOUT','PULLBACK','REJECTION SUPPORT']))].copy()
     gate_rank={'PASS':0,'RISK REVIEW':1,'FACTOR REVIEW':2,'MARKET REVIEW':3,'WAIT':9}
     live_rank={'CONFIRM CANDIDATE':0,'READY — CONFIRM':1,'READY — WATCH':2,'WAIT — LIVE':3,'WAIT — MARKET':4,'WAIT — RESISTANCE':5,'WAIT — BELOW ENTRY':6,'WAIT — LIVE PRESSURE':7,'WAIT — CHASE':8,'DATA INSUFFICIENT':9,'WAIT — LIVE DATA':10,'CANCEL':11,'EOD LOCKED':0}
+
+    def _numeric_col(df, col, default):
+        if col in df.columns:
+            return pd.to_numeric(df[col], errors='coerce').fillna(default)
+        return pd.Series(default, index=df.index, dtype='float64')
+
     if not action_pool.empty:
         action_pool['_gate_rank']=action_pool['RiskGate'].astype(str).str.upper().map(gate_rank).fillna(8)
         action_pool['_live_rank']=action_pool['LiveActionStatus'].astype(str).map(live_rank).fillna(7) if 'LiveActionStatus' in action_pool.columns else 7
-        action_pool['_eq_sort']=pd.to_numeric(action_pool.get('EntryQualityScore',np.nan),errors='coerce').fillna(-999)
-        action_pool['_opp_sort']=pd.to_numeric(action_pool.get('OpportunityScore',np.nan),errors='coerce').fillna(-999)
-        action_pool['_risk_sort']=pd.to_numeric(action_pool.get('RiskPct',np.nan),errors='coerce').fillna(999)
-        action_pool['EntryPriorityScore']=action_pool['_eq_sort']
-        action=action_pool.sort_values(['_live_rank','_gate_rank','EntryPriorityScore','_opp_sort','MultiFactorScore','TechnicalScore','_risk_sort'],ascending=[True,True,False,False,False,False,True]).head(3).copy()
-        action.drop(columns=['_gate_rank','_live_rank','_eq_sort','_opp_sort','_risk_sort'],errors='ignore',inplace=True)
+        action_pool['_eq_sort']=_numeric_col(action_pool,'EntryQualityScore',-999)
+        action_pool['_opp_sort']=_numeric_col(action_pool,'OpportunityScore',-999)
+        action_pool['_risk_sort']=_numeric_col(action_pool,'RiskPct',999)
+        # EntryPriorityScore is a genuine live-entry score only when live data is usable.
+        q=action_pool.get('IntradayDataQuality',pd.Series('INSUFFICIENT',index=action_pool.index)).astype(str).str.upper()
+        eq=pd.to_numeric(action_pool.get('EntryQualityScore',pd.Series(np.nan,index=action_pool.index)),errors='coerce')
+        valid_live=q.isin({'LIVE','DELAYED','PARTIAL'}) & eq.notna()
+        action_pool['EntryPriorityScore']=eq.where(valid_live,np.nan)
+        # Valid live candidates are preferred; stale/invalid candidates can remain as
+        # opportunity candidates but must never receive a fake entry score/rank.
+        action_pool['_entry_valid']=valid_live.astype(int)
+        action=action_pool.sort_values(['_entry_valid','_live_rank','_gate_rank','EntryPriorityScore','_opp_sort','MultiFactorScore','TechnicalScore','_risk_sort'],ascending=[False,True,True,False,False,False,False,True],na_position='last').head(3).copy()
+        action.drop(columns=['_gate_rank','_live_rank','_eq_sort','_opp_sort','_risk_sort','_entry_valid'],errors='ignore',inplace=True)
     else:
         ready_all=result[result.Status.astype(str).str.upper()=='READY'].copy()
         action=sortdf(ready_all,['MultiFactorScore','TechnicalScore','OpportunityScore','SetupScore']).head(3).copy()
-        action['EntryPriorityScore']=pd.to_numeric(action.get('EntryQualityScore',np.nan),errors='coerce')
+        action['EntryPriorityScore']=np.nan
+
     action['Layer']='TOP 3 ACTIONABLE'
     if not action.empty:
         action=action.copy()
         opp_rank_map={str(t):i+1 for i,t in enumerate(opp['Ticker'].astype(str))} if not opp.empty and 'Ticker' in opp.columns else {}
         action['OpportunityRank']=action['Ticker'].astype(str).map(opp_rank_map)
-        action=action.sort_values(['EntryPriorityScore','MultiFactorScore'],ascending=[False,False]).reset_index(drop=True)
-        action['EntryRank']=range(1,len(action)+1)
+        # EntryRank is assigned only to candidates with trustworthy, usable live data.
+        q=action.get('IntradayDataQuality',pd.Series('INSUFFICIENT',index=action.index)).astype(str).str.upper()
+        eq=pd.to_numeric(action.get('EntryQualityScore',pd.Series(np.nan,index=action.index)),errors='coerce')
+        entry_valid=q.isin({'LIVE','DELAYED','PARTIAL'}) & eq.notna()
+        action['EntryRank']=pd.Series(pd.NA,index=action.index,dtype='Int64')
+        valid_idx=action.index[entry_valid]
+        if len(valid_idx):
+            ordered=action.loc[valid_idx].sort_values(['EntryPriorityScore','MultiFactorScore'],ascending=[False,False],na_position='last').index
+            for rank,idx in enumerate(ordered,1):
+                action.loc[idx,'EntryRank']=rank
+        action['EntryPriorityScore']=eq.where(entry_valid,np.nan)
+        action=action.reset_index(drop=True)
     return enrich,focus,opp,action
 
 def _normalize_index_frame(d):
@@ -1546,6 +1580,11 @@ def _decision_card_html(i, r, mr, mode="top3"):
             dist=fmt((live_price-e)/e*100.0,1)
             pos='BELOW ENTRY' if live_price<lo_c else ('IN ENTRY ZONE' if live_price<=hi_c else 'ABOVE ENTRY')
     data=str(mr.get('DataStatus','UNKNOWN')); age=mr.get('DataAgeDays',r.get('DataAgeDays','—')); eod_date=mr.get('LastDataDate',r.get('DataDate','—'))
+    # Resolve intraday data-quality fields before any conditional uses them.
+    # This prevents UnboundLocalError on Top 10 / Top 3 card rendering when
+    # the live layer is unavailable or stale.
+    intraday_q=str(r.get('IntradayDataQuality','—'))
+    intraday_age=fmt(r.get('IntradayDataAgeMin',np.nan),0)
     risk=fmt(r.get('RiskPct',np.nan),1); atr=fmt(r.get('RiskATRMultiple',np.nan),1)
     live_vwap=fmt(r.get('IntradayVWAP',np.nan),0); live_vr=fmt(r.get('LiveVolumeRatio',np.nan),1)
     eq=fmt(r.get('EntryQualityScore',np.nan),0); res_room=fmt(r.get('DistanceToResistancePct',np.nan),1)
@@ -1556,19 +1595,23 @@ def _decision_card_html(i, r, mr, mode="top3"):
     if pos=='IN ENTRY ZONE': why.append('inside entry zone')
     if market_gate.upper()!='PASS': why.append(f'market {market_gate}')
     if is_current and live_pressure not in {'—','UNKNOWN','MIXED'}: why.append(live_pressure.lower())
+    if intraday_q in {'STALE','INVALID'} and is_current:
+        why.append('live data not fresh')
     why_text=' · '.join(why[:3]) or reason
     rank_style='decision-rank' if mode=='top3' else 'op10-rank'
-    opp_rank=r.get('OpportunityRank','—'); entry_rank=r.get('EntryRank','—'); entry_priority=fmt(r.get('EntryPriorityScore',np.nan),0)
-    intraday_q=str(r.get('IntradayDataQuality','—')); intraday_age=fmt(r.get('IntradayDataAgeMin',np.nan),0)
+    opp_rank=r.get('OpportunityRank','—'); entry_rank=r.get('EntryRank','—')
+    entry_priority=fmt(r.get('EntryPriorityScore',np.nan),0) if pd.notna(pd.to_numeric(pd.Series([r.get('EntryPriorityScore',np.nan)]),errors='coerce').iloc[0]) else 'N/A'
+    eq_num=pd.to_numeric(pd.Series([r.get('EntryQualityScore',np.nan)]),errors='coerce').iloc[0]
+    eq_display=fmt(eq_num,0) if pd.notna(eq_num) else 'N/A'
     opp_num=pd.to_numeric(pd.Series([opp_rank]),errors='coerce').iloc[0]; ent_num=pd.to_numeric(pd.Series([entry_rank]),errors='coerce').iloc[0]
-    rank_label=(f"Opportunity #{int(opp_num)} · Entry #{int(ent_num)}" if mode=='top3' and pd.notna(opp_num) and pd.notna(ent_num) else f"Opportunity #{opp_rank}")
+    rank_label=(f"Opportunity #{int(opp_num)} · Entry #{int(ent_num)}" if mode=='top3' and pd.notna(opp_num) and pd.notna(ent_num) else (f"Opportunity #{int(opp_num)} · Entry N/A" if mode=='top3' and pd.notna(opp_num) else f"Opportunity #{opp_rank}"))
     return f'''<div class="decision-card">
 <div class="decision-head"><div><span class="{rank_style}">{i}</span><span class="decision-ticker">{ticker}</span><div class="decision-rank-sub">{rank_label}</div></div>{morning_status_badge(display_status)}</div>
 <div class="decision-price">{pref}</div><div class="decision-setup"><b>{price_label}</b>{(' · '+quote_time) if quote_time else ''} · <b>{setup}</b> · {pos} · distance {dist}%</div>
 <div class="decision-zone"><span>ENTRY ZONE</span> <b>{lo}–{hi}</b></div>
 <div class="decision-metrics"><div class="decision-metric"><span>SL</span><b>{sl}</b></div><div class="decision-metric"><span>TP1</span><b>{tp1}</b></div><div class="decision-metric"><span>R/R</span><b>{rr}</b></div><div class="decision-metric"><span>RISK</span><b>{risk}%</b></div></div>
 <div class="decision-metrics"><div class="decision-metric"><span>EOD SCORE</span><b>{eod_score}</b></div><div class="decision-metric"><span>MULTI</span><b>{score}</b></div><div class="decision-metric"><span>COVERAGE</span><b>{cov}%</b></div><div class="decision-metric"><span>ATR</span><b>{atr}x</b></div></div>
-<div class="decision-gates"><b>Stock:</b> {stock_gate} · <b>Market:</b> {market_gate}<br><b>Live Action:</b> {live_status} · <b>Pressure:</b> {live_pressure} ({r.get("PressureConfidence","—")})<br><b>VWAP:</b> {live_vwap} · <b>Vol 5m:</b> {live_vr}x · <b>Room:</b> {res_room}% ({r.get("ResistanceRoomClass","—")})<br><b>Entry Quality:</b> {eq}/100 · <b>Entry Priority:</b> {entry_priority}<br><b>Intraday Data:</b> {intraday_q} · age {intraday_age}m · bars {r.get('IntradayBarCount',0)}<br><b>Data:</b> {data} · EOD {eod_date} · age {age}d<br><b>Why:</b> {why_text}<br><b>Live Why:</b> {r.get('LiveActionReason','—')}<br><b>Next Trigger:</b> {trigger}<br><b>Invalidation:</b> {invalidation}</div>
+<div class="decision-gates"><b>Stock:</b> {stock_gate} · <b>Market:</b> {market_gate}<br><b>Live Action:</b> {live_status} · <b>Pressure:</b> {live_pressure} ({r.get("PressureConfidence","—")})<br><b>VWAP:</b> {live_vwap} · <b>Vol 5m:</b> {live_vr}x · <b>Room:</b> {res_room}% ({r.get("ResistanceRoomClass","—")})<br><b>Entry Quality:</b> {eq_display}/100 · <b>Entry Priority:</b> {entry_priority}<br><b>Intraday Data:</b> {intraday_q} · age {intraday_age}m · bars {r.get('IntradayBarCount',0)}<br><b>Data:</b> {data} · EOD {eod_date} · age {age}d<br><b>Why:</b> {why_text}<br><b>Live Why:</b> {r.get('LiveActionReason','—')}<br><b>Next Trigger:</b> {trigger}<br><b>Invalidation:</b> {invalidation}</div>
 <div class="decision-actions"><a href="{tv_link(ticker)}" target="_blank">📈 TradingView</a></div>
 <div class="decision-why">Decision: <b>USER</b> · Sanggul tidak memberikan instruksi BUY/SELL.</div></div>'''
 
