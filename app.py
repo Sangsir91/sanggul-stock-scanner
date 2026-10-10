@@ -10,8 +10,8 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.7.6 PRO CURRENT SCAN LIVE HYDRATION FIX · DATA TRUST"
-ENGINE_VERSION = "V11.7.7-FIX1-MODE-AWARE-REGIME-SAFE"
+APP_VERSION = "V11.7.9 PRO MINIMAL DECISION CARD"
+ENGINE_VERSION = "V11.7.9-PRO-MINIMAL-DECISION-CARD"
 RISK_GATE_VERSION = "2.7"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RECOVERY_DIR = os.path.join(BASE_DIR, "recovered_eod")
@@ -154,6 +154,30 @@ section[data-testid="stSidebar"] [data-testid="stSlider"] label { color:#cce8ff 
 @media(max-width:700px){.block-container{padding:.4rem .5rem 1.1rem}.hero{padding:11px 12px;border-radius:13px}.hero h1{font-size:20px}.hero p{font-size:10px}.section-title{font-size:15px;margin:8px 0 5px}.mobile-brief{padding:10px;border-radius:13px}.mobile-brief-grid{grid-template-columns:repeat(2,1fr);gap:5px}.mobile-brief-card{min-height:62px;padding:8px}.mobile-brief-value{font-size:17px}.decision-grid{grid-template-columns:1fr;gap:7px}.decision-card{padding:10px;border-radius:12px}.decision-ticker{font-size:17px}.decision-price{font-size:21px}.decision-metrics{grid-template-columns:repeat(4,1fr);gap:5px}.decision-metric{padding:6px 4px;min-height:48px}.decision-metric span{font-size:8px}.decision-metric b{font-size:11px;line-height:1.2}.decision-gates{font-size:9px}.decision-actions a{padding:8px 5px;font-size:10px}.op10-grid{grid-template-columns:1fr}.op10-card{padding:9px}.op10-metrics{grid-template-columns:repeat(3,1fr)}}
 @media(min-width:701px) and (max-width:1050px){.decision-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.mobile-brief-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 
+
+/* V11.7.8 PRO SIMPLE BROKERAGE UI */
+.simple-note{color:#91abc2;font-size:11px;line-height:1.45;margin:4px 0 10px}
+.simple-section-title{font-size:17px;font-weight:850;color:#f3f8ff;margin:12px 0 7px}
+.simple-grid-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-bottom:10px}
+.simple-stock-card{background:linear-gradient(145deg,#091f34,#081a2c);border:1px solid #234a68;border-radius:13px;padding:11px;box-shadow:0 8px 20px rgba(0,0,0,.14)}
+.simple-stock-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.simple-rank{display:inline-flex;width:24px;height:24px;border-radius:50%;align-items:center;justify-content:center;background:#0b78d0;color:#fff;font-size:11px;font-weight:900;margin-right:6px}
+.simple-ticker{font-size:18px;font-weight:900;color:#fff}
+.simple-status{font-size:9px;font-weight:850;padding:4px 7px;border-radius:999px;background:#123552;color:#aee0ff;border:1px solid #275e84}
+.simple-price{font-size:22px;font-weight:900;color:#fff;margin:7px 0 1px}
+.simple-sub{font-size:10px;color:#9db6ca;margin-bottom:7px}
+.simple-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+.simple-grid>div{background:#0b2238;border:1px solid #173e5a;border-radius:7px;padding:6px 4px;text-align:center}
+.simple-grid span,.fund-grid span{display:block;color:#718ea7;font-size:8px;text-transform:uppercase}
+.simple-grid b{display:block;color:#eef7ff;font-size:10px;margin-top:2px}
+.simple-tech{font-size:10px;color:#bdd0df;padding:7px 0 5px;border-bottom:1px solid #17354c}
+.simple-fund{font-size:10px;color:#8fc7ef;padding:6px 0;min-height:24px}
+.simple-tv{font-size:10px;color:#59b9ff;text-decoration:none;font-weight:800}
+.simple-selected{background:#0a2035;border:1px solid #244b68;border-radius:11px;padding:10px;line-height:1.7;color:#c4d7e7;font-size:11px}
+.fund-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+.fund-grid>div{background:#0a2035;border:1px solid #1d425c;border-radius:8px;padding:8px}
+.fund-grid b{display:block;color:#f1f7fc;font-size:13px;margin-top:2px}
+@media(max-width:900px){.simple-grid-cards{grid-template-columns:1fr}.simple-stock-card{padding:10px}.simple-price{font-size:20px}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1639,68 +1663,10 @@ def risk_badge(gate):
     return f'<span class="badge {cls}">{g}</span>'
 
 def _decision_card_html(i, r, mr, mode="top3"):
-    ticker=str(r.get('Ticker','—')); setup=str(r.get('Setup','—'))
-    live_price=pd.to_numeric(pd.Series([r.get('CurrentPrice',np.nan)]),errors='coerce').iloc[0]
-    is_current=str(r.get('PriceMode','')).upper()=='CURRENT QUOTE' and np.isfinite(live_price)
-    pref=fmt(live_price if is_current else mr.get('PreOpenReference',r.get('Close',np.nan)))
-    price_label='CURRENT QUOTE' if is_current else 'EOD REFERENCE'
-    quote_time=str(r.get('CurrentQuoteTime','')) if is_current else ''
-    entry=fmt(r.get('Entry',np.nan)); lo=fmt(mr.get('EntryLow',r.get('Entry',np.nan))); hi=fmt(mr.get('EntryHigh',r.get('Entry',np.nan)))
-    sl=fmt(r.get('SL',np.nan)); tp1=fmt(r.get('TP1',np.nan)); rr=fmt(r.get('RR',np.nan),2)
-    score=fmt(r.get('MultiFactorScore',np.nan),1); eod_score=fmt(r.get('OpportunityScore',np.nan),0); cov=fmt(r.get('FactorCoveragePct',np.nan),0)
-    stock_gate=str(r.get('StockSetupGate','—')); market_gate=str(mr.get('MarketGate',r.get('MarketGate','—')))
-    mstatus=str(mr.get('MorningStatus','NOT VALIDATED')); reason=str(mr.get('MorningReason','—')); pos=str(mr.get('EntryPosition','—')); dist=fmt(mr.get('DistanceToEntryPct',np.nan),1)
-    live_status=str(r.get('LiveActionStatus','—')); live_pressure=str(r.get('LivePressure','—'))
-    display_status=(live_status if is_current and live_status not in {'—','EOD LOCKED'} else ('WAIT — LIVE DATA' if is_current else mstatus))
-    # In a current/ad-hoc scan, the displayed position is recalculated from the
-    # refreshed quote. Morning Confirmation itself still uses the locked EOD reference.
-    if is_current and np.isfinite(live_price):
-        e=float(r.get('Entry',np.nan)); lo_c=e*.985 if np.isfinite(e) else np.nan; hi_c=e*1.025 if np.isfinite(e) else np.nan
-        if np.isfinite(e) and e>0:
-            dist=fmt((live_price-e)/e*100.0,1)
-            pos='BELOW ENTRY' if live_price<lo_c else ('IN ENTRY ZONE' if live_price<=hi_c else 'ABOVE ENTRY')
-    data=str(mr.get('DataStatus','UNKNOWN')); age=mr.get('DataAgeDays',r.get('DataAgeDays','—')); eod_date=mr.get('LastDataDate',r.get('DataDate','—'))
-    # Resolve intraday data-quality fields before any conditional uses them.
-    # This prevents UnboundLocalError on Top 10 / Top 3 card rendering when
-    # the live layer is unavailable or stale.
-    intraday_q=str(r.get('IntradayDataQuality','—'))
-    intraday_age=fmt(r.get('IntradayDataAgeMin',np.nan),0)
-    risk=fmt(r.get('RiskPct',np.nan),1); atr=fmt(r.get('RiskATRMultiple',np.nan),1)
-    live_vwap=fmt(r.get('IntradayVWAP',np.nan),0); live_vr=fmt(r.get('LiveVolumeRatio',np.nan),1)
-    eq=fmt(r.get('EntryQualityScore',np.nan),0); res_room=fmt(r.get('DistanceToResistancePct',np.nan),1)
-    trigger=str(r.get('NextTrigger','—')); invalidation=str(r.get('Invalidation','—'))
-    why=[]
-    if setup and setup!='WAIT': why.append(setup.lower())
-    if stock_gate.upper()=='PASS': why.append('stock setup PASS')
-    if pos=='IN ENTRY ZONE': why.append('inside entry zone')
-    if market_gate.upper()!='PASS': why.append(f'market {market_gate}')
-    if is_current and live_pressure not in {'—','UNKNOWN','MIXED'}: why.append(live_pressure.lower())
-    if intraday_q in {'STALE','INVALID'} and is_current:
-        why.append('live data not fresh')
-    
-    if is_current and intraday_q in {'—','INSUFFICIENT'} and live_status in {'—','UNKNOWN','DATA INSUFFICIENT'}:
-        why_text='live intraday layer unavailable — refresh current scan'
-    else:
-        why_text=' · '.join(why[:3]) or reason
-    rank_style='decision-rank' if mode=='top3' else 'op10-rank'
-    opp_rank=r.get('OpportunityRank','—'); entry_rank=r.get('EntryRank','—')
-    entry_priority=fmt(r.get('EntryPriorityScore',np.nan),0) if pd.notna(pd.to_numeric(pd.Series([r.get('EntryPriorityScore',np.nan)]),errors='coerce').iloc[0]) else 'N/A'
-    eq_num=pd.to_numeric(pd.Series([r.get('EntryQualityScore',np.nan)]),errors='coerce').iloc[0]
-    eq_display=fmt(eq_num,0) if pd.notna(eq_num) else 'N/A'
-    opp_num=pd.to_numeric(pd.Series([opp_rank]),errors='coerce').iloc[0]; ent_num=pd.to_numeric(pd.Series([entry_rank]),errors='coerce').iloc[0]
-    rank_label=(f"Opportunity #{int(opp_num)} · Entry #{int(ent_num)}" if mode=='top3' and pd.notna(opp_num) and pd.notna(ent_num) else (f"Opportunity #{int(opp_num)} · Entry N/A" if mode=='top3' and pd.notna(opp_num) else f"Opportunity #{opp_rank}"))
-    return f'''<div class="decision-card">
-<div class="decision-head"><div><span class="{rank_style}">{i}</span><span class="decision-ticker">{ticker}</span><div class="decision-rank-sub">{rank_label}</div></div>{morning_status_badge(display_status)}</div>
-<div class="decision-price">{pref}</div><div class="decision-setup"><b>{price_label}</b>{(' · '+quote_time) if quote_time else ''} · <b>{setup}</b> · {pos} · distance {dist}%</div>
-<div class="decision-zone"><span>ENTRY ZONE</span> <b>{lo}–{hi}</b></div>
-<div class="decision-metrics"><div class="decision-metric"><span>SL</span><b>{sl}</b></div><div class="decision-metric"><span>TP1</span><b>{tp1}</b></div><div class="decision-metric"><span>R/R</span><b>{rr}</b></div><div class="decision-metric"><span>RISK</span><b>{risk}%</b></div></div>
-<div class="decision-metrics"><div class="decision-metric"><span>EOD SCORE</span><b>{eod_score}</b></div><div class="decision-metric"><span>MULTI</span><b>{score}</b></div><div class="decision-metric"><span>COVERAGE</span><b>{cov}%</b></div><div class="decision-metric"><span>ATR</span><b>{atr}x</b></div></div>
-<div class="decision-gates"><b>Stock:</b> {stock_gate} · <b>Market:</b> {market_gate}<br><b>Live Action:</b> {live_status} · <b>Pressure:</b> {live_pressure} ({r.get("PressureConfidence","—")})<br><b>VWAP:</b> {live_vwap} · <b>Vol 5m:</b> {live_vr}x · <b>Room:</b> {res_room}% ({r.get("ResistanceRoomClass","—")})<br><b>Entry Quality:</b> {eq_display}/100 · <b>Entry Priority:</b> {entry_priority}<br><b>Intraday Data:</b> {intraday_q} · age {intraday_age}m · bars {r.get('IntradayBarCount',0)}<br><b>Data:</b> {data} · EOD {eod_date} · age {age}d<br><b>Why:</b> {why_text}<br><b>Live Why:</b> {r.get('LiveActionReason','—')}<br><b>Next Trigger:</b> {trigger}<br><b>Invalidation:</b> {invalidation}</div>
-<div class="decision-actions"><a href="{tv_link(ticker)}" target="_blank">📈 TradingView</a></div>
-<div class="decision-why">Decision: <b>USER</b> · Sanggul tidak memberikan instruksi BUY/SELL.</div></div>'''
+    return _simple_card(r.to_dict() if hasattr(r,'to_dict') else r, i, mr)
 
 def show_top3_cards(action, meta):
-    st.markdown('<div class="top3-wrap"><div class="top3-head"><div><div class="top3-title">🏆 Top 3 Decision Cards</div><div class="top3-sub">Quick decision view untuk HP · Opportunity Rank dipisahkan dari Entry Priority dan Live Action.</div></div><span class="mode-pill">MOBILE FIRST</span></div>', unsafe_allow_html=True)
+    st.markdown('<div class="top3-wrap"><div class="top3-head"><div><div class="top3-title">🏆 Top 3 Decision Cards</div><div class="top3-sub">Ringkas: status, harga, rencana entry, dan tindakan berikutnya.</div></div><span class="mode-pill">MOBILE FIRST</span></div>', unsafe_allow_html=True)
     if action is None or action.empty:
         st.markdown('<div class="small-note">Belum ada kandidat Top 3.</div></div>', unsafe_allow_html=True); return
     try:
@@ -1736,7 +1702,7 @@ def dashboard_morning_brief(meta, analyzed, expected, regime, ihsg, ih20, ih50):
 </div></div>''',unsafe_allow_html=True)
 
 def show_top10_cards(opp, meta=None):
-    st.markdown('<div class="op10-wrap"><div class="top3-head"><div><div class="top3-title">🟩 Top 10 Opportunity Cards</div><div class="top3-sub">Quick scan untuk HP. Top 10 bukan otomatis BUY.</div></div><span class="mode-pill">10 CARDS</span></div>', unsafe_allow_html=True)
+    st.markdown('<div class="op10-wrap"><div class="top3-head"><div><div class="top3-title">🟩 Top 10 Opportunity Cards</div><div class="top3-sub">Ringkas untuk pemantauan. Top 10 bukan otomatis BUY.</div></div><span class="mode-pill">10 CARDS</span></div>', unsafe_allow_html=True)
     if opp is None or opp.empty:
         st.info("Belum ada data Top 10."); st.markdown('</div>', unsafe_allow_html=True); return
     try:
@@ -1754,12 +1720,86 @@ def show_morning_watchlist(conf):
     cards=[_decision_card_html(i,r,r.to_dict(),"top10") for i,(_,r) in enumerate(sub.iterrows(),1)]
     st.markdown('<div class="decision-grid">'+''.join(cards)+'</div>',unsafe_allow_html=True)
 
+def _fundamental_line(r):
+    vals=[]
+    for key,label,suffix in [("ROE","ROE","%"),("PE","P/E","x"),("PB","P/B","x"),("RevenueGrowth","Rev Growth","%")]:
+        v=pd.to_numeric(pd.Series([r.get(key,np.nan)]),errors="coerce").iloc[0]
+        if pd.notna(v): vals.append(f"{label} {fmt(v,1)}{suffix}")
+    return " · ".join(vals) if vals else "Fundamental: belum tersedia"
+
+def _simple_card(r, rank=1, morning=None):
+    """Minimal brokerage-style card: status, price, plan, and one next action.
+
+    Normalize pandas Series/DataFrame-like inputs before boolean checks; pandas
+    objects cannot safely be evaluated with ``if morning`` or ``morning or {}``.
+    """
+    if isinstance(morning, pd.Series):
+        morning = morning.to_dict()
+    elif isinstance(morning, pd.DataFrame):
+        morning = morning.iloc[0].to_dict() if not morning.empty else {}
+    elif not isinstance(morning, dict):
+        morning = {}
+    ticker=str(r.get('Ticker','—'))
+    price=r.get('CurrentPrice',np.nan)
+    if pd.isna(pd.to_numeric(pd.Series([price]),errors='coerce').iloc[0]):
+        price=r.get('Close',np.nan)
+    raw_status=str(r.get('LiveActionStatus',r.get('Status','WAIT')))
+    if raw_status in {'—','EOD LOCKED','NOT VALIDATED','nan','None'}:
+        raw_status=str(morning.get('MorningStatus',r.get('Status','WAIT')))
+    status_map={
+        'CONFIRM':'SIAP DICEK','CONFIRM CANDIDATE':'SIAP DICEK',
+        'WAIT LIVE DATA':'TUNGGU DATA','DATA INSUFFICIENT':'DATA BELUM CUKUP',
+        'WAIT LIVE':'TUNGGU KONFIRMASI','WAIT MARKET':'TUNGGU PASAR',
+        'CANCEL':'BATAL','AVOID':'HINDARI','EOD LOCKED':'REFERENSI EOD'
+    }
+    status=status_map.get(raw_status.upper(),raw_status.upper())
+    market=str(r.get('MarketGate',morning.get('MarketGate','—'))).upper()
+    if market in {'RISK-OFF','RISK OFF'}:
+        action='Tunggu konfirmasi pasar'
+    elif raw_status.upper() in {'CONFIRM','CONFIRM CANDIDATE'}:
+        action='Cek candle dan volume di TradingView'
+    elif raw_status.upper() in {'CANCEL','AVOID'}:
+        action='Jangan entry; evaluasi ulang setup'
+    elif 'INSUFFICIENT' in raw_status.upper() or 'LIVE DATA' in raw_status.upper():
+        action='Jangan entry sebelum data valid'
+    else:
+        action='Tunggu harga masuk area entry dan terkonfirmasi'
+    setup=str(r.get('Setup','Setup belum tersedia'))
+    entry=fmt(r.get('Entry',np.nan)); sl=fmt(r.get('SL',np.nan)); tp1=fmt(r.get('TP1',np.nan)); rr=fmt(r.get('RR',np.nan),2)
+    ma20v=pd.to_numeric(pd.Series([r.get('MA20',np.nan)]),errors='coerce').iloc[0]
+    ma50v=pd.to_numeric(pd.Series([r.get('MA50',np.nan)]),errors='coerce').iloc[0]
+    trend='Naik' if pd.notna(ma20v) and pd.notna(ma50v) and ma20v>ma50v else ('Turun' if pd.notna(ma20v) and pd.notna(ma50v) and ma20v<ma50v else 'Campuran')
+    rsi=fmt(r.get('RSI',np.nan),0)
+    fundamental=_fundamental_line(r)
+    tv=tv_link(ticker)
+    return f"""<div class='simple-stock-card minimal-card'>
+      <div class='simple-stock-head'><div><span class='simple-rank'>{rank}</span><span class='simple-ticker'>{ticker}</span></div><span class='simple-status'>{status}</span></div>
+      <div class='simple-price'>{fmt(price)}</div>
+      <div class='simple-sub'>{setup} · Tren {trend} · RSI {rsi}</div>
+      <div class='simple-grid'><div><span>ENTRY</span><b>{entry}</b></div><div><span>STOP LOSS</span><b>{sl}</b></div><div><span>TARGET 1</span><b>{tp1}</b></div><div><span>R/R</span><b>{rr}</b></div></div>
+      <div class='minimal-next'><b>Berikutnya:</b> {action}</div>
+      <details class='minimal-detail'><summary>Detail teknikal & fundamental</summary><div>MA20 {fmt(r.get('MA20',np.nan))} · MA50 {fmt(r.get('MA50',np.nan))} · MA200 {fmt(r.get('MA200',np.nan))} · MACD {fmt(r.get('MACD',np.nan),2)} · Volume {fmt(r.get('VolumeRatio',np.nan),1)}x</div><div>{fundamental}</div><div>Pasar: {market} · Data: {str(r.get('IntradayDataQuality',r.get('DataStatus','EOD reference')))}</div></details>
+      <a class='simple-tv' href='{tv}' target='_blank'>Buka Chart TradingView ↗</a>
+    </div>"""
+
 def dashboard_summary(active, meta, action, opp, focus, enrich, ihsg, ih20, ih50, regime):
     reg=str(regime).upper(); reg_cls='green' if reg.startswith('RISK-ON') else ('red' if reg.startswith('RISK-OFF') else 'yellow')
-    full=active.get('full',pd.DataFrame()) if isinstance(active,dict) else pd.DataFrame(); analyzed=len(full); ready=int((full.get('Status',pd.Series(dtype=str)).astype(str).str.upper()=='READY').sum()) if not full.empty else 0; full_pass=int((full.get('RiskGate',pd.Series(dtype=str)).astype(str).str.upper()=='PASS').sum()) if not full.empty else 0
-    st.markdown(f'''<div class="dashboard-grid"><div class="dashboard-panel"><div class="panel-kicker">IHSG</div><div class="big-number">{fmt(ihsg,2)}</div><div class="{reg_cls}" style="font-size:13px;font-weight:800">{reg}</div><div class="stat-row"><span>MA20</span><b>{fmt(ih20,2)}</b></div><div class="stat-row"><span>MA50</span><b>{fmt(ih50,2)}</b></div></div><div class="dashboard-panel"><div class="panel-kicker">Market Regime</div><div class="regime {reg_cls}">{reg}</div><div class="small-note">Stock Setup dan Market Environment ditampilkan terpisah agar alasan REVIEW lebih mudah dibaca.</div><div style="margin-top:12px"><span class="mode-pill">HYBRID ENGINE</span> <span class="mode-pill">600 IDX</span></div></div><div class="dashboard-panel"><div class="panel-kicker">Statistik Scan</div><div class="stat-list"><div class="stat-row"><span>Saham dianalisis</span><b>{analyzed}</b></div><div class="stat-row"><span>READY</span><b>{ready}</b></div><div class="stat-row"><span>Risk Gate PASS</span><b>{full_pass}</b></div><div class="stat-row"><span>Top 10</span><b>{len(opp)}</b></div><div class="stat-row"><span>Top 3</span><b>{min(3,len(action))}</b></div></div></div></div>''',unsafe_allow_html=True)
-    st.markdown('<div class="pipeline"><div class="pipe">UNIVERSE<b>600</b></div><div class="pipe">QUALITY<b>150</b></div><div class="pipe">FOCUS<b>50</b></div><div class="pipe">OPPORTUNITY<b>10</b></div><div class="pipe">RISK GATE<b>2.3</b></div><div class="pipe">ACTIONABLE<b>3</b></div></div>',unsafe_allow_html=True)
-    show_top3_cards(action,meta)
+    st.markdown('<div class="simple-note">Fokus dashboard: harga, setup, indikator teknikal, fundamental, dan trade plan. Detail data lain tetap tersedia di menu masing-masing.</div>',unsafe_allow_html=True)
+    st.markdown('<div class="simple-section-title">🏆 Top 3 Actionable</div>',unsafe_allow_html=True)
+    if action is None or action.empty:
+        st.info('Belum ada Top 3 dari EOD baseline.')
+    else:
+        cards=[]
+        try:
+            morning=morning_confirm(action.head(3),str(meta.get('period','2y')),meta.get('regime','NEUTRAL / SIDEWAYS'))
+            mb={str(r.get('Ticker')):r.to_dict() for _,r in morning.iterrows()} if not morning.empty else {}
+        except Exception: mb={}
+        for i,(_,r) in enumerate(action.head(3).iterrows(),1): cards.append(_simple_card(r.to_dict(),i,mb.get(str(r.get('Ticker')),{})))
+        st.markdown('<div class="simple-grid-cards">'+''.join(cards)+'</div>',unsafe_allow_html=True)
+    st.markdown('<div class="simple-section-title">🟩 Top 10 Opportunity</div>',unsafe_allow_html=True)
+    if opp is not None and not opp.empty:
+        cols=[c for c in ['Ticker','Close','CurrentPrice','Setup','RSI','MA20','MA50','VolumeRatio','Entry','SL','TP1','RR','Status'] if c in opp.columns]
+        show_table(opp.head(10),cols,'📋 Buka Top 10')
 
 def show_top3(action,meta,opp=None):
     show_top3_cards(action, meta)
@@ -1816,10 +1856,10 @@ def weekly_candidates(focus):
 # =========================================================
 # HEADER + SIDEBAR
 # =========================================================
-header("📈 Sanggul Stock Scanner",f"{APP_VERSION} · 600 IDX · IHSG Reliable Fallback · Global Morning Intelligence · EOD Persistent · Morning Confirmation · Opportunity vs Entry · Intraday Data Quality · TradingView")
+header("📈 Sanggul Stock Scanner",f"{APP_VERSION} · 600 IDX · Technical + Fundamental · TradingView")
 
 with st.sidebar:
-    st.markdown('<div class="control-card"><div class="control-title">SANGGUL STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.7.5 · PRO 600 IDX CURRENT LIVE HYDRATION</div><div class="small-note" style="margin-top:4px">Decision-support terminal · 600 IDX</div></div>',unsafe_allow_html=True)
+    st.markdown('<div class="control-card"><div class="control-title">SANGGUL STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.7.9 · PRO MINIMAL DECISION CARD</div><div class="small-note" style="margin-top:4px">Decision-support terminal · 600 IDX</div></div>',unsafe_allow_html=True)
     st.markdown("### 🧭 MENU UTAMA")
     mode=st.radio("Navigasi",[
         "📊 Dashboard","⚡ Trading Harian","📅 Swing Trading Mingguan","🔎 Saham Individu","🏭 Sector Opportunity","🏆 Top 3 Actionable","🟩 Top 10 Opportunity","🟨 Top 50 Focus","🟦 Top 150 Enrich","🌅 Morning Confirmation","🌆 EOD Full Scan","📜 EOD Scan History","🧠 Multi-Factor Data Hub"],index=0)
@@ -1850,7 +1890,7 @@ if market_meta.get("status")=="VALID":
     st.caption(f"IHSG reference: **EOD {market_meta.get('date','—')}** · {market_meta.get('source','—')} · synchronized with stock scan baseline")
 else:
     st.warning(f"⚠️ IHSG DATA BLOCKED — {market_meta.get('source','stale/unavailable')}. Sanggul tidak menggunakan angka IHSG lama atau intraday untuk Market Gate.")
-global_us=global_morning_brief()
+global_us=None  # Hidden from main UI; global context remains available in engine data.
 
 # Scan 600 is a current/dynamic view and does not overwrite the official EOD snapshot.
 
@@ -1994,44 +2034,30 @@ if mode in ["📊 Dashboard","🏆 Top 3 Actionable","🟩 Top 10 Opportunity","
 # DASHBOARD / OLD MENUS
 # =========================================================
 if mode=="📊 Dashboard":
-    header("Dashboard","Ringkasan market, pipeline 600 saham, EOD candidates, dan Morning Ready status — gaya terminal trading modern.")
-    # Dashboard Top 3 is anchored to the official EOD snapshot.
-    # Current Scan remains available elsewhere as an ad-hoc/dynamic view and must never
-    # replace the historical EOD baseline on the morning decision card.
+    header("Dashboard","Ringkasan sederhana: market, Top 3, teknikal dan fundamental.")
     baseline, baseline_source = morning_baseline(period, 600, min_rr, max_stop_pct)
     eod_action=baseline.get("top3",pd.DataFrame()) if baseline else pd.DataFrame()
     eod_meta=baseline.get("meta",{}) if baseline else {}
     mr=morning_data_readiness(baseline,int(eod_meta.get("universe",600) or 600)) if baseline else {"Ready":False,"Level":"NO SNAPSHOT","Reason":"Belum ada EOD baseline yang tervalidasi"}
-    # Critical safety rule: invalid/no official EOD snapshot must NEVER be rendered as Morning Top 3.
     display_action=eod_action if mr.get("Ready") else pd.DataFrame()
-    analyzed_now=int(mr.get("Analyzed",0) or 0); expected_now=int(mr.get("Expected",600) or 600)
-    brief_meta=dict(eod_meta or {}); brief_meta["latest_data_date"]=mr.get("LatestDataDate","—")
-    dashboard_morning_brief(brief_meta, analyzed_now, expected_now, regime, ihsg, ih20, ih50)
     dashboard_summary(active,m,display_action,opp,focus,enrich,ihsg,ih20,ih50,regime)
-    if baseline:
-        st.markdown(f'<div class="card"><b>🔒 EOD Baseline:</b> {baseline_source} · {eod_meta.get("timestamp",eod_meta.get("recovered_at","—"))} · data source {eod_meta.get("data_source","—")} · <b>Top 3 cards are locked to this baseline.</b><br><span class="small-note">🔄 Scan 600 / Update EOD is a separate current view and cannot overwrite the EOD baseline used for Morning Confirmation.</span></div>',unsafe_allow_html=True)
-    st.markdown(f'<div class="card"><b>🌅 Morning Ready Status:</b> <span class="mode-pill">{mr.get("Level","REVIEW")}</span> · EOD {mr.get("LatestDataDate","—")} · analyzed {mr.get("Analyzed",0)}/{mr.get("Expected",600)} · source <b>{baseline_source}</b> · <b>Entry decision remains with user.</b><br><span class="small-note">{mr.get("Reason","—")}. Sebelum open, baseline harus berasal dari Official EOD atau Auto EOD Recovery yang tervalidasi.</span></div>',unsafe_allow_html=True)
-    if not mr.get("Ready"):
-        st.error(f'🔒 **MORNING BLOCKED — {mr.get("Reason","EOD belum valid")}**. Top 3 EOD tidak ditampilkan sebagai kandidat pagi agar tidak terjadi false signal. Gunakan **🔄 Scan 600** hanya sebagai current view, bukan baseline EOD.')
-        st.stop()
-    st.markdown("#### 🟩 Top 10 Opportunity")
-    show_top10_cards(opp,m)
-    st.markdown("#### 📌 Decision Framework")
-    st.caption("Stock Setup = kualitas saham secara teknikal/risk. Market Environment = kondisi IHSG. Risk Gate menggabungkan keduanya. REVIEW bukan PASS dan bukan instruksi transaksi otomatis.")
-    st.download_button("📥 Export Full Scan CSV",active["full"].to_csv(index=False).encode("utf-8"),"sanggul_v11_1_5_fix9_full_scan.csv","text/csv")
+    if baseline: st.caption(f"EOD baseline: {baseline_source} · {eod_meta.get('timestamp',eod_meta.get('recovered_at','—'))}")
+    if not mr.get("Ready"): st.warning(f"Morning baseline belum siap: {mr.get('Reason','EOD belum valid')}")
 
 elif mode=="⚡ Trading Harian":
-    header("⚡ Trading Harian","Tactical setup untuk horizon 1–5 hari · menggunakan hasil EOD sebagai starting universe.")
+    header("⚡ Trading Harian","Peluang 1–5 hari. Hanya metrik teknikal utama dan trade plan.")
     d=daily_table(active["full"])
-    if d.empty: st.info("Belum ada kandidat trading harian yang memenuhi filter.")
+    if d.empty: st.info("Belum ada kandidat trading harian.")
     else:
-        metric_strip([("Kandidat",str(len(d))), ("Ready",str((d.Status=="READY").sum())), ("Breakout",str((d.Setup=="BREAKOUT").sum())), ("Pullback",str((d.Setup=="PULLBACK").sum()))])
-        show_table(d,["Ticker","TradingMode","Setup","Timing","Status","CurrentPrice","CurrentChangePct","CurrentQuoteTime","Close","MA20","MA50","MA200","RSI","MACD","VolumeRatio","Support","Resistance","Entry","SL","TP1","TP2","RR","OpportunityScore"])
-        st.markdown("#### 🔗 TradingView — Daily / Tactical")
+        metric_strip([("Kandidat",str(len(d))), ("READY",str((d.Status=="READY").sum())), ("Avg R/R",fmt(pd.to_numeric(d.RR,errors="coerce").mean(),2))])
+        cols=["Ticker","CurrentPrice","Setup","Status","RSI","MA20","MA50","VolumeRatio","Entry","SL","TP1","RR"]
+        show_table(d,cols,"📋 Daftar Trading Harian")
+        fcols=[c for c in ["Ticker","ROE","PE","PB","RevenueGrowth","EarningsGrowth","FundamentalScore"] if c in d.columns]
+        if len(fcols)>1: show_table(d,fcols,"📊 Fundamental")
         ticker=st.selectbox("Pilih saham",d.Ticker.tolist(),key="daily_ticker")
         row=d[d.Ticker==ticker].iloc[0]
-        st.markdown(f'<div class="card"><b>{ticker}</b> · {row.Setup} · {status_badge(row.Status)} · MA20 <b>{fmt(row.MA20)}</b> · Entry <b>{fmt(row.Entry)}</b> · SL <b>{fmt(row.SL)}</b> · TP1 <b>{fmt(row.TP1)}</b> · TP2 <b>{fmt(row.TP2)}</b> · R/R <b>{fmt(row.RR,2)}</b></div>',unsafe_allow_html=True)
-        st.link_button("📈 Buka Chart TradingView Penuh — Daily ↗", tv_link(ticker,"1D"), use_container_width=False)
+        st.markdown(f'<div class="simple-selected"><b>{ticker}</b> · {row.Setup} · {status_badge(row.Status)} · RSI <b>{fmt(row.RSI,1)}</b> · MA20 <b>{fmt(row.MA20)}</b> · MA50 <b>{fmt(row.MA50)}</b> · Entry <b>{fmt(row.Entry)}</b> · SL <b>{fmt(row.SL)}</b> · TP1 <b>{fmt(row.TP1)}</b> · R/R <b>{fmt(row.RR,2)}</b></div>',unsafe_allow_html=True)
+        st.link_button("📈 TradingView Penuh ↗", tv_link(ticker,"1D"), use_container_width=False)
 
 elif mode=="📅 Swing Trading Mingguan":
     header("📅 Swing Trading Mingguan","Horizon beberapa hari hingga beberapa minggu · daily setup + weekly trend confirmation.")
@@ -2048,36 +2074,30 @@ elif mode=="📅 Swing Trading Mingguan":
         st.link_button("📈 Buka Chart TradingView Penuh — Weekly ↗", tv_link(ticker,"1W"), use_container_width=False)
 
 elif mode=="🔎 Saham Individu":
-    header("🔎 Saham Individu","Terminal analisis per saham dengan quote teknikal + chart TradingView.")
-    universe=load_universe()
-    ticker=st.selectbox("Pilih saham IDX",universe,index=universe.index("BBCA") if "BBCA" in universe else 0)
+    header("🔎 Saham Individu","Ringkasan teknikal + fundamental. Chart lengkap dibuka di TradingView.")
+    universe=load_universe(); ticker=st.selectbox("Pilih saham IDX",universe,index=universe.index("BBCA") if "BBCA" in universe else 0)
     d=load_data(ticker,"2y","1d"); a=analyze(d)
     if a is None: st.warning("Data teknikal belum cukup untuk dianalisis."); st.stop()
     live=load_live_prices([ticker]).get(str(ticker).upper(),{})
-    for k,src in [("CurrentPrice","price"),("CurrentQuoteTime","time"),("SessionOpen","session_open"),("SessionHigh","session_high"),("SessionLow","session_low"),("IntradayVWAP","intraday_vwap"),("LiveVolumeRatio","live_volume_ratio"),("LastBarChangePct","last_bar_change_pct"),("SessionChangePct","session_change_pct")]: a[k]=live.get(src,np.nan if k!="CurrentQuoteTime" else "—")
-    a["LiveBullishBar"]=live.get("bullish_bar",False)
-    a["LiveBelowVWAP"]=bool(pd.notna(a.get("IntradayVWAP")) and pd.notna(a.get("CurrentPrice")) and a["CurrentPrice"]<a["IntradayVWAP"])
-    a["LiveBelowSessionOpen"]=bool(pd.notna(a.get("SessionOpen")) and pd.notna(a.get("CurrentPrice")) and a["CurrentPrice"]<a["SessionOpen"])
+    for k,src in [("CurrentPrice","price"),("CurrentQuoteTime","time"),("SessionOpen","session_open"),("SessionHigh","session_high"),("SessionLow","session_low"),("IntradayVWAP","intraday_vwap"),("LiveVolumeRatio","live_volume_ratio")]: a[k]=live.get(src,np.nan if k!="CurrentQuoteTime" else "—")
     live_df=apply_live_action_gate(pd.DataFrame([a]),"NEUTRAL / SIDEWAYS")
     if not live_df.empty: a=live_df.iloc[0].to_dict()
-    display_last= a.get("CurrentPrice") if pd.notna(a.get("CurrentPrice",np.nan)) else a["Close"]
-    display_status=a.get("LiveActionStatus",a["Status"])
-    metric_strip([("Ticker",ticker),("Last",fmt(display_last)),("RSI",fmt(a["RSI"],1)),("R/R",fmt(a["RR"],2)),("Setup",a["Setup"]),("Status",display_status)])
-    left,right=st.columns([1.25,1])
-    with left:
-        st.markdown("#### 🔗 TradingView Penuh")
-        st.caption("Chart embedded dihilangkan agar dashboard tetap ringkas. Tombol di bawah langsung membuka TradingView Supercharts. Gunakan layout candle dan indikator MA20, Bollinger Bands, Volume, MACD, serta RSI seperti template analisis Sanggul.")
-        c1,c2=st.columns(2)
-        with c1: st.link_button("📈 Daily — Supercharts ↗", tv_link(ticker,"1D"), use_container_width=True)
-        with c2: st.link_button("📅 Weekly — Supercharts ↗", tv_link(ticker,"1W"), use_container_width=True)
-        st.markdown('<div class="card"><b>Periode data EOD yang dipilih:</b> '+{"1mo":"1 Bulan","3mo":"3 Bulan","6mo":"6 Bulan","2y":"2 Tahun"}.get(period,period)+'<br><span class="small-note">Mesin indikator tetap mengambil minimal 2 tahun secara internal agar MA200, RSI dan MACD tetap valid; periode di atas menentukan jendela historis EOD yang dipakai sebagai acuan review.</span></div>',unsafe_allow_html=True)
-    with right:
-        st.markdown("#### Ringkasan Teknis")
-        
-        st.markdown(f'<div class="card">Trend MA20/50/200: <b>{"Bullish" if a["MA20"]>a["MA50"] else "Mixed"}</b><br>MA20: <b>{fmt(a["MA20"])}</b><br>MA50: <b>{fmt(a["MA50"])}</b><br>MA200: <b>{fmt(a["MA200"])}</b><br>Price vs MA20: <b>{fmt((a["Close"]-a["MA20"])/a["MA20"]*100,1)}%</b><br>RSI: <b>{fmt(a["RSI"],1)}</b><br>MACD: <b>{fmt(a["MACD"],2)}</b><br>EOD Volume ratio: <b>{fmt(a["VolumeRatio"],2)}x</b><br>Current: <b>{fmt(a.get("CurrentPrice",np.nan))}</b> · VWAP: <b>{fmt(a.get("IntradayVWAP",np.nan))}</b><br>Live 5m volume ratio: <b>{fmt(a.get("LiveVolumeRatio",np.nan),1)}x</b> · Pressure: <b>{a.get("LivePressure","—")}</b><br>Support: <b>{fmt(a["Support"])}</b><br>Resistance: <b>{fmt(a["Resistance"])}</b> · Room: <b>{fmt(a.get("DistanceToResistancePct",np.nan),1)}%</b><br>Candle: <b>{a["Candle"]}</b></div>',unsafe_allow_html=True)
-        st.markdown("#### Trade Plan")
-        st.markdown(f'<div class="card">Setup <b>{a["Setup"]}</b><br>Entry <b>{fmt(a["Entry"])}</b><br>Stop Loss <b>{fmt(a["SL"])}</b><br>TP1 <b>{fmt(a["TP1"])}</b><br>TP2 <b>{fmt(a["TP2"])}</b><br>R/R <b>{fmt(a["RR"],2)}</b><br>Entry Quality <b>{fmt(a.get("EntryQualityScore",np.nan),0)}/100</b><br>Status {status_badge(str(a.get("LiveActionStatus",a["Status"])))}<br><b>Next Trigger:</b> {a.get("NextTrigger","—")}<br><b>Invalidation:</b> {a.get("Invalidation","—")}</div>',unsafe_allow_html=True)
-        st.link_button("📊 Buka TradingView Supercharts — Daily ↗", tv_link(ticker,"1D"), use_container_width=True)
+    display_last=a.get("CurrentPrice") if pd.notna(a.get("CurrentPrice",np.nan)) else a["Close"]
+    metric_strip([("Price",fmt(display_last)),("RSI",fmt(a["RSI"],1)),("MA20",fmt(a["MA20"])),("MA50",fmt(a["MA50"])),("R/R",fmt(a["RR"],2))])
+    c1,c2=st.columns(2)
+    with c1:
+        st.markdown("#### 📈 Technical")
+        st.markdown(f'<div class="simple-selected"><b>Trend:</b> {"Bullish" if a["MA20"]>a["MA50"] else "Mixed"}<br>MA20: <b>{fmt(a["MA20"])}</b> · MA50: <b>{fmt(a["MA50"])}</b> · MA200: <b>{fmt(a["MA200"])}</b><br>RSI: <b>{fmt(a["RSI"],1)}</b> · MACD: <b>{fmt(a["MACD"],2)}</b> · Volume: <b>{fmt(a["VolumeRatio"],1)}x</b><br>Support: <b>{fmt(a["Support"])}</b> · Resistance: <b>{fmt(a["Resistance"])}</b></div>',unsafe_allow_html=True)
+        st.markdown("#### 🎯 Trade Plan")
+        st.markdown(f'<div class="simple-selected">Setup <b>{a["Setup"]}</b> · Entry <b>{fmt(a["Entry"])}</b> · SL <b>{fmt(a["SL"])}</b> · TP1 <b>{fmt(a["TP1"])}</b> · TP2 <b>{fmt(a["TP2"])}</b> · R/R <b>{fmt(a["RR"],2)}</b></div>',unsafe_allow_html=True)
+    with c2:
+        st.markdown("#### 📊 Fundamental")
+        fitems=[]
+        for key,label,suf in [("ROE","ROE","%"),("ProfitMargin","Net Margin","%"),("RevenueGrowth","Revenue Growth","%"),("EarningsGrowth","Earnings Growth","%"),("DebtToEquity","Debt/Equity","x"),("PE","P/E","x"),("PB","P/B","x")]:
+            if key in a and pd.notna(pd.to_numeric(pd.Series([a.get(key)]),errors="coerce").iloc[0]): fitems.append(f"<div><span>{label}</span><b>{fmt(a.get(key),1)}{suf}</b></div>")
+        if fitems: st.markdown('<div class="fund-grid">'+''.join(fitems)+'</div>',unsafe_allow_html=True)
+        else: st.info("Data fundamental belum tersedia. Import fundamentals.csv melalui Multi-Factor Data Hub untuk menampilkannya.")
+    st.link_button("📈 Buka TradingView Supercharts ↗", tv_link(ticker,"1D"), use_container_width=False)
 
 elif mode=="🏭 Sector Opportunity":
     header("🏭 Sector Opportunity","Klik nama sektor untuk melihat daftar saham di dalam sektor tersebut. Ini adalah alat pemetaan peluang, bukan sinyal BUY otomatis.")
