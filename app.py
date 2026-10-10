@@ -10,8 +10,8 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.7.9 PRO MINIMAL DECISION CARD"
-ENGINE_VERSION = "V11.7.9-PRO-MINIMAL-DECISION-CARD"
+APP_VERSION = "V11.8.0 PRO DAILY-SWING TOP 6 CARDS"
+ENGINE_VERSION = "V11.8.0-PRO-DAILY-SWING-TOP6-CARDS"
 RISK_GATE_VERSION = "2.7"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RECOVERY_DIR = os.path.join(BASE_DIR, "recovered_eod")
@@ -2045,32 +2045,38 @@ if mode=="📊 Dashboard":
     if not mr.get("Ready"): st.warning(f"Morning baseline belum siap: {mr.get('Reason','EOD belum valid')}")
 
 elif mode=="⚡ Trading Harian":
-    header("⚡ Trading Harian","Peluang 1–5 hari. Hanya metrik teknikal utama dan trade plan.")
+    header("⚡ Trading Harian","Peluang 1–5 hari · 6 kartu utama, seluruh kandidat tetap tersedia di daftar.")
     d=daily_table(active["full"])
     if d.empty: st.info("Belum ada kandidat trading harian.")
     else:
         metric_strip([("Kandidat",str(len(d))), ("READY",str((d.Status=="READY").sum())), ("Avg R/R",fmt(pd.to_numeric(d.RR,errors="coerce").mean(),2))])
+        st.markdown('<div class="simple-section-title">⚡ 6 Saham Trading Harian</div><div class="simple-note">Enam kandidat teratas untuk pemeriksaan cepat; bukan instruksi BUY. Saham lainnya tetap ada di daftar lengkap.</div>',unsafe_allow_html=True)
+        daily_cards=[_simple_card(r.to_dict(),i) for i,(_,r) in enumerate(d.head(6).iterrows(),1)]
+        st.markdown('<div class="simple-grid-cards">'+''.join(daily_cards)+'</div>',unsafe_allow_html=True)
         cols=["Ticker","CurrentPrice","Setup","Status","RSI","MA20","MA50","VolumeRatio","Entry","SL","TP1","RR"]
-        show_table(d,cols,"📋 Daftar Trading Harian")
+        show_table(d,cols,"📋 Daftar Lengkap Trading Harian")
         fcols=[c for c in ["Ticker","ROE","PE","PB","RevenueGrowth","EarningsGrowth","FundamentalScore"] if c in d.columns]
-        if len(fcols)>1: show_table(d,fcols,"📊 Fundamental")
-        ticker=st.selectbox("Pilih saham",d.Ticker.tolist(),key="daily_ticker")
-        row=d[d.Ticker==ticker].iloc[0]
-        st.markdown(f'<div class="simple-selected"><b>{ticker}</b> · {row.Setup} · {status_badge(row.Status)} · RSI <b>{fmt(row.RSI,1)}</b> · MA20 <b>{fmt(row.MA20)}</b> · MA50 <b>{fmt(row.MA50)}</b> · Entry <b>{fmt(row.Entry)}</b> · SL <b>{fmt(row.SL)}</b> · TP1 <b>{fmt(row.TP1)}</b> · R/R <b>{fmt(row.RR,2)}</b></div>',unsafe_allow_html=True)
+        if len(fcols)>1: show_table(d,fcols,"📊 Fundamental Semua Kandidat")
+        ticker=st.selectbox("Pilih saham untuk chart",d.Ticker.tolist(),key="daily_ticker")
         st.link_button("📈 TradingView Penuh ↗", tv_link(ticker,"1D"), use_container_width=False)
 
 elif mode=="📅 Swing Trading Mingguan":
-    header("📅 Swing Trading Mingguan","Horizon beberapa hari hingga beberapa minggu · daily setup + weekly trend confirmation.")
+    header("📅 Swing Trading Mingguan","Horizon beberapa hari hingga beberapa minggu · 6 kartu utama, daftar lengkap tetap tersedia.")
     st.info("Untuk menjaga kecepatan, validasi weekly dilakukan pada kandidat Top 50 EOD, bukan mengunduh ulang 600 saham.")
     w=weekly_candidates(focus)
     if w.empty: st.warning("Belum ada kandidat weekly. Pastikan EOD snapshot tersedia dan data weekly dapat diambil.")
     else:
-        metric_strip([("Weekly candidates",str(len(w))), ("Weekly READY",str((w.WeeklyStatus=="READY").sum())), ("Weekly breakout",str((w.WeeklySetup=="BREAKOUT").sum())), ("Avg R/R",fmt(w.WeeklyRR.mean(),2))])
-        show_table(w,["Ticker","WeeklySetup","WeeklyStatus","WeeklyScore","WeeklyRSI","WeeklyMA20","WeeklyMA50","WeeklyMA200","WeeklyEntry","WeeklySL","WeeklyTP1","WeeklyTP2","WeeklyRR","DailySetup","DailyRR","Close"])
+        metric_strip([("Kandidat",str(len(w))), ("READY",str((w.WeeklyStatus=="READY").sum())), ("Breakout",str((w.WeeklySetup=="BREAKOUT").sum())), ("Avg R/R",fmt(pd.to_numeric(w.WeeklyRR,errors="coerce").mean(),2))])
+        st.markdown('<div class="simple-section-title">📅 6 Saham Swing Trading Mingguan</div><div class="simple-note">Enam kandidat teratas berdasarkan hasil weekly; saham lain tetap tersedia pada daftar lengkap.</div>',unsafe_allow_html=True)
+        weekly_cards=[]
+        for i,(_,wr) in enumerate(w.head(6).iterrows(),1):
+            cr=wr.to_dict()
+            cr.update({"CurrentPrice":wr.get("Close",np.nan),"Setup":wr.get("WeeklySetup","—"),"Status":wr.get("WeeklyStatus","WAIT"),"RSI":wr.get("WeeklyRSI",np.nan),"MA20":wr.get("WeeklyMA20",np.nan),"MA50":wr.get("WeeklyMA50",np.nan),"MA200":wr.get("WeeklyMA200",np.nan),"Entry":wr.get("WeeklyEntry",np.nan),"SL":wr.get("WeeklySL",np.nan),"TP1":wr.get("WeeklyTP1",np.nan),"RR":wr.get("WeeklyRR",np.nan),"VolumeRatio":wr.get("VolumeRatio",np.nan)})
+            weekly_cards.append(_simple_card(cr,i))
+        st.markdown('<div class="simple-grid-cards">'+''.join(weekly_cards)+'</div>',unsafe_allow_html=True)
+        show_table(w,["Ticker","WeeklySetup","WeeklyStatus","WeeklyScore","WeeklyRSI","WeeklyMA20","WeeklyMA50","WeeklyMA200","WeeklyEntry","WeeklySL","WeeklyTP1","WeeklyTP2","WeeklyRR","DailySetup","DailyRR","Close"],"📋 Daftar Lengkap Swing Trading Mingguan")
         st.caption("Grafik tidak ditampilkan di dalam aplikasi. Gunakan chart TradingView penuh agar ruang dashboard tetap ringkas.")
-        ticker=st.selectbox("Pilih saham weekly",w.Ticker.tolist(),key="weekly_ticker")
-        row=w[w.Ticker==ticker].iloc[0]
-        st.markdown(f'<div class="card"><b>{ticker}</b> · Weekly {row.WeeklySetup} · {status_badge(row.WeeklyStatus)} · Entry <b>{fmt(row.WeeklyEntry)}</b> · SL <b>{fmt(row.WeeklySL)}</b> · TP1 <b>{fmt(row.WeeklyTP1)}</b> · TP2 <b>{fmt(row.WeeklyTP2)}</b> · R/R <b>{fmt(row.WeeklyRR,2)}</b></div>',unsafe_allow_html=True)
+        ticker=st.selectbox("Pilih saham untuk chart weekly",w.Ticker.tolist(),key="weekly_ticker")
         st.link_button("📈 Buka Chart TradingView Penuh — Weekly ↗", tv_link(ticker,"1W"), use_container_width=False)
 
 elif mode=="🔎 Saham Individu":
