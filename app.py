@@ -21,7 +21,7 @@ CURRENT_SCAN_DIR = os.path.join(BASE_DIR, "current_scan")
 os.makedirs(CURRENT_SCAN_DIR, exist_ok=True)
 os.makedirs(SNAP_DIR, exist_ok=True)
 
-st.set_page_config(page_title=f"Sanggul Stock Scanner {APP_VERSION}", page_icon="📈", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title=f"AEK SIBUNDONG NAULI Stock Scanner {APP_VERSION}", page_icon="📈", layout="wide", initial_sidebar_state="collapsed")
 
 # =========================================================
 # PROFESSIONAL UI — inspired by modern brokerage terminals
