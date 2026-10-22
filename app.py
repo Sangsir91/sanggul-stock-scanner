@@ -10,8 +10,8 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.8.0 PRO DAILY-SWING TOP 6 CARDS · ANAK HASIAN BRANDING"
-ENGINE_VERSION = "V11.8.0-PRO-DAILY-SWING-TOP6-CARDS"
+APP_VERSION = "V11.9.9 PRO · IHSG MARKET METRICS FIX · ANAK HASIAN"
+ENGINE_VERSION = "V11.9.2-PRO-OVERNIGHT-TRADING-DESIGN"
 RISK_GATE_VERSION = "2.7"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RECOVERY_DIR = os.path.join(BASE_DIR, "recovered_eod")
@@ -789,7 +789,7 @@ def global_morning_brief():
     for r in rows:
         name=r["Name"]; chg=float(r.get("ChangePct",0) or 0); cls="green" if chg>0 else ("red" if chg<0 else "yellow")
         cards.append(f'<div class="global-card"><div class="global-name">{name}</div><div class="global-value">{fmt(r.get("Close",np.nan),2)}</div><div class="{cls}" style="font-size:12px;font-weight:850">{"+" if chg>0 else ""}{chg:.2f}%</div></div>')
-    st.markdown(f'<div class="global-wrap"><div class="global-head"><div><div class="global-title">🌎 US Market Lead</div><div class="global-sub">Wall Street close · {snap.get("session","—")} · source: Yahoo Finance EOD</div></div><span class="mode-pill">LEAD: {snap.get("lead","—")}</span></div><div class="global-grid">{"".join(cards)}</div><div class="global-foot">US Lead adalah <b>context overlay</b>, bukan sinyal BUY/SELL. Sanggul tidak mengarang harga pre-market. Breadth saham indeks: {fmt(snap.get("breadth",np.nan),1)}% naik. VIX dibaca terpisah sebagai indikator volatilitas.</div></div>',unsafe_allow_html=True)
+    st.markdown(f'<div class="global-wrap"><div class="global-head"><div><div class="global-title">🌎 US Market Lead</div><div class="global-sub">Wall Street close · {snap.get("session","—")} · source: Yahoo Finance EOD</div></div><span class="mode-pill">LEAD: {snap.get("lead","—")}</span></div><div class="global-grid">{"".join(cards)}</div><div class="global-foot"><b>Dow Zone / Global Regime: {snap.get("lead","UNAVAILABLE")}</b> · klasifikasi sentimen sederhana berdasarkan breadth indeks yang tersedia (bukan support/resistance Dow Jones). US Lead adalah <b>context overlay</b>, bukan sinyal BUY/SELL dan tidak mengubah IHSG Market Gate. Sanggul tidak mengarang harga pre-market. Breadth saham indeks: {fmt(snap.get("breadth",np.nan),1)}% naik. VIX dibaca terpisah sebagai indikator volatilitas.</div></div>',unsafe_allow_html=True)
     return snap
 
 def snapshot_dirs(): return sorted([p for p in glob.glob(os.path.join(SNAP_DIR,"*")) if os.path.isdir(p)],reverse=True)
@@ -1260,8 +1260,9 @@ def fetch_jkse_eod(min_date=None):
             if d.empty: continue
             d=d[~d.index.duplicated(keep="last")].sort_index()
             latest=pd.Timestamp(d.index[-1]).date()
-            if target is not None and latest < target:
-                continue
+            # Keep latest completed EOD even if the IDX ticker feed is newer;
+            # strict same-day matching caused the dashboard to show BLOCKED.
+            # Freshness is exposed explicitly to the user instead.
             valid.append((d,source))
         except Exception:
             continue
@@ -1351,33 +1352,26 @@ def run_full_scan(period,n,min_rr,max_stop_pct=15.0,save_eod=True):
     return "CURRENT_SCAN"
 
 def market_metrics(period):
-    """Return IHSG metrics synchronized to the latest completed stock EOD date.
-    Never fall back to an older index close merely to fill the card.
+    """Fetch the latest completed IHSG EOD independently of stock-universe dates.
+
+    A market index may publish later than individual symbols. Display its actual
+    EOD date and freshness rather than blocking the whole dashboard on date mismatch.
     """
-    target=None
-    current=st.session_state.get("current_scan")
-    if current and not current.get("full",pd.DataFrame()).empty:
-        stock_target=_latest_stock_data_date(current["full"])
-        cutoff=_completed_eod_cutoff_date()
-        if stock_target is not None:
-            target=min(stock_target, cutoff)
-    if target is None:
-        sp=latest_snapshot()
-        if sp:
-            try:
-                sm=json.load(open(os.path.join(sp,"meta.json"),encoding="utf-8")); target=pd.Timestamp(sm.get("eod_data_date")).date() if sm.get("eod_data_date") else None
-            except Exception: pass
-    ih,source=fetch_jkse_eod(target)
-    if len(ih)>=50:
+    ih,source=fetch_jkse_eod(None)
+    if len(ih)>=200:
         c=pd.to_numeric(ih["Close"],errors="coerce").dropna()
-        latest_date=pd.Timestamp(ih.index[-1]).strftime("%Y-%m-%d")
-        if len(c)>=50:
-            a=float(c.iloc[-1]); b=float(c.rolling(20).mean().iloc[-1]); d=float(c.rolling(50).mean().iloc[-1])
+        h=pd.to_numeric(ih["High"],errors="coerce").reindex(c.index).dropna()
+        l=pd.to_numeric(ih["Low"],errors="coerce").reindex(c.index).dropna()
+        latest_date=pd.Timestamp(c.index[-1]).strftime("%Y-%m-%d")
+        if len(c)>=200 and len(h)>=20 and len(l)>=20:
+            a=float(c.iloc[-1]); b=float(c.rolling(20).mean().iloc[-1]); d=float(c.rolling(50).mean().iloc[-1]); ma200=float(c.rolling(200).mean().iloc[-1])
+            support=float(l.tail(20).min()); resistance=float(h.tail(20).max())
             regime="🟢 RISK-ON" if a>b>d else ("🟡 NEUTRAL / SIDEWAYS" if a>=d else "🔴 RISK-OFF")
-            st.session_state["market_data_meta"]={"date":latest_date,"source":source,"status":"VALID"}
+            cutoff=_completed_eod_cutoff_date(); age=max(0,(cutoff-pd.Timestamp(c.index[-1]).date()).days)
+            st.session_state["market_data_meta"]={"date":latest_date,"source":source,"status":"VALID","ma20":b,"ma50":d,"ma200":ma200,"support":support,"resistance":resistance,"age_days":age}
             return a,b,d,regime
-    st.session_state["market_data_meta"]={"date":"—","source":source,"status":"STALE / BLOCKED"}
-    return None,None,None,"🟡 DATA STALE / BLOCKED"
+    st.session_state["market_data_meta"]={"date":"—","source":source,"status":"UNAVAILABLE"}
+    return None,None,None,"🟡 DATA UNAVAILABLE"
 
 def jakarta_now():
     try:
@@ -1523,7 +1517,7 @@ def morning_confirm(top10,period,market_regime="NEUTRAL / SIDEWAYS"):
 def tv_symbol(ticker): return f"IDX:{ticker.upper().replace('.JK','')}"
 
 def tradingview_chart(ticker, interval="D", height=860, theme="light", studies=None):
-    """Large TradingView Advanced Chart with the core Sanggul indicator stack."""
+    """Large TradingView Advanced Chart with the core ANAK HASIAN indicator stack."""
     studies=studies or [
         "MASimple@tv-basicstudies",
         "BB@tv-basicstudies",
@@ -1772,13 +1766,31 @@ def _simple_card(r, rank=1, morning=None):
     rsi=fmt(r.get('RSI',np.nan),0)
     fundamental=_fundamental_line(r)
     tv=tv_link(ticker)
+    # Keep intraday freshness separate from EOD validity. Outside live trading,
+    # EOD-locked data must not be presented as INVALID merely because 5m data is absent.
+    intraday_q=str(r.get('IntradayDataQuality','UNKNOWN')).upper()
+    live_status=str(r.get('LiveActionStatus','')).upper()
+    eod_status=str(r.get('DataStatus','')).upper()
+    if intraday_q == 'EOD LOCKED' or live_status == 'EOD LOCKED':
+        data_label = 'EOD LOCKED' if not eod_status else f'EOD LOCKED · {eod_status}'
+    elif intraday_q in {'INVALID','STALE','DELAYED','LIVE','PARTIAL','INSUFFICIENT'}:
+        if eod_status in {'VALID EOD','VALID','OK'}:
+            data_label = f'Intraday {intraday_q} · EOD VALID'
+        elif eod_status:
+            data_label = f'Intraday {intraday_q} · EOD {eod_status}'
+        else:
+            data_label = f'Intraday {intraday_q}'
+    elif eod_status:
+        data_label = eod_status
+    else:
+        data_label = 'Status data belum tersedia'
     return f"""<div class='simple-stock-card minimal-card'>
       <div class='simple-stock-head'><div><span class='simple-rank'>{rank}</span><span class='simple-ticker'>{ticker}</span></div><span class='simple-status'>{status}</span></div>
       <div class='simple-price'>{fmt(price)}</div>
       <div class='simple-sub'>{setup} · Tren {trend} · RSI {rsi}</div>
       <div class='simple-grid'><div><span>ENTRY</span><b>{entry}</b></div><div><span>STOP LOSS</span><b>{sl}</b></div><div><span>TARGET 1</span><b>{tp1}</b></div><div><span>R/R</span><b>{rr}</b></div></div>
       <div class='minimal-next'><b>Berikutnya:</b> {action}</div>
-      <details class='minimal-detail'><summary>Detail teknikal & fundamental</summary><div>MA20 {fmt(r.get('MA20',np.nan))} · MA50 {fmt(r.get('MA50',np.nan))} · MA200 {fmt(r.get('MA200',np.nan))} · MACD {fmt(r.get('MACD',np.nan),2)} · Volume {fmt(r.get('VolumeRatio',np.nan),1)}x</div><div>{fundamental}</div><div>Pasar: {market} · Data: {str(r.get('IntradayDataQuality',r.get('DataStatus','EOD reference')))}</div></details>
+      <details class='minimal-detail'><summary>Detail teknikal & fundamental</summary><div>MA20 {fmt(r.get('MA20',np.nan))} · MA50 {fmt(r.get('MA50',np.nan))} · MA200 {fmt(r.get('MA200',np.nan))} · MACD {fmt(r.get('MACD',np.nan),2)} · Volume {fmt(r.get('VolumeRatio',np.nan),1)}x</div><div>{fundamental}</div><div>Pasar: {market} · Data: {data_label}</div></details>
       <a class='simple-tv' href='{tv}' target='_blank'>Buka Chart TradingView ↗</a>
     </div>"""
 
@@ -1836,6 +1848,40 @@ def daily_table(full):
     d=d[(d["Status"]!="AVOID") & ((d["Setup"].isin(["BREAKOUT","PULLBACK","REJECTION SUPPORT"])) | (d["RSI"].between(48,68)))].sort_values(["DailyScore","RR"],ascending=False).head(30)
     d["TradingMode"]="HARIAN"; return d
 
+
+def overnight_candidates(full):
+    """Shortlist potential buy-near-close / sell-next-morning candidates.
+
+    This is a rule-based shortlist using existing scanner fields, not a profit
+    prediction or a backtested guarantee. Morning gap/price confirmation is still required.
+    """
+    if full is None or full.empty:
+        return pd.DataFrame()
+    d=full.copy()
+    for col in ["RSI","MA20","MA50","VolumeRatio","RR","OpportunityScore","SetupScore","Close"]:
+        if col in d.columns:
+            d[col]=pd.to_numeric(d[col],errors="coerce")
+    required={"Status","RSI","MA20","MA50","VolumeRatio","RR","Close"}
+    if not required.issubset(d.columns):
+        return pd.DataFrame()
+    # Favor liquid, supported setups with momentum that is not extremely overbought.
+    valid=(d["Status"].astype(str).str.upper().ne("AVOID") &
+           d["RSI"].between(50,68) &
+           d["Close"].ge(d["MA20"]) &
+           d["MA20"].ge(d["MA50"]) &
+           d["VolumeRatio"].ge(0.8) &
+           d["RR"].ge(1.5))
+    d=d.loc[valid].copy()
+    if d.empty:
+        return d
+    opp_score=pd.to_numeric(d["OpportunityScore"],errors="coerce").fillna(0) if "OpportunityScore" in d.columns else pd.Series(0,index=d.index,dtype=float)
+    setup_score=pd.to_numeric(d["SetupScore"],errors="coerce").fillna(0) if "SetupScore" in d.columns else pd.Series(0,index=d.index,dtype=float)
+    d["OvernightScore"]=(opp_score*0.55 + setup_score*0.25 +
+                         d["VolumeRatio"].clip(upper=3)*5 + d["RR"].clip(upper=4)*2.5)
+    d["OvernightStatus"]=np.where(d["Status"].astype(str).str.upper().eq("READY"),"READY · KONFIRMASI PAGI","WATCH · KONFIRMASI PAGI")
+    d["OvernightNote"]="Periksa gap pembukaan, harga entry, dan kondisi IHSG sebelum transaksi"
+    return d.sort_values(["OvernightScore","RR"],ascending=False).head(30)
+
 @st.cache_data(ttl=900,show_spinner=False)
 def weekly_analysis(ticker):
     d=load_data(ticker,"5y","1wk"); return analyze(d)
@@ -1856,23 +1902,23 @@ def weekly_candidates(focus):
 # =========================================================
 # HEADER + SIDEBAR
 # =========================================================
-header("📈 Sanggul Stock Scanner",f"{APP_VERSION} · 600 IDX · Technical + Fundamental · TradingView")
+header("📈 ANAK HASIAN Stock Scanner",f"{APP_VERSION} · 600 IDX · Technical + Fundamental · TradingView")
 
 with st.sidebar:
-    st.markdown('<div class="control-card"><div class="control-title">SANGGUL STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.7.9 · PRO MINIMAL DECISION CARD</div><div class="small-note" style="margin-top:4px">Decision-support terminal · 600 IDX</div></div>',unsafe_allow_html=True)
-    st.markdown("### 🧭 MENU UTAMA")
-    mode=st.radio("Navigasi",[
-        "📊 Dashboard","⚡ Trading Harian","📅 Swing Trading Mingguan","🔎 Saham Individu","🏭 Sector Opportunity","🏆 Top 3 Actionable","🟩 Top 10 Opportunity","🟨 Top 50 Focus","🟦 Top 150 Enrich","🌅 Morning Confirmation","🌆 EOD Full Scan","📜 EOD Scan History","🧠 Multi-Factor Data Hub"],index=0)
-    st.divider(); st.markdown("### ⚙️ PENGATURAN")
-    st.markdown('<div class="control-card"><div class="control-title">SCAN CONTROL</div><div class="small-note">Widget di bawah dibuat kontras agar nilai mudah dibaca di dark mode.</div></div>',unsafe_allow_html=True)
-    period=st.selectbox("Data historis EOD",["1mo","3mo","6mo","2y"],index=3, format_func=lambda x: {"1mo":"1 Bulan","3mo":"3 Bulan","6mo":"6 Bulan","2y":"2 Tahun"}[x])
-    n=st.slider("Jumlah saham saat Scan / EOD",50,600,600,50)
-    min_rr=st.number_input("Minimum R/R",1.5,4.0,2.0,0.5)
-    max_stop_pct=st.number_input("Max Stop Distance (%)",5.0,40.0,15.0,1.0,help="Risk Gate 2.1: kandidat dengan jarak Entry–SL di atas batas ini masuk RISK REVIEW. ATR Risk juga wajib tersedia untuk PASS.")
-    st.divider(); st.caption("📌 EOD = screening utama · Pagi = konfirmasi · Harian = tactical · Mingguan = swing · External factors = optional enrichment")
-    st.caption("Periode EOD: 1B / 3B / 6B / 2T · engine indikator minimum 2T")
-    scan_now=st.button("🔄 Scan 600 Saham / Update EOD",type="primary",use_container_width=True)
-    st.caption("Current Scan = refresh harga terkini + screening dinamis. EOD Full Scan = kunci harga penutupan resmi untuk baseline pagi.")
+    st.markdown('<div class="control-card"><div class="control-title">ANAK HASIAN STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.8.0 · DAILY-SWING TOP 6</div><div class="small-note" style="margin-top:4px">Daily & Swing · Top 6 Cards</div></div>',unsafe_allow_html=True)
+    # Menu navigasi dan konfigurasi ditampilkan terbuka agar mudah diakses.
+    scan_now=st.button("🔄 SCAN SAHAM",type="primary",use_container_width=True)
+    st.caption("Memperbarui hasil screening tanpa mengubah snapshot EOD resmi.")
+    st.markdown("#### ⚙️ Pengaturan Scan")
+    period=st.selectbox("Periode data EOD",["1mo","3mo","6mo","2y"],index=3,format_func=lambda x:{"1mo":"1 Bulan","3mo":"3 Bulan","6mo":"6 Bulan","2y":"2 Tahun"}[x],key="period_select")
+    n=st.slider("Jumlah saham",50,600,600,50,key="n_slider")
+    min_rr=st.number_input("Minimum R/R",1.5,4.0,2.0,0.5,key="min_rr_input")
+    max_stop_pct=st.number_input("Batas jarak Stop Loss (%)",5.0,40.0,15.0,1.0,help="Digunakan oleh Risk Gate; tidak mengubah formula screening inti.",key="max_stop_pct_input")
+    st.divider()
+    st.markdown("#### 🧭 Menu Scanner")
+    menu_modes=["🏠 Satu Tampilan","📊 Dashboard","⚡ Trading Harian","📅 Swing Trading Mingguan","🔎 Saham Individu","🏭 Sector Opportunity","🏆 Top 3 Actionable","🟩 Top 10 Opportunity","🟨 Top 50 Focus","🟦 Top 150 Enrich","🌅 Morning Confirmation","🌆 EOD Full Scan","📜 EOD Scan History","🧠 Multi-Factor Data Hub"]
+    mode=st.radio("Pilih menu",menu_modes,index=1,key="main_view_mode",label_visibility="collapsed")
+    st.caption("EOD Full Scan resmi tersedia setelah pasar tutup. Menu ditampilkan langsung untuk akses cepat.")
 
 # Load current/EOD state before market metrics so IHSG can be date-synchronized to the scan.
 snap=read_snapshot(latest_snapshot())
@@ -1884,13 +1930,16 @@ if current_scan is not None:
 # Market strip — V11.5.2 blocks stale/mismatched IHSG instead of silently showing an older close.
 ihsg,ih20,ih50,regime=market_metrics(period)
 market_meta=st.session_state.get("market_data_meta",{})
-ihsg_label=fmt(ihsg) if ihsg is not None else "DATA BLOCKED"
-metric_strip([("IHSG",ihsg_label),("MA20",fmt(ih20) if ih20 is not None else "—"),("MA50",fmt(ih50) if ih50 is not None else "—"),("Market Gate",regime)])
+ihsg_label=fmt(ihsg) if ihsg is not None else "DATA UNAVAILABLE"
+metric_strip([("IHSG",ihsg_label),("MA20",fmt(market_meta.get("ma20",np.nan),0)),("MA50",fmt(market_meta.get("ma50",np.nan),0)),("MA200",fmt(market_meta.get("ma200",np.nan),0)),("KONDISI PASAR",regime)])
 if market_meta.get("status")=="VALID":
-    st.caption(f"IHSG reference: **EOD {market_meta.get('date','—')}** · {market_meta.get('source','—')} · synchronized with stock scan baseline")
+    st.markdown(f'<div class="simple-selected"><b>IHSG EOD {market_meta.get("date","—")}</b> · MA20 <b>{fmt(market_meta.get("ma20",np.nan),0)}</b> · MA50 <b>{fmt(market_meta.get("ma50",np.nan),0)}</b> · MA200 <b>{fmt(market_meta.get("ma200",np.nan),0)}</b> · Support 20D <b>{fmt(market_meta.get("support",np.nan),0)}</b> · Resistance 20D <b>{fmt(market_meta.get("resistance",np.nan),0)}</b> · Data age <b>{market_meta.get("age_days","—")} hari</b></div>',unsafe_allow_html=True)
+    if market_meta.get("age_days",0)>3: st.warning("Data IHSG tersedia tetapi berumur lebih dari 3 hari. Gunakan sebagai referensi, bukan konfirmasi real-time.")
 else:
-    st.warning(f"⚠️ IHSG DATA BLOCKED — {market_meta.get('source','stale/unavailable')}. Sanggul tidak menggunakan angka IHSG lama atau intraday untuk Market Gate.")
-global_us=None  # Hidden from main UI; global context remains available in engine data.
+    st.warning(f'Feed IHSG belum berhasil diambil ({market_meta.get("source","provider unavailable")}). Nilai tidak diisi dengan data perkiraan. Coba scan ulang atau periksa koneksi/provider.')
+# Global context is independent and does not override the IHSG Market Gate.
+global_morning_brief()
+global_us=None
 
 # Scan 600 is a current/dynamic view and does not overwrite the official EOD snapshot.
 
@@ -2029,6 +2078,70 @@ if mode in ["📊 Dashboard","🏆 Top 3 Actionable","🟩 Top 10 Opportunity","
     snap_engine=str(m.get("engine_version",m.get("engine_version_current","LEGACY")))
     if snap_engine != ENGINE_VERSION:
         st.warning(f"⚠️ Snapshot lama/legacy terdeteksi ({snap_engine}). Risk Gate dan layer telah dihitung ulang di memori dengan {ENGINE_VERSION}. Jalankan 🔄 Scan 600 untuk membuat hasil baru yang tersimpan.")
+
+# =========================================================
+# UNIFIED ONE-SCAN VIEW — DAILY + WEEKLY + CHART
+# =========================================================
+if mode=="🏠 Satu Tampilan":
+    header("🏠 Satu Tampilan","Sekali scan untuk melihat kandidat Trading Harian dan Swing Mingguan dalam satu layar.")
+    if active is None or not isinstance(active, dict) or active.get("full") is None or active["full"].empty:
+        st.info("Belum ada hasil scan. Tekan tombol **🔄 Scan 600 Saham / Update EOD** di sidebar untuk memulai.")
+    else:
+        daily_view=daily_table(active["full"])
+        weekly_view=weekly_candidates(focus)
+        left,right=st.columns(2, gap="large")
+        with left:
+            st.markdown('<div class="simple-section-title">⚡ TRADING HARIAN · TOP 6</div>',unsafe_allow_html=True)
+            if daily_view.empty:
+                st.info("Belum ada kandidat harian yang memenuhi filter.")
+            else:
+                st.caption(f"{len(daily_view)} kandidat tersedia · tampilkan 6 utama")
+                cards=[_simple_card(r.to_dict(),i) for i,(_,r) in enumerate(daily_view.head(6).iterrows(),1)]
+                st.markdown('<div class="simple-grid-cards">'+''.join(cards)+'</div>',unsafe_allow_html=True)
+                with st.expander(f"📋 Daftar lengkap Trading Harian ({len(daily_view)} saham)"):
+                    show_table(daily_view,[c for c in ["Ticker","CurrentPrice","Setup","Status","RSI","MA20","MA50","VolumeRatio","Entry","SL","TP1","RR"] if c in daily_view.columns],"Semua kandidat harian")
+        with right:
+            st.markdown('<div class="simple-section-title">📅 SWING MINGGUAN · TOP 6</div>',unsafe_allow_html=True)
+            if weekly_view.empty:
+                st.info("Belum ada kandidat swing. Jalankan scan dan pastikan baseline Top 50 tersedia.")
+            else:
+                st.caption(f"{len(weekly_view)} kandidat tersedia · tampilkan 6 utama")
+                weekly_cards=[]
+                for i,(_,wr) in enumerate(weekly_view.head(6).iterrows(),1):
+                    cr=wr.to_dict(); cr.update({"CurrentPrice":wr.get("Close",np.nan),"Setup":wr.get("WeeklySetup","—"),"Status":wr.get("WeeklyStatus","WAIT"),"RSI":wr.get("WeeklyRSI",np.nan),"MA20":wr.get("WeeklyMA20",np.nan),"MA50":wr.get("WeeklyMA50",np.nan),"MA200":wr.get("WeeklyMA200",np.nan),"Entry":wr.get("WeeklyEntry",np.nan),"SL":wr.get("WeeklySL",np.nan),"TP1":wr.get("WeeklyTP1",np.nan),"RR":wr.get("WeeklyRR",np.nan)})
+                    weekly_cards.append(_simple_card(cr,i))
+                st.markdown('<div class="simple-grid-cards">'+''.join(weekly_cards)+'</div>',unsafe_allow_html=True)
+                with st.expander(f"📋 Daftar lengkap Swing Mingguan ({len(weekly_view)} saham)"):
+                    show_table(weekly_view,[c for c in ["Ticker","WeeklySetup","WeeklyStatus","WeeklyScore","WeeklyRSI","WeeklyMA20","WeeklyMA50","WeeklyMA200","WeeklyEntry","WeeklySL","WeeklyTP1","WeeklyTP2","WeeklyRR","DailySetup","DailyRR","Close"] if c in weekly_view.columns],"Semua kandidat swing")
+        st.divider()
+        st.markdown('<div class="simple-section-title">🌙 OVERNIGHT TRADING · BELI SORE, JUAL PAGI</div>',unsafe_allow_html=True)
+        st.markdown('<div class="simple-note">Shortlist berbasis tren, momentum, volume, dan R/R. Ini kandidat untuk ditinjau, bukan sinyal beli otomatis. Konfirmasi ulang saat pembukaan sesi berikutnya wajib dilakukan.</div>',unsafe_allow_html=True)
+        overnight_view=overnight_candidates(active["full"])
+        if overnight_view.empty:
+            st.info("Belum ada kandidat overnight yang memenuhi filter. Jangan melonggarkan filter hanya untuk memunculkan saham.")
+        else:
+            st.caption(f"{len(overnight_view)} kandidat tersedia · tampilkan 6 utama")
+            overnight_cards=[]
+            for i,(_,orr) in enumerate(overnight_view.head(6).iterrows(),1):
+                cr=orr.to_dict()
+                cr["Status"]=orr.get("OvernightStatus","WATCH · KONFIRMASI PAGI")
+                overnight_cards.append(_simple_card(cr,i))
+            st.markdown('<div class="simple-grid-cards">'+''.join(overnight_cards)+'</div>',unsafe_allow_html=True)
+            with st.expander(f"📋 Daftar lengkap Overnight ({len(overnight_view)} saham)"):
+                show_table(overnight_view,[c for c in ["Ticker","OvernightStatus","OvernightScore","Setup","Close","RSI","MA20","MA50","VolumeRatio","Entry","SL","TP1","RR","OvernightNote"] if c in overnight_view.columns],"Kandidat Overnight Trading")
+        st.caption("Aturan overnight: hindari mengejar harga jika pembukaan gap-up jauh di atas entry; jika gap-down menembus batas risiko, evaluasi keluar sesuai rencana. Stop Loss tidak menjamin harga eksekusi saat gap.")
+        st.divider()
+        st.markdown('<div class="simple-section-title">📈 GRAFIK SAHAM</div>',unsafe_allow_html=True)
+        available=sorted(set((daily_view.Ticker.astype(str).tolist() if not daily_view.empty else [])+(weekly_view.Ticker.astype(str).tolist() if not weekly_view.empty else [])))
+        if available:
+            c1,c2,c3=st.columns([2,1,1])
+            with c1: chart_ticker=st.selectbox("Pilih saham",available,key="unified_chart_ticker")
+            with c2: chart_period=st.selectbox("Periode grafik",["1D","1W"],format_func=lambda x:"Harian" if x=="1D" else "Mingguan",key="unified_chart_period")
+            with c3: st.write(""); st.link_button("📊 Buka Grafik TradingView ↗",tv_link(chart_ticker,chart_period),use_container_width=True)
+            st.caption("Grafik lengkap dibuka di TradingView agar tampilan ANAK HASIAN tetap ringan. Gunakan MA20/50/200, RSI, MACD, Bollinger Bands dan Volume untuk konfirmasi.")
+        else:
+            st.info("Grafik tersedia setelah hasil scan memuat kandidat saham.")
+    st.caption("Catatan: Top 6 adalah kandidat prioritas, bukan instruksi BUY. Periksa status READY, Risk Gate, Entry, Stop Loss, R/R, dan kondisi pasar sebelum transaksi.")
 
 # =========================================================
 # DASHBOARD / OLD MENUS
