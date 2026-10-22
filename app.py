@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.8.0 PRO DAILY-SWING TOP 6 CARDS"
+APP_VERSION = "V11.8.0 PRO DAILY-SWING TOP 6 CARDS · ANAK HASIAN BRANDING"
 ENGINE_VERSION = "V11.8.0-PRO-DAILY-SWING-TOP6-CARDS"
 RISK_GATE_VERSION = "2.7"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -21,7 +21,7 @@ CURRENT_SCAN_DIR = os.path.join(BASE_DIR, "current_scan")
 os.makedirs(CURRENT_SCAN_DIR, exist_ok=True)
 os.makedirs(SNAP_DIR, exist_ok=True)
 
-st.set_page_config(page_title=f"AEK SIBUNDONG NAULI Stock Scanner {APP_VERSION}", page_icon="📈", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title=f"ANAK HASIAN Stock Scanner {APP_VERSION}", page_icon="📈", layout="wide", initial_sidebar_state="collapsed")
 
 # =========================================================
 # PROFESSIONAL UI — inspired by modern brokerage terminals
