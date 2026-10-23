@@ -10,8 +10,8 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.9.9 PRO · IHSG MARKET METRICS FIX · ANAK HASIAN"
-ENGINE_VERSION = "V11.9.2-PRO-OVERNIGHT-TRADING-DESIGN"
+APP_VERSION = "V11.10.0 PRO · EXCLUDE AVOID FROM CANDIDATE LAYERS · ANAK HASIAN"
+ENGINE_VERSION = "V11.10.0-PRO-ELIGIBILITY-GATE-FIX"
 RISK_GATE_VERSION = "2.7"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RECOVERY_DIR = os.path.join(BASE_DIR, "recovered_eod")
@@ -1100,69 +1100,65 @@ def apply_risk_gate(result,min_rr,max_stop_pct=15.0,market_regime="NEUTRAL / SID
     x["ActionableMode"]=np.where(x["RiskGate"]=="PASS",x["AnalysisMode"],"NOT ACTIONABLE")
     return x
 
-def build_layers(result,min_rr):
-    """Build layered opportunity/entry pools with strict ranking integrity.
+def _is_avoid_status(series):
+    """Normalize status labels so AVOID/HINDARI never leak into candidate pools."""
+    return series.astype(str).str.strip().str.upper().isin({"AVOID", "HINDARI", "CANCEL", "BATAL"})
 
-    OpportunityRank answers: how attractive is the candidate?
-    EntryRank answers: how ready is the candidate for a fresh live entry?
-    Missing/stale live data never receives a fake numeric EntryRank or score.
-    Internal sentinel values are used only for sorting and are never exposed.
-    """
+
+def build_layers(result,min_rr):
+    """Create clean ranked pools: watchlist may contain AVOID; focus/opportunity/actionable may not."""
     def sortdf(df, cols):
         use=[c for c in cols if c in df.columns]
         return df.sort_values(use,ascending=[False]*len(use)) if use else df
-    enrich=sortdf(result,['MultiFactorScore','QualityScore','SetupScore','RR']).head(150).copy(); enrich['Layer']='TOP 150 ENRICH'
-    focus=sortdf(result[result.RR>=min_rr],['MultiFactorScore','SetupScore','QualityScore','RR']).head(50).copy(); focus['Layer']='TOP 50 FOCUS'
-    opp=sortdf(result[result.RR>=min_rr],['MultiFactorScore','OpportunityScore','SetupScore','RR']).head(10).copy(); opp['Layer']='TOP 10 OPPORTUNITY'
+
+    all_rows=result.copy()
+    avoid_mask=_is_avoid_status(all_rows.get("Status",pd.Series("WAIT",index=all_rows.index)))
+    enrich=sortdf(all_rows,['MultiFactorScore','QualityScore','SetupScore','RR']).head(150).copy()
+    enrich['Layer']='TOP 150 ENRICH'
+    # Explicitly label excluded rows if the broad enrichment pool includes them.
+    enrich['Eligibility']=np.where(_is_avoid_status(enrich['Status']),"EXCLUDED · HINDARI/BATAL","WATCH POOL")
+
+    eligible=all_rows.loc[~avoid_mask].copy()
+    rr=pd.to_numeric(eligible.get('RR',pd.Series(np.nan,index=eligible.index)),errors='coerce')
+    focus_pool=eligible.loc[rr.ge(min_rr)]
+    focus=sortdf(focus_pool,['MultiFactorScore','SetupScore','QualityScore','RR']).head(50).copy()
+    focus['Layer']='TOP 50 FOCUS'; focus['Eligibility']='ELIGIBLE · NOT AVOID'
+    opp=sortdf(focus_pool,['MultiFactorScore','OpportunityScore','SetupScore','RR']).head(10).copy()
+    opp['Layer']='TOP 10 OPPORTUNITY'; opp['Eligibility']='ELIGIBLE · NOT AVOID'
     if not opp.empty:
         opp=opp.copy(); opp['OpportunityRank']=range(1,len(opp)+1)
 
-    action_pool=opp[(opp.Status.astype(str).str.upper()=='READY') & (opp.Setup.astype(str).str.upper().isin(['BREAKOUT','PULLBACK','REJECTION SUPPORT']))].copy()
-    gate_rank={'PASS':0,'RISK REVIEW':1,'FACTOR REVIEW':2,'MARKET REVIEW':3,'WAIT':9}
-    live_rank={'CONFIRM CANDIDATE':0,'READY — CONFIRM':1,'READY — WATCH':2,'WAIT — LIVE':3,'WAIT — MARKET':4,'WAIT — RESISTANCE':5,'WAIT — BELOW ENTRY':6,'WAIT — LIVE PRESSURE':7,'WAIT — CHASE':8,'DATA INSUFFICIENT':9,'WAIT — LIVE DATA':10,'CANCEL':11,'EOD LOCKED':0}
-
-    def _numeric_col(df, col, default):
-        if col in df.columns:
-            return pd.to_numeric(df[col], errors='coerce').fillna(default)
-        return pd.Series(default, index=df.index, dtype='float64')
-
+    # Top 3 is genuinely actionable: only READY setup and PASS on the risk gate.
+    setup_ok=eligible.get('Setup',pd.Series('',index=eligible.index)).astype(str).str.upper().isin(['BREAKOUT','PULLBACK','REJECTION SUPPORT'])
+    status_ready=eligible.get('Status',pd.Series('',index=eligible.index)).astype(str).str.upper().eq('READY')
+    gate_pass=eligible.get('RiskGate',pd.Series('',index=eligible.index)).astype(str).str.upper().eq('PASS')
+    action_pool=eligible.loc[setup_ok & status_ready & gate_pass & rr.ge(min_rr)].copy()
+    def numeric(df,col,default=np.nan):
+        return pd.to_numeric(df[col],errors='coerce') if col in df.columns else pd.Series(default,index=df.index,dtype=float)
     if not action_pool.empty:
-        action_pool['_gate_rank']=action_pool['RiskGate'].astype(str).str.upper().map(gate_rank).fillna(8)
-        action_pool['_live_rank']=action_pool['LiveActionStatus'].astype(str).map(live_rank).fillna(7) if 'LiveActionStatus' in action_pool.columns else 7
-        action_pool['_eq_sort']=_numeric_col(action_pool,'EntryQualityScore',-999)
-        action_pool['_opp_sort']=_numeric_col(action_pool,'OpportunityScore',-999)
-        action_pool['_risk_sort']=_numeric_col(action_pool,'RiskPct',999)
-        # EntryPriorityScore is a genuine live-entry score only when live data is usable.
         q=action_pool.get('IntradayDataQuality',pd.Series('INSUFFICIENT',index=action_pool.index)).astype(str).str.upper()
-        eq=pd.to_numeric(action_pool.get('EntryQualityScore',pd.Series(np.nan,index=action_pool.index)),errors='coerce')
+        eq=numeric(action_pool,'EntryQualityScore')
         valid_live=q.isin({'LIVE','DELAYED','PARTIAL'}) & eq.notna()
         action_pool['EntryPriorityScore']=eq.where(valid_live,np.nan)
-        # Valid live candidates are preferred; stale/invalid candidates can remain as
-        # opportunity candidates but must never receive a fake entry score/rank.
-        action_pool['_entry_valid']=valid_live.astype(int)
-        action=action_pool.sort_values(['_entry_valid','_live_rank','_gate_rank','EntryPriorityScore','_opp_sort','MultiFactorScore','TechnicalScore','_risk_sort'],ascending=[False,True,True,False,False,False,False,True],na_position='last').head(3).copy()
-        action.drop(columns=['_gate_rank','_live_rank','_eq_sort','_opp_sort','_risk_sort','_entry_valid'],errors='ignore',inplace=True)
+        action_pool['_live_valid']=valid_live.astype(int)
+        action=action_pool.sort_values(['_live_valid','EntryPriorityScore','OpportunityScore','MultiFactorScore','TechnicalScore','RiskPct'],ascending=[False,False,False,False,False,True],na_position='last').head(3).copy()
+        action.drop(columns=['_live_valid'],errors='ignore',inplace=True)
     else:
-        ready_all=result[result.Status.astype(str).str.upper()=='READY'].copy()
-        action=sortdf(ready_all,['MultiFactorScore','TechnicalScore','OpportunityScore','SetupScore']).head(3).copy()
-        action['EntryPriorityScore']=np.nan
-
+        action=eligible.iloc[0:0].copy()
+        action['EntryPriorityScore']=pd.Series(dtype=float)
     action['Layer']='TOP 3 ACTIONABLE'
     if not action.empty:
-        action=action.copy()
-        opp_rank_map={str(t):i+1 for i,t in enumerate(opp['Ticker'].astype(str))} if not opp.empty and 'Ticker' in opp.columns else {}
+        opp_rank_map={str(t):i+1 for i,t in enumerate(opp['Ticker'].astype(str))} if 'Ticker' in opp.columns else {}
         action['OpportunityRank']=action['Ticker'].astype(str).map(opp_rank_map)
-        # EntryRank is assigned only to candidates with trustworthy, usable live data.
         q=action.get('IntradayDataQuality',pd.Series('INSUFFICIENT',index=action.index)).astype(str).str.upper()
-        eq=pd.to_numeric(action.get('EntryQualityScore',pd.Series(np.nan,index=action.index)),errors='coerce')
-        entry_valid=q.isin({'LIVE','DELAYED','PARTIAL'}) & eq.notna()
+        eq=numeric(action,'EntryQualityScore')
+        valid=q.isin({'LIVE','DELAYED','PARTIAL'}) & eq.notna()
         action['EntryRank']=pd.Series(pd.NA,index=action.index,dtype='Int64')
-        valid_idx=action.index[entry_valid]
-        if len(valid_idx):
-            ordered=action.loc[valid_idx].sort_values(['EntryPriorityScore','MultiFactorScore'],ascending=[False,False],na_position='last').index
-            for rank,idx in enumerate(ordered,1):
-                action.loc[idx,'EntryRank']=rank
-        action['EntryPriorityScore']=eq.where(entry_valid,np.nan)
+        idx=action.index[valid]
+        if len(idx):
+            ordered=action.loc[idx].sort_values(['EntryPriorityScore','MultiFactorScore'],ascending=[False,False],na_position='last').index
+            for rank,i in enumerate(ordered,1): action.loc[i,'EntryRank']=rank
+        action['EntryPriorityScore']=eq.where(valid,np.nan)
         action=action.reset_index(drop=True)
     return enrich,focus,opp,action
 
@@ -1845,7 +1841,7 @@ def show_rules():
 def daily_table(full):
     if full is None or full.empty:return pd.DataFrame()
     d=full.copy(); d["DailyScore"]=d["OpportunityScore"]+d["SetupScore"]
-    d=d[(d["Status"]!="AVOID") & ((d["Setup"].isin(["BREAKOUT","PULLBACK","REJECTION SUPPORT"])) | (d["RSI"].between(48,68)))].sort_values(["DailyScore","RR"],ascending=False).head(30)
+    d=d[~_is_avoid_status(d["Status"]) & ((d["Setup"].astype(str).str.upper().isin(["BREAKOUT","PULLBACK","REJECTION SUPPORT"])) | (pd.to_numeric(d["RSI"],errors="coerce").between(48,68)))].sort_values(["DailyScore","RR"],ascending=False).head(30)
     d["TradingMode"]="HARIAN"; return d
 
 
@@ -1865,7 +1861,7 @@ def overnight_candidates(full):
     if not required.issubset(d.columns):
         return pd.DataFrame()
     # Favor liquid, supported setups with momentum that is not extremely overbought.
-    valid=(d["Status"].astype(str).str.upper().ne("AVOID") &
+    valid=(~_is_avoid_status(d["Status"]) &
            d["RSI"].between(50,68) &
            d["Close"].ge(d["MA20"]) &
            d["MA20"].ge(d["MA50"]) &
@@ -1896,7 +1892,10 @@ def weekly_candidates(focus):
             rows.append(x)
     out=pd.DataFrame(rows)
     if out.empty:return out
-    out["SwingScore"]=out["WeeklyScore"]+out["DailyRR"].clip(upper=4)*4
+    # Exclude weekly AVOID/CANCEL results as well as daily-ineligible tickers.
+    out=out.loc[~_is_avoid_status(out["WeeklyStatus"])].copy()
+    if out.empty:return out
+    out["SwingScore"]=out["WeeklyScore"]+pd.to_numeric(out["DailyRR"],errors="coerce").clip(upper=4)*4
     return out.sort_values(["SwingScore","WeeklyRR"],ascending=False).head(20)
 
 # =========================================================
