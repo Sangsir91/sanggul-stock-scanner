@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.11.1 PRO · SIMPLE 600 · ANAK HASIAN"
+APP_VERSION = "V11.11.3 PRO · ADAPTIVE OPPORTUNITY · SIMPLE 600 · ANAK HASIAN"
 ENGINE_VERSION = "V11.11.0-PRO-UNIVERSE-GOVERNANCE"
 RISK_GATE_VERSION = "2.7"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1844,16 +1844,75 @@ def show_top150(enrich):
 
 def show_rules():
     with st.expander("📋 Execution Rule",expanded=False):
-        st.markdown("- **READY** = lolos risk gate dan masuk tahap eksekusi.\n- **WAIT** = kandidat bagus tetapi belum di area entry.\n- **AVOID** = struktur trend/momentum tidak mendukung.\n- **Top 150 ≠ BUY · Top 50 ≠ BUY · Top 10 ≠ BUY.**\n- Breakout divalidasi menjelang penutupan; pullback/support divalidasi setelah pembukaan.")
+        st.markdown("- **ACTIONABLE CANDIDATE** = lolos screening awal; wajib validasi live, spread, trigger, dan order book.\n- **WATCH / WAIT** = pantauan, bukan instruksi beli.\n- **BLOCKED** = data atau risiko tidak memenuhi ketentuan.\n- **Top 150 ≠ BUY · Top 50 ≠ BUY · Top 10 ≠ BUY.**\n- Breakout divalidasi menjelang penutupan; pullback/support divalidasi setelah pembukaan.")
 
 # =========================================================
 # NEW: DAILY / WEEKLY / INDIVIDUAL STOCK
 # =========================================================
 def daily_table(full):
-    if full is None or full.empty:return pd.DataFrame()
-    d=full.copy(); d["DailyScore"]=d["OpportunityScore"]+d["SetupScore"]
-    d=d[~_is_avoid_status(d["Status"]) & ((d["Setup"].astype(str).str.upper().isin(["BREAKOUT","PULLBACK","REJECTION SUPPORT"])) | (pd.to_numeric(d["RSI"],errors="coerce").between(48,68)))].sort_values(["DailyScore","RR"],ascending=False).head(30)
-    d["TradingMode"]="HARIAN"; return d
+    """Adaptive daily opportunity discovery, deliberately separate from execution approval.
+
+    Returns ranked watch candidates (up to 30) with explicit disposition/reasons.
+    This routine does not manufacture a BUY signal; actionable is a stricter subset.
+    """
+    if full is None or full.empty:
+        return pd.DataFrame()
+    d=full.copy()
+    numeric=["Close","CurrentPrice","RSI","MA20","MA50","MA200","MACD","VolumeRatio","RR",
+             "OpportunityScore","SetupScore","QualityScore","RiskPct","RiskATRMultiple","OverextensionPct",
+             "EntryGapPct","Return20D","Return60D"]
+    for c in numeric:
+        if c in d.columns:
+            d[c]=pd.to_numeric(d[c],errors="coerce")
+    px=d["CurrentPrice"] if "CurrentPrice" in d.columns else d.get("Close",pd.Series(np.nan,index=d.index))
+    close=d.get("Close",px)
+    rsi_v=d.get("RSI",pd.Series(np.nan,index=d.index))
+    ma20=d.get("MA20",pd.Series(np.nan,index=d.index)); ma50=d.get("MA50",pd.Series(np.nan,index=d.index))
+    vol=d.get("VolumeRatio",pd.Series(np.nan,index=d.index)); rr=d.get("RR",pd.Series(np.nan,index=d.index))
+    setup=d.get("Setup",pd.Series("WAIT",index=d.index)).astype(str).str.upper()
+    bad=_is_avoid_status(d.get("Status",pd.Series("WAIT",index=d.index)))
+    data_ok=px.gt(0)&ma20.gt(0)&ma50.gt(0)&rsi_v.notna()&vol.notna()
+    trend=(close.ge(ma20)*1.0)+(ma20.ge(ma50)*1.0)
+    mom_score=(rsi_v.between(48,68)*1.0)+(rsi_v.gt(68)*0.25)+(d.get("MACD",pd.Series(np.nan,index=d.index)).notna()*0.25)
+    setup_points=setup.isin(["BREAKOUT","PULLBACK","REJECTION SUPPORT"])*1.5
+    vol_points=vol.clip(lower=0,upper=3).fillna(0)/3
+    rr_points=rr.clip(lower=0,upper=4).fillna(0)/4
+    # Opportunity discovery is broader than execution qualification.
+    d["DailyScore"]=(
+        pd.to_numeric(d.get("OpportunityScore",0),errors="coerce").fillna(0)*0.35+
+        pd.to_numeric(d.get("SetupScore",0),errors="coerce").fillna(0)*0.20+
+        trend*8+mom_score*5+setup_points*5+vol_points*8+rr_points*8
+    )
+    d["DailyDataGate"]=np.where(data_ok,"PASS","DATA REVIEW")
+    d["DailyDisposition"]="WATCH — SETUP REVIEW"
+    d.loc[~data_ok,"DailyDisposition"]="BLOCKED — DATA REVIEW"
+    d.loc[bad,"DailyDisposition"]="BLOCKED — RISK/SETUP"
+    # Identify notable weaknesses without assuming a single indicator is decisive.
+    bearish_expansion=(close.lt(ma20)&ma20.lt(ma50)&rsi_v.lt(48))
+    if "Return20D" in d:
+        bearish_expansion |= close.lt(ma20)&d["Return20D"].lt(-8)
+    d.loc[bearish_expansion & ~bad,"DailyDisposition"]="WATCH — BEARISH/REVERSAL ONLY"
+    stretched=(d.get("OverextensionPct",pd.Series(0,index=d.index)).gt(5)) | (rsi_v.gt(72))
+    d.loc[stretched & ~bad & ~bearish_expansion,"DailyDisposition"]="WAIT — EXTENDED"
+    # Actionable is intentionally conservative and requires the existing risk gate,
+    # acceptable setup, non-stretched price and at least basic trend/momentum support.
+    action=(data_ok & ~bad & setup.isin(["BREAKOUT","PULLBACK","REJECTION SUPPORT"]) &
+            close.ge(ma20*.98) & close.ge(ma50*.95) & rsi_v.between(48,70) & vol.ge(1.0) & rr.ge(2.0) &
+            ~stretched & ~bearish_expansion)
+    # If a live execution layer explicitly fails, it may only tighten the decision.
+    if "RiskGate" in d:
+        action &= d["RiskGate"].astype(str).str.upper().eq("PASS")
+    if "LiveActionStatus" in d:
+        live=d["LiveActionStatus"].astype(str).str.upper()
+        action &= ~live.str.contains("BLOCK|AVOID|REJECT|INVALID",regex=True)
+    d.loc[action,"DailyDisposition"]="ACTIONABLE CANDIDATE — VERIFY LIVE"
+    d["TradingMode"]="HARIAN"
+    # rank valid data opportunities first; retain weak names only as transparent review candidates
+    d["_data_rank"]=data_ok.astype(int)
+    d["_risk_rank"]=(~bad).astype(int)
+    d=d.sort_values(["_data_rank","_risk_rank","DailyScore","RR"],ascending=[False,False,False,False],na_position="last")
+    d=d.head(30).drop(columns=["_data_rank","_risk_rank"],errors="ignore")
+    return d
 
 
 def overnight_candidates(full):
@@ -1915,7 +1974,7 @@ def weekly_candidates(focus):
 header("📈 ANAK HASIAN Stock Scanner",f"{APP_VERSION} · Scanner universe 600 saham · Technical + Fundamental · TradingView")
 
 with st.sidebar:
-    st.markdown('<div class="control-card"><div class="control-title">ANAK HASIAN STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.11.1 · SIMPLE 600</div><div class="small-note" style="margin-top:4px">Daily & Swing · Top 6</div></div>',unsafe_allow_html=True)
+    st.markdown('<div class="control-card"><div class="control-title">ANAK HASIAN STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.11.3 · SIMPLE 600</div><div class="small-note" style="margin-top:4px">Daily & Swing · Top 6</div></div>',unsafe_allow_html=True)
     # Menu navigasi dan konfigurasi ditampilkan terbuka agar mudah diakses.
     scan_now=st.button("🔄 SCAN SAHAM",type="primary",use_container_width=True)
     st.caption("Memperbarui hasil screening tanpa mengubah snapshot EOD resmi.")
@@ -2107,10 +2166,12 @@ if mode in ["🏠 Ringkasan & Kandidat", "🏠 Satu Tampilan"]:
         with left:
             st.markdown('<div class="simple-section-title">⚡ TRADING HARIAN · TOP 6</div>',unsafe_allow_html=True)
             if daily_view.empty:
-                st.info("Belum ada kandidat harian yang memenuhi filter.")
+                st.info("Belum ada kandidat ACTIONABLE. Kandidat WATCH/REVIEW tetap dapat diperiksa pada menu Trading Harian.")
             else:
                 st.caption(f"{len(daily_view)} kandidat tersedia · tampilkan 6 utama")
-                cards=[_simple_card(r.to_dict(),i) for i,(_,r) in enumerate(daily_view.head(6).iterrows(),1)]
+                cards=[]
+                for i,(_,r) in enumerate(daily_view.head(6).iterrows(),1):
+                    cr=r.to_dict(); cr["Status"]=r.get("DailyDisposition",r.get("Status","WATCH")); cards.append(_simple_card(cr,i))
                 st.markdown('<div class="simple-grid-cards">'+''.join(cards)+'</div>',unsafe_allow_html=True)
                 with st.expander(f"📋 Daftar lengkap Trading Harian ({len(daily_view)} saham)"):
                     show_table(daily_view,[c for c in ["Ticker","CurrentPrice","Setup","Status","RSI","MA20","MA50","VolumeRatio","Entry","SL","TP1","RR"] if c in daily_view.columns],"Semua kandidat harian")
@@ -2182,16 +2243,19 @@ if mode=="📊 Dashboard":
     if not mr.get("Ready"): st.warning(f"Morning baseline belum siap: {mr.get('Reason','EOD belum valid')}")
 
 elif mode=="⚡ Trading Harian":
-    header("⚡ Trading Harian","Peluang 1–5 hari · 6 kartu utama, seluruh kandidat tetap tersedia di daftar.")
+    header("⚡ Trading Harian","Opportunity discovery dipisahkan dari kelayakan eksekusi · Top 6 Watchlist dan daftar alasan.")
     d=daily_table(active["full"])
-    if d.empty: st.info("Belum ada kandidat trading harian.")
+    if d.empty: st.info("Belum ada kandidat yang memiliki data minimum untuk dianalisis. Periksa feed dan universe.")
     else:
-        metric_strip([("Kandidat",str(len(d))), ("READY",str((d.Status=="READY").sum())), ("Avg R/R",fmt(pd.to_numeric(d.RR,errors="coerce").mean(),2))])
-        st.markdown('<div class="simple-section-title">⚡ 6 Saham Trading Harian</div><div class="simple-note">Enam kandidat teratas untuk pemeriksaan cepat; bukan instruksi BUY. Saham lainnya tetap ada di daftar lengkap.</div>',unsafe_allow_html=True)
-        daily_cards=[_simple_card(r.to_dict(),i) for i,(_,r) in enumerate(d.head(6).iterrows(),1)]
+        metric_strip([("Watchlist",str(len(d))), ("Actionable candidate",str(d.DailyDisposition.astype(str).str.startswith("ACTIONABLE").sum())), ("Blocked/review",str(d.DailyDisposition.astype(str).str.startswith("BLOCKED").sum()))])
+        st.markdown('<div class="simple-section-title">⚡ Top 6 Opportunity Watchlist</div><div class="simple-note">Ranking peluang, bukan rekomendasi beli. ACTIONABLE hanya setelah konfirmasi dan validasi eksekusi.</div>',unsafe_allow_html=True)
+        daily_cards=[]
+        for i,(_,r) in enumerate(d.head(6).iterrows(),1):
+            cr=r.to_dict(); cr["Status"]=r.get("DailyDisposition",r.get("Status","WATCH")); daily_cards.append(_simple_card(cr,i))
         st.markdown('<div class="simple-grid-cards">'+''.join(daily_cards)+'</div>',unsafe_allow_html=True)
-        cols=["Ticker","CurrentPrice","Setup","Status","RSI","MA20","MA50","VolumeRatio","Entry","SL","TP1","RR"]
-        show_table(d,cols,"📋 Daftar Lengkap Trading Harian")
+        cols=["Ticker","CurrentPrice","Setup","Status","DailyDisposition","DailyScore","DailyDataGate","RSI","MA20","MA50","VolumeRatio","Entry","SL","TP1","RR","AvoidReason"]
+        show_table(d,cols,"📋 Opportunity Watchlist & Gate Audit")
+        st.caption("Interpretasi: Watchlist = peluang untuk ditinjau. ACTIONABLE CANDIDATE tetap wajib validasi quote real-time, spread, trigger, dan order book. Ranking bukan sinyal otomatis.")
         fcols=[c for c in ["Ticker","ROE","PE","PB","RevenueGrowth","EarningsGrowth","FundamentalScore"] if c in d.columns]
         if len(fcols)>1: show_table(d,fcols,"📊 Fundamental Semua Kandidat")
         ticker=st.selectbox("Pilih saham untuk chart",d.Ticker.tolist(),key="daily_ticker")
