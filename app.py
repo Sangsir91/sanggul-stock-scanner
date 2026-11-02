@@ -10,8 +10,8 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.10.0 PRO · EXCLUDE AVOID FROM CANDIDATE LAYERS · ANAK HASIAN"
-ENGINE_VERSION = "V11.10.0-PRO-ELIGIBILITY-GATE-FIX"
+APP_VERSION = "V11.11.1 PRO · SIMPLE 600 · ANAK HASIAN"
+ENGINE_VERSION = "V11.11.0-PRO-UNIVERSE-GOVERNANCE"
 RISK_GATE_VERSION = "2.7"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RECOVERY_DIR = os.path.join(BASE_DIR, "recovered_eod")
@@ -476,7 +476,7 @@ def load_universe():
         except Exception:
             pass
 
-    # Embedded fallback: use the same 600-ticker universe shipped with this build.
+    # Embedded legacy fallback: baseline membership only; not a live validated liquidity ranking.
     fallback = ['BBCA', 'BBRI', 'DCII', 'BREN', 'BYAN', 'BMRI', 'AMMN', 'TLKM', 'MORA', 'ASII', 'DSSA', 'TPIA', 'SRAJ', 'BRPT', 'DNET', 'BBNI', 'SMMA', 'MPRO', 'EMAS', 'CUAN', 'BRMS', 'CASA', 'PANI', 'AADI', 'IMPC', 'UNTR', 'ICBP', 'CDIA', 'ANTM', 'ISAT', 'BNLI', 'MDKA', 'HMSP', 'ADRO', 'BRIS', 'BUMI', 'ADMR', 'UNVR', 'INDF', 'NCKL', 'MBMA', 'PTRO', 'PGUN', 'AMRT', 'GOTO', 'MLPT', 'CPIN', 'INCO', 'SUPR', 'INKP', 'MEGA', 'PGEO', 'EXCL', 'BNGA', 'BDMN', 'GEMS', 'BELI', 'MTEL', 'TAPG', 'VKTR', 'MEDC', 'CMRY', 'TINS', 'PTBA', 'PGAS', 'KLBF', 'ARCI', 'GGRM', 'ENRG', 'MYOR', 'TBIG', 'JARR', 'MGLV', 'NISP', 'AKRA', 'ITMG', 'EMTK', 'SILO', 'JPFA', 'LIFE', 'FAPA', 'MAPI', 'BINA', 'BTPN', 'GIAA', 'SRTG', 'MIKA', 'MDIY', 'TOWR', 'TKIM', 'SINI', 'ULTJ', 'PNBN', 'CBDK', 'MKPI', 'AVIA', 'JSMR', 'BSIM', 'MAPA', 'BBHI', 'ADES', 'NSSS', 'SOHO', 'PACK', 'SMAR', 'INTP', 'BUVA', 'SUPA', 'BBSI', 'AUTO', 'DSNG', 'BBTN', 'POWR', 'AALI', 'RAJA', 'DEWA', 'INDY', 'JRPT', 'BNBR', 'MSIN', 'BNII', 'PSAB', 'MLBI', 'BSSR', 'BFIN', 'CITA', 'FASW', 'POLU', 'PWON', 'CARE', 'STAA', 'MCOL', 'COIN', 'RLCO', 'CMNT', 'ARTO', 'STTP', 'BSDE', 'TSPC', 'RISE', 'HRUM', 'SGER', 'IBST', 'GOOD', 'ARKO', 'BKSL', 'ALII', 'SCMA', 'RATU', 'SMGR', 'AGII', 'YUPI', 'LSIP', 'ADMF', 'CTRA', 'PRAY', 'HRTA', 'ESSA', 'SIDO', 'NATO', 'SSMS', 'SMMT', 'CLEO', 'BUKA', 'WIFI', 'SMSM', 'HEAL', 'EDGE', 'ERAA', 'BIPI', 'BBKP', 'CMNP', 'BMAS', 'SIMP', 'DMAS', 'PLIN', 'DUTI', 'XSPI', 'RMKE', 'BHAT', 'MIDI', 'SGRO', 'WIKA', 'TMAS', 'SSIA', 'FILM', 'BJBR', 'INPP', 'BBMD', 'BJTM', 'TLDN', 'ABMM', 'TCPI', 'CNMA', 'BTPS', 'MDIA', 'INET', 'FORE', 'CYBR', 'EPMT', 'SHIP', 'CLAY', 'GMFI', 'SMCB', 'VICI', 'PNLF', 'SMDR', 'PKPK', 'DMND', 'MTDL', 'BULL', 'TRIM', 'ACES', 'BOGA', 'KPIG', 'YULE', 'UNIC', 'WBSA', 'TOTL', 'OMED', 'BSWD', 'TUGU', 'MAYA', 'ANJT', 'BALI', 'MBSS', 'MSJA', 'SAME', 'ELSA', 'UANG', 'BPII', 'APIC', 'SOCI', 'NICL', 'JECX', 'ELPI', 'MASB', 'TGKA', 'DRMA', 'PALM', 'GJTL', 'MPMX', 'SURE', 'HATM', 'LINK', 'KRAS', 'SMRA', 'TOBA', 'MSTI', 'MARK', 'MMIX', 'AMAR', 'NOBU', 'TFCO', 'GGRP', 'VISI', 'JTPE', 'BIRD', 'MTLA', 'PBID', 'KIJA', 'SMIL', 'ARGO', 'CASS', 'EURO', 'ALKA', 'DKFT', 'TBLA', 'LPKR', 'BWPT', 'PSGO', 'BEEF', 'MKAP', 'RDTX', 'NIRO', 'ARNA', 'BANK', 'AGRO', 'CBRE', 'LPPF', 'IATA', 'JSPT', 'IMAS', 'HEXA', 'GOLF', 'KEJU', 'CENT', 'ROTI', 'DOOH', 'WIIM', 'SAMF', 'DAAZ', 'KEEN', 'NEST', 'ABDA', 'SKRN', 'FISH', 'SDRA', 'INPC', 'BESS', 'BBYB', 'CBUT', 'CPRO', 'FPNI', 'MDLA', 'BNBA', 'PNIN', 'OMRE', 'ASGR', 'ISSP', 'AGRS', 'JAWA', 'LPCK', 'APLN', 'BGTG', 'KETR', 'ROCK', 'IRSX', 'DAYA', 'SFAN', 'BUKK', 'PNGO', 'MAPB', 'PORT', 'VICO', 'TEBE', 'PYFA', 'ASLI', 'ALDO', 'WINS', 'PRDA', 'MCOR', 'SMDM', 'BCIC', 'TOTO', 'ASRI', 'RANS', 'PBSA', 'MGRO', 'GTSI', 'CTBN', 'MAHA', 'KAEF', 'AGAR', 'HUMI', 'MINA', 'RALS', 'PTSN', 'PSKT', 'MYOH', 'BACA', 'DATA', 'BABP', 'ASSA', 'SCCO', 'MNCN', 'NICE', 'MMLP', 'MBAP', 'BISI', 'BCAP', 'DWGL', 'DNAR', 'BRAM', 'KMTR', 'BHIT', 'UCID', 'NETV', 'STAR', 'AYAM', 'IMJS', 'IFII', 'KOTA', 'IPCC', 'IFSH', 'INDR', 'PNBS', 'LPGI', 'MTMH', 'AMAG', 'FAST', 'RONY', 'DGWG', 'KINO', 'PMJS', 'BOLT', 'CARS', 'POLI', 'NICK', 'ACST', 'BMTR', 'FUTR', 'OASA', 'PSSI', 'DVLA', 'BKSW', 'BLTZ', 'BLES', 'BMHS', 'MERK', 'IOTF', 'IPAC', 'IPCM', 'IPOL', 'IPTV', 'IRRA', 'ISAP', 'ISEA', 'ITIC', 'ITMA', 'JAST', 'JATI', 'JAYA', 'JECC', 'JGLE', 'JIHD', 'JKON', 'JMAS', 'KAQI', 'KARW', 'KBAG', 'KBLI', 'KBLM', 'KBLV', 'KDSI', 'KDTN', 'KICI', 'KING', 'KIOS', 'KJEN', 'KKES', 'KKGI', 'KLAS', 'KLIN', 'KMDS', 'KOBX', 'KOCI', 'KOIN', 'KOKA', 'KONI', 'KOPI', 'KREN', 'KRYA', 'KSIX', 'KUAS', 'LABS', 'LAJU', 'LAND', 'LAPD', 'LCKM', 'LEAD', 'LFLO', 'LION', 'LIVE', 'LMAX', 'LMPI', 'LOPI', 'LPIN', 'LPLI', 'LPPS', 'LRNA', 'LTLS', 'LUCK', 'LUCY', 'MAIN', 'MANG', 'MARI', 'MAXI', 'MBTO', 'MCAS', 'MDKI', 'MDLN', 'MDRN', 'MEDS', 'MEJA', 'MENN', 'MERI', 'MFIN', 'MGNA', 'MHKI', 'MICE', 'MINE', 'MIRA', 'MITI', 'MKTR', 'MLIA', 'MLPL', 'MOLI', 'MPIX', 'MPOW', 'MPPA', 'MPXL', 'MRAT', 'MREI', 'MSIE', 'MSKY', 'MTFN', 'MTPS', 'MTWI', 'MUTU', 'NAIK', 'NANO', 'NASA', 'NASI', 'NAYZ', 'NELY', 'NFCX', 'NIKL', 'NPGF', 'NRCA', 'NTBK', 'NZIA', 'OBAT', 'OBMD', 'OILS', 'OKAS', 'OLIV', 'OPMS', 'PADA', 'PADI', 'PAMG', 'PANR', 'PANS', 'PART', 'PBRX', 'PCAR', 'PDES', 'PDPP', 'PEGE', 'PEHA', 'PEVE', 'PGJO', 'PGLI', 'PICO', 'PIPA', 'PJAA', 'PLAN', 'PMUI', 'PNSE', 'POLA', 'POLY', 'PPGL', 'PPRE', 'PPRI', 'PRIM', 'PSAT', 'PSDN', 'PTIS', 'PTMP', 'PTPP', 'PTPS', 'PTPW', 'PTSP', 'PUDP', 'PURA', 'PURI', 'PZZA', 'RAAM', 'RANC', 'RBMS', 'RCCC', 'REAL', 'RELF', 'RELI', 'RGAS', 'RICY', 'RIGS', 'RMKO', 'RODA', 'RSCH', 'RUIS', 'RUNS', 'SAFE', 'SAGE', 'SAPX', 'SATU', 'SBMA', 'SCNP', 'SDMU', 'SDPC', 'SEMA', 'SHID', 'SICO', 'SIPD', 'SKBM', 'SKLT', 'SLIS', 'SMBR', 'SMGA', 'SMKL', 'SMKM', 'SMLE', 'SNLK', 'SOFA', 'SOLA', 'SONA', 'SOSS', 'SOTS', 'SOUL', 'SPMA']
     if fallback:
         return fallback
@@ -862,7 +862,7 @@ def _ensure_layers(snap):
         # Current scans may have been persisted by an older build with only a
         # quote overlay. If the intraday payload is missing and the IDX session is
         # currently open, re-hydrate it from the same 5m provider used by a fresh
-        # Scan 600. The cached loader prevents repeated 600-ticker downloads on
+        # Scan universe terpilih (kapasitas hingga 800). Cached loader prevents repeated downloads on
         # ordinary Streamlit reruns. Never fabricate VWAP/volume when hydration
         # is unavailable.
         required_live={"IntradayVWAP","LiveVolumeRatio","SessionOpen","SessionHigh","SessionLow","LiveBullishBar","LastBarChangePct","SessionChangePct"}
@@ -984,7 +984,7 @@ def recover_eod_from_current_or_scan(period, n=600, min_rr=2.0, max_stop_pct=15.
     recovered=_ensure_layers(recovered)
     recovered["meta"]["scan_type"]="RECOVERED_EOD"
     ok,reason=_validate_recovery_bundle(recovered,n)
-    return save_recovered_eod(recovered,"FRESH 600 CURRENT SCAN validated as completed EOD") if ok else None
+    return save_recovered_eod(recovered,"FRESH CURRENT SCAN validated as completed EOD") if ok else None
 
 def morning_baseline(period, n=600, min_rr=2.0, max_stop_pct=15.0):
     """Return official EOD if valid; otherwise use a validated non-official EOD recovery."""
@@ -1286,13 +1286,19 @@ def run_full_scan(period,n,min_rr,max_stop_pct=15.0,save_eod=True):
     # Keep enough history internally for MA200/RSI/MACD, while the selected
     # period controls the EOD review window saved in the snapshot.
     engine_period="2y"
-    uni=load_universe()[:n]; rows=[]; prog=st.progress(0,text=f"Scanning 0/{len(uni)}")
+    all_tickers=load_universe()
+    uni=all_tickers[:n]
+    if n>len(all_tickers):
+        st.warning(f"Target {n} saham dipilih, tetapi universe.csv hanya berisi {len(all_tickers)} ticker unik. Scan akan memproses {len(uni)} ticker yang tersedia, bukan {n}. Tambahkan ticker IDX terverifikasi ke universe.csv untuk mencapai target.")
+    rows=[]; scan_failures=[]; prog=st.progress(0,text=f"Scanning 0/{len(uni)}")
     for i,t in enumerate(uni,1):
         d=load_data(t,engine_period,"1d")
         r=analyze(d)
         if r:
             r["Ticker"]=t; r["EODWindow"]=period; r["TradingView"]=tv_link(t); rows.append(r)
-        prog.progress(i/len(uni),text=f"Scanning {i}/{len(uni)} • berhasil {len(rows)}")
+        else:
+            scan_failures.append(t)
+        prog.progress(i/len(uni),text=f"Scanning {i}/{len(uni)} • berhasil {len(rows)} • gagal/insufficient {len(scan_failures)}")
     prog.empty(); result=pd.DataFrame(rows)
     if result.empty:return None
 
@@ -1339,7 +1345,12 @@ def run_full_scan(period,n,min_rr,max_stop_pct=15.0,save_eod=True):
     else:
         result["LiveActionStatus"]="EOD LOCKED"; result["LivePressure"]="NOT APPLICABLE"; result["PressureConfidence"]="NONE"; result["LiveActionReason"]="official EOD snapshot — use Morning Confirmation for next session"; result["EntryQualityScore"]=np.nan; result["DistanceToResistancePct"]=np.nan; result["ResistanceRoomClass"]="NOT APPLICABLE"; result["NextTrigger"]="Morning Confirmation / next-session validation"; result["Invalidation"]="see EOD SL / structure"; result["IntradayDataQuality"]="EOD LOCKED"; result["IntradayDataAgeMin"]=np.nan; result["IntradayBarCount"]=0
     enrich,focus,opp,action=build_layers(result,min_rr)
-    meta={"timestamp":jakarta_now().isoformat(timespec="seconds"),"period":period,"engine_period":engine_period,"universe":n,"analyzed":len(result),"min_rr":min_rr,"max_stop_pct":max_stop_pct,"ihsg":ihsg,"ihsg_ma20":ih20,"ihsg_ma50":ih50,"ihsg_data_date":ih_date,"ihsg_data_source":ih_source,"regime":regime,"analysis_mode":"HYBRID","engine_version":ENGINE_VERSION,"risk_gate_version":RISK_GATE_VERSION,"data_source":"Yahoo Finance EOD + Yahoo Chart API + Yahoo quote-page EOD repair","data_contract":"IHSG uses the latest completed EOD only; before 16:20 WIB today's date is forbidden as EOD; intraday/stale/mismatched index data is blocked","scan_type":"OFFICIAL_EOD" if save_eod else "CURRENT_SCAN","eod_locked":bool(save_eod),"eod_data_date":(result["DataDate"].dropna().max() if "DataDate" in result.columns and not result["DataDate"].dropna().empty else None)}
+    meta={"timestamp":jakarta_now().isoformat(timespec="seconds"),"period":period,"engine_period":engine_period,
+          "universe":len(uni),"universe_requested":int(n),"universe_available":len(all_tickers),
+          "tickers_selected":len(uni),"tickers_analyzed":len(result),"tickers_failed_or_insufficient":len(scan_failures),
+          "failed_or_insufficient_tickers":scan_failures,
+          "universe_target_met":bool(len(uni)==int(n)),
+          "universe_coverage_note":"Count refers to unique ticker symbols loaded from local universe.csv, not a verified current active/liquid 800-stock ranking.","analyzed":len(result),"min_rr":min_rr,"max_stop_pct":max_stop_pct,"ihsg":ihsg,"ihsg_ma20":ih20,"ihsg_ma50":ih50,"ihsg_data_date":ih_date,"ihsg_data_source":ih_source,"regime":regime,"analysis_mode":"HYBRID","engine_version":ENGINE_VERSION,"risk_gate_version":RISK_GATE_VERSION,"data_source":"Yahoo Finance EOD + Yahoo Chart API + Yahoo quote-page EOD repair","data_contract":"IHSG uses the latest completed EOD only; before 16:20 WIB today's date is forbidden as EOD; intraday/stale/mismatched index data is blocked","scan_type":"OFFICIAL_EOD" if save_eod else "CURRENT_SCAN","eod_locked":bool(save_eod),"eod_data_date":(result["DataDate"].dropna().max() if "DataDate" in result.columns and not result["DataDate"].dropna().empty else None)}
     if save_eod:
         return save_snapshot(result,enrich,focus,opp,action,meta)
     current_meta=dict(meta); current_meta["scan_type"]="CURRENT_SCAN"
@@ -1901,23 +1912,27 @@ def weekly_candidates(focus):
 # =========================================================
 # HEADER + SIDEBAR
 # =========================================================
-header("📈 ANAK HASIAN Stock Scanner",f"{APP_VERSION} · 600 IDX · Technical + Fundamental · TradingView")
+header("📈 ANAK HASIAN Stock Scanner",f"{APP_VERSION} · Scanner universe 600 saham · Technical + Fundamental · TradingView")
 
 with st.sidebar:
-    st.markdown('<div class="control-card"><div class="control-title">ANAK HASIAN STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.8.0 · DAILY-SWING TOP 6</div><div class="small-note" style="margin-top:4px">Daily & Swing · Top 6 Cards</div></div>',unsafe_allow_html=True)
+    st.markdown('<div class="control-card"><div class="control-title">ANAK HASIAN STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.11.1 · SIMPLE 600</div><div class="small-note" style="margin-top:4px">Daily & Swing · Top 6</div></div>',unsafe_allow_html=True)
     # Menu navigasi dan konfigurasi ditampilkan terbuka agar mudah diakses.
     scan_now=st.button("🔄 SCAN SAHAM",type="primary",use_container_width=True)
     st.caption("Memperbarui hasil screening tanpa mengubah snapshot EOD resmi.")
     st.markdown("#### ⚙️ Pengaturan Scan")
     period=st.selectbox("Periode data EOD",["1mo","3mo","6mo","2y"],index=3,format_func=lambda x:{"1mo":"1 Bulan","3mo":"3 Bulan","6mo":"6 Bulan","2y":"2 Tahun"}[x],key="period_select")
-    n=st.slider("Jumlah saham",50,600,600,50,key="n_slider")
+    available_universe=len(load_universe())
+    # This release is deliberately pinned to the existing 600-ticker baseline.
+    n=min(600, available_universe)
+    st.caption(f"Universe: {n} ticker · target kembali ke baseline 600 saham")
     min_rr=st.number_input("Minimum R/R",1.5,4.0,2.0,0.5,key="min_rr_input")
     max_stop_pct=st.number_input("Batas jarak Stop Loss (%)",5.0,40.0,15.0,1.0,help="Digunakan oleh Risk Gate; tidak mengubah formula screening inti.",key="max_stop_pct_input")
     st.divider()
-    st.markdown("#### 🧭 Menu Scanner")
-    menu_modes=["🏠 Satu Tampilan","📊 Dashboard","⚡ Trading Harian","📅 Swing Trading Mingguan","🔎 Saham Individu","🏭 Sector Opportunity","🏆 Top 3 Actionable","🟩 Top 10 Opportunity","🟨 Top 50 Focus","🟦 Top 150 Enrich","🌅 Morning Confirmation","🌆 EOD Full Scan","📜 EOD Scan History","🧠 Multi-Factor Data Hub"]
-    mode=st.radio("Pilih menu",menu_modes,index=1,key="main_view_mode",label_visibility="collapsed")
-    st.caption("EOD Full Scan resmi tersedia setelah pasar tutup. Menu ditampilkan langsung untuk akses cepat.")
+    st.markdown("#### 🧭 Menu Utama")
+    # One unified view replaces duplicate Dashboard/Top 3/10/50/150 pages.
+    menu_modes=["🏠 Ringkasan & Kandidat","⚡ Trading Harian","📅 Swing Mingguan","🔎 Saham Individu","🏭 Peluang Sektor","🌅 Morning Confirmation","🌆 EOD Full Scan","📜 Riwayat EOD","🧠 Data Multi-Factor"]
+    mode=st.radio("Pilih menu",menu_modes,index=0,key="main_view_mode",label_visibility="collapsed")
+    st.caption("Tampilan ringkas. Daftar Top 3/10/50/150 digabungkan dalam Ringkasan & Kandidat.")
 
 # Load current/EOD state before market metrics so IHSG can be date-synchronized to the scan.
 snap=read_snapshot(latest_snapshot())
@@ -1959,7 +1974,7 @@ if active is not None:
 # =========================================================
 # SPECIAL MENUS
 # =========================================================
-if mode=="🌆 EOD Full Scan":
+if mode in ["🌆 EOD Full Scan"]:
     header("🌆 EOD Full Scan","Bangun official EOD snapshot setelah market close. Snapshot lama tetap tersimpan.")
     now_jkt=jakarta_now()
     st.info("Gunakan setelah candle harian selesai. Official EOD snapshot menjadi baseline Dashboard dan Morning Confirmation; sebelum market close jangan jadikan scan ini sebagai snapshot resmi.")
@@ -1972,7 +1987,7 @@ if mode=="🌆 EOD Full Scan":
             else: st.error("Tidak ada data yang berhasil dianalisis.")
     st.stop()
 
-if mode=="🌅 Morning Confirmation":
+if mode in ["🌅 Morning Confirmation"]:
     header("🌅 Morning Ready Center","Validasi EOD sebelum market buka. Jika snapshot resmi belum ada, sistem mencoba Auto EOD Recovery tanpa mengubah EOD History.")
     if st.button("🔄 Refresh Morning Data",type="primary"):
         load_data.clear(); st.session_state.pop("morning_recovery_attempted",None); st.rerun()
@@ -2021,7 +2036,7 @@ if mode=="🌅 Morning Confirmation":
     st.caption("🟢 IN ENTRY ZONE = reference berada di area entry · 🔵 ABOVE ENTRY = belum perlu mengejar harga · 🟡 WAIT = market/setup belum mendukung · 🔴 CANCEL = struktur/risk invalid · USER DECISION = keputusan entry tetap pada Anda.")
     st.stop()
 
-if mode=="📜 EOD Scan History":
+if mode in ["📜 Riwayat EOD", "📜 EOD Scan History"]:
     header("📜 EOD Scan History","Riwayat snapshot screening untuk menjaga konsistensi keputusan dari hari ke hari.")
     dirs=snapshot_dirs(); rows=[]
     for p in dirs[:30]:
@@ -2031,13 +2046,13 @@ if mode=="📜 EOD Scan History":
     show_table(pd.DataFrame(rows),["Snapshot","Timestamp","Regime","Universe","Analyzed","Top 3"])
     st.stop()
 
-if mode=="🧠 Multi-Factor Data Hub":
+if mode in ["🧠 Data Multi-Factor", "🧠 Multi-Factor Data Hub"]:
     header("🧠 Multi-Factor Data Hub","Hybrid engine: Technical + Sector tetap berjalan; Fundamental/Foreign/Broker memperkaya jika tersedia.")
     universe=load_universe()
     st.markdown("#### 📊 Data Quality")
     q=data_quality_table(universe)
     st.dataframe(q,use_container_width=True,hide_index=True)
-    st.caption("Coverage = persentase ticker pada universe 600 yang memiliki data faktor. Data external tidak pernah dibuat/fiktif.")
+    st.caption("Coverage = persentase ticker dalam universe aktif yang memiliki data faktor. Universe yang termuat tidak otomatis berarti seluruh ticker lolos uji likuiditas. Data eksternal tidak pernah dibuat/fiktif.")
     st.markdown("**Mode:** 🟢 FULL MULTI-FACTOR · 🟡 PARTIAL ENRICHED · 🔵 CORE TECHNICAL + SECTOR")
     st.markdown("#### 📥 Import data EOD / external factors")
     st.caption("Upload CSV atau Excel. Header yang umum seperti Ticker/Kode, DER, PER, PBV, Foreign Net 1D/5D/20D akan dinormalisasi otomatis.")
@@ -2081,7 +2096,7 @@ if mode in ["📊 Dashboard","🏆 Top 3 Actionable","🟩 Top 10 Opportunity","
 # =========================================================
 # UNIFIED ONE-SCAN VIEW — DAILY + WEEKLY + CHART
 # =========================================================
-if mode=="🏠 Satu Tampilan":
+if mode in ["🏠 Ringkasan & Kandidat", "🏠 Satu Tampilan"]:
     header("🏠 Satu Tampilan","Sekali scan untuk melihat kandidat Trading Harian dan Swing Mingguan dalam satu layar.")
     if active is None or not isinstance(active, dict) or active.get("full") is None or active["full"].empty:
         st.info("Belum ada hasil scan. Tekan tombol **🔄 Scan 600 Saham / Update EOD** di sidebar untuk memulai.")
@@ -2130,6 +2145,16 @@ if mode=="🏠 Satu Tampilan":
                 show_table(overnight_view,[c for c in ["Ticker","OvernightStatus","OvernightScore","Setup","Close","RSI","MA20","MA50","VolumeRatio","Entry","SL","TP1","RR","OvernightNote"] if c in overnight_view.columns],"Kandidat Overnight Trading")
         st.caption("Aturan overnight: hindari mengejar harga jika pembukaan gap-up jauh di atas entry; jika gap-down menembus batas risiko, evaluasi keluar sesuai rencana. Stop Loss tidak menjamin harga eksekusi saat gap.")
         st.divider()
+        st.markdown('<div class="simple-section-title">🎯 LAPISAN RANKING</div>',unsafe_allow_html=True)
+        with st.expander("🏆 Top 3 Actionable"):
+            show_top3_cards(action,m)
+        with st.expander("🟩 Top 10 Opportunity"):
+            show_top10(opp,m)
+        with st.expander("🟨 Top 50 Focus"):
+            show_top50(focus)
+        with st.expander("🟦 Top 150 Watch Pool"):
+            show_top150(enrich)
+        st.divider()
         st.markdown('<div class="simple-section-title">📈 GRAFIK SAHAM</div>',unsafe_allow_html=True)
         available=sorted(set((daily_view.Ticker.astype(str).tolist() if not daily_view.empty else [])+(weekly_view.Ticker.astype(str).tolist() if not weekly_view.empty else [])))
         if available:
@@ -2172,7 +2197,7 @@ elif mode=="⚡ Trading Harian":
         ticker=st.selectbox("Pilih saham untuk chart",d.Ticker.tolist(),key="daily_ticker")
         st.link_button("📈 TradingView Penuh ↗", tv_link(ticker,"1D"), use_container_width=False)
 
-elif mode=="📅 Swing Trading Mingguan":
+elif mode in ["📅 Swing Mingguan", "📅 Swing Trading Mingguan"]:
     header("📅 Swing Trading Mingguan","Horizon beberapa hari hingga beberapa minggu · 6 kartu utama, daftar lengkap tetap tersedia.")
     st.info("Untuk menjaga kecepatan, validasi weekly dilakukan pada kandidat Top 50 EOD, bukan mengunduh ulang 600 saham.")
     w=weekly_candidates(focus)
@@ -2217,7 +2242,7 @@ elif mode=="🔎 Saham Individu":
         else: st.info("Data fundamental belum tersedia. Import fundamentals.csv melalui Multi-Factor Data Hub untuk menampilkannya.")
     st.link_button("📈 Buka TradingView Supercharts ↗", tv_link(ticker,"1D"), use_container_width=False)
 
-elif mode=="🏭 Sector Opportunity":
+elif mode in ["🏭 Peluang Sektor", "🏭 Sector Opportunity"]:
     header("🏭 Sector Opportunity","Klik nama sektor untuk melihat daftar saham di dalam sektor tersebut. Ini adalah alat pemetaan peluang, bukan sinyal BUY otomatis.")
     full=active["full"].copy()
     sec=sector_opportunity(full)
