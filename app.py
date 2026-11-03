@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.11.3 PRO · ADAPTIVE OPPORTUNITY · SIMPLE 600 · ANAK HASIAN"
+APP_VERSION = "V11.12.0 PRO · PRICE ACTION INTELLIGENCE · SIMPLE 600 · ANAK HASIAN"
 ENGINE_VERSION = "V11.11.0-PRO-UNIVERSE-GOVERNANCE"
 RISK_GATE_VERSION = "2.7"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -208,6 +208,59 @@ def candle_label(o,h,l,c,po,pc):
     if body/rng<.12: return "Doji / indecision"
     return "Bullish candle" if c>o else "Bearish candle"
 
+def analyze_price_action(d):
+    """Explainable OHLCV price-action features; uses completed candles only."""
+    if d is None or len(d) < 25:
+        return {"CandlePattern":"DATA INSUFFICIENT", "PriceActionBias":"UNCONFIRMED",
+                "Structure":"INSUFFICIENT HISTORY", "BreakoutQuality":"UNCONFIRMED",
+                "PAWarnings":"Minimal 25-bar history required"}
+    z=d.dropna(subset=["Open","High","Low","Close","Volume"]).copy()
+    if len(z)<25: return {"CandlePattern":"DATA INSUFFICIENT", "PriceActionBias":"UNCONFIRMED", "Structure":"INSUFFICIENT HISTORY", "BreakoutQuality":"UNCONFIRMED", "PAWarnings":"OHLCV incomplete"}
+    x, p, p2 = z.iloc[-1], z.iloc[-2], z.iloc[-3]
+    o,h,l,c=map(float,(x.Open,x.High,x.Low,x.Close)); po,pc=map(float,(p.Open,p.Close))
+    rng=max(h-l,1e-9); body=abs(c-o); up=h-max(c,o); down=min(c,o)-l
+    body_ratio=body/rng; close_loc=(c-l)/rng
+    v20=float(z.Volume.rolling(20).mean().iloc[-1] or 0)
+    vr=float(x.Volume/v20) if v20>0 else np.nan
+    high20=float(z.High.iloc[-21:-1].max()); low20=float(z.Low.iloc[-21:-1].min())
+    prior_h=float(z.High.iloc[-6:-1].max()); prior_l=float(z.Low.iloc[-6:-1].min())
+    # Candlestick pattern labels are descriptive, never standalone trade signals.
+    pat=[]
+    if body_ratio<.12: pat.append("DOJI")
+    if body_ratio<.30 and down>=max(body*1.8,rng*.35) and close_loc>.55: pat.append("HAMMER / LOWER-TAIL REJECTION")
+    if body_ratio<.30 and up>=max(body*1.8,rng*.35) and close_loc<.45: pat.append("SHOOTING STAR / UPPER-TAIL REJECTION")
+    if c>o and pc<po and c>=po and o<=pc: pat.append("BULLISH ENGULFING")
+    if c<o and pc>po and o>=pc and c<=po: pat.append("BEARISH ENGULFING")
+    if not pat: pat.append("BULLISH CLOSE" if c>o else ("BEARISH CLOSE" if c<o else "FLAT CLOSE"))
+    # Local structure and breakout follow-through context.
+    breakout=c>high20
+    breakdown=c<low20
+    false_break=(h>high20 and c<=high20)
+    red_expansion=(c<o and body_ratio>=.60 and close_loc<=.30)
+    green_expansion=(c>o and body_ratio>=.60 and close_loc>=.70)
+    prior_trend="HIGHER STRUCTURE" if float(z.High.iloc[-1])>float(z.High.iloc[-6]) and float(z.Low.iloc[-1])>float(z.Low.iloc[-6]) else "LOWER/CHOPPY STRUCTURE"
+    if breakdown or (c<float(z.Close.rolling(10).mean().iloc[-1]) and red_expansion): bias="BEARISH PRESSURE"
+    elif false_break: bias="FAILED BREAKOUT RISK"
+    elif breakout and vr>=1.25 and close_loc>=.70: bias="BULLISH BREAKOUT CANDIDATE"
+    elif green_expansion and vr>=1.2 and close_loc>=.7: bias="BULLISH IMPULSE CANDIDATE"
+    elif any("HAMMER" in q or "BULLISH ENGULFING" in q for q in pat) and close_loc>=.60: bias="POTENTIAL REVERSAL — NEED FOLLOW-THROUGH"
+    else: bias="NEUTRAL / WAIT CONFIRMATION"
+    if breakout:
+        bq="CONFIRMED CLOSE ABOVE PRIOR 20-BAR HIGH" if vr>=1.25 and close_loc>=.70 else "BREAKOUT WEAK: VOLUME/CLOSE POSITION NOT CONFIRMED"
+    elif false_break: bq="FAILED INTRADAY BREAKOUT: CLOSE BACK BELOW LEVEL"
+    else: bq="NO 20-BAR CLOSE BREAKOUT"
+    warnings=[]
+    if red_expansion: warnings.append("wide bearish candle")
+    if vr<.8: warnings.append("volume below 0.8x V20")
+    if close_loc<.3: warnings.append("close near session low")
+    if false_break: warnings.append("upper breakout rejected")
+    if len(z)<60: warnings.append("limited structure history")
+    return {"CandlePattern":" + ".join(pat),"PriceActionBias":bias,"Structure":prior_trend,
+            "BreakoutQuality":bq,"CloseLocationPct":round(close_loc*100,1),
+            "BodyRangePct":round(body_ratio*100,1),"PAWarnings":"; ".join(warnings) if warnings else "No listed warning",
+            "Prior20High":high20,"Prior20Low":low20,"FailedBreakout":bool(false_break),
+            "BearishExpansion":bool(red_expansion),"BullishExpansion":bool(green_expansion)}
+
 def analyze(df):
     if df is None or len(df)<220: return None
     d=df.copy().dropna(); c=d["Close"]
@@ -255,7 +308,19 @@ def analyze(df):
         avoid_reasons.append("R/R below 1.50")
     status="AVOID" if avoid_reasons else ("READY" if ready else "WAIT")
     avoid_reason="; ".join(avoid_reasons) if avoid_reasons else "—"
-    return {"Close":close,"MA20":ma20,"MA50":ma50,"MA200":ma200,"Return20D":ret20*100,"Return60D":ret60*100,"RSI":float(x.RSI),"MACD":float(x.MACD),"VolumeRatio":vr,"ATR14":atr14,"Support":support,"Resistance":resistance,"Entry":entry,"SL":sl,"TP1":tp1,"TP2":tp2,"RR":rr,"RiskPct":risk_pct,"StopDistancePct":risk_pct,"RiskATRMultiple":risk_atr,"OverextensionPct":overext,"EntryGapPct":entry_gap,"QualityScore":quality,"SetupScore":setup,"OpportunityScore":opportunity,"Status":status,"AvoidReason":avoid_reason,"Setup":setup_type,"Timing":timing,"Candle":candle,"DataDate":pd.Timestamp(d.index[-1]).strftime("%Y-%m-%d"),"DataPoints":int(len(d)),"DataSource":"Yahoo Finance EOD"}
+    pa=analyze_price_action(d)
+    # Price-action quality adjusts opportunity and blocks bullish-ready labels
+    # when the completed candle shows strong selling or a failed breakout.
+    pa_bias=pa.get("PriceActionBias", "UNCONFIRMED")
+    if pa_bias in {"BEARISH PRESSURE", "FAILED BREAKOUT RISK"}:
+        opportunity=max(0,opportunity-12)
+        ready=False
+        if status=="READY": status="WAIT"
+    elif pa_bias=="BULLISH BREAKOUT CANDIDATE":
+        opportunity+=5
+    elif pa_bias=="BULLISH IMPULSE CANDIDATE":
+        opportunity+=3
+    return {"Close":close,"MA20":ma20,"MA50":ma50,"MA200":ma200,"Return20D":ret20*100,"Return60D":ret60*100,"RSI":float(x.RSI),"MACD":float(x.MACD),"VolumeRatio":vr,"ATR14":atr14,"Support":support,"Resistance":resistance,"Entry":entry,"SL":sl,"TP1":tp1,"TP2":tp2,"RR":rr,"RiskPct":risk_pct,"StopDistancePct":risk_pct,"RiskATRMultiple":risk_atr,"OverextensionPct":overext,"EntryGapPct":entry_gap,"QualityScore":quality,"SetupScore":setup,"OpportunityScore":opportunity,"Status":status,"AvoidReason":avoid_reason,"Setup":setup_type,"Timing":timing,"Candle":candle,"DataDate":pd.Timestamp(d.index[-1]).strftime("%Y-%m-%d"),"DataPoints":int(len(d)),"DataSource":"Yahoo Finance EOD",**pa}
 
 # =========================================================
 # MULTI-FACTOR ENGINE — Technical + Fundamental + Flow + Sector
@@ -1744,7 +1809,13 @@ def _simple_card(r, rank=1, morning=None):
     price=r.get('CurrentPrice',np.nan)
     if pd.isna(pd.to_numeric(pd.Series([price]),errors='coerce').iloc[0]):
         price=r.get('Close',np.nan)
-    raw_status=str(r.get('LiveActionStatus',r.get('Status','WAIT')))
+    # Opportunity disposition and live execution status are separate dimensions.
+    # On Daily Opportunity cards, display the screening disposition first; keep
+    # intraday readiness in its own data label and never let missing live quotes
+    # overwrite a valid EOD/watchlist classification.
+    daily_disposition=str(r.get('DailyDisposition','')).strip()
+    has_daily_disposition=bool(daily_disposition and daily_disposition.lower() not in {'nan','none','—'})
+    raw_status=(daily_disposition if has_daily_disposition else str(r.get('LiveActionStatus',r.get('Status','WAIT'))))
     if raw_status in {'—','EOD LOCKED','NOT VALIDATED','nan','None'}:
         raw_status=str(morning.get('MorningStatus',r.get('Status','WAIT')))
     status_map={
@@ -1753,18 +1824,37 @@ def _simple_card(r, rank=1, morning=None):
         'WAIT LIVE':'TUNGGU KONFIRMASI','WAIT MARKET':'TUNGGU PASAR',
         'CANCEL':'BATAL','AVOID':'HINDARI','EOD LOCKED':'REFERENSI EOD'
     }
-    status=status_map.get(raw_status.upper(),raw_status.upper())
-    market=str(r.get('MarketGate',morning.get('MarketGate','—'))).upper()
-    if market in {'RISK-OFF','RISK OFF'}:
-        action='Tunggu konfirmasi pasar'
-    elif raw_status.upper() in {'CONFIRM','CONFIRM CANDIDATE'}:
-        action='Cek candle dan volume di TradingView'
-    elif raw_status.upper() in {'CANCEL','AVOID'}:
-        action='Jangan entry; evaluasi ulang setup'
-    elif 'INSUFFICIENT' in raw_status.upper() or 'LIVE DATA' in raw_status.upper():
-        action='Jangan entry sebelum data valid'
+    if has_daily_disposition:
+        disp=raw_status.upper()
+        if disp.startswith('ACTIONABLE'):
+            status='KANDIDAT · CEK LIVE'
+            action='Validasi quote, spread, trigger dan order book; belum otomatis buy'
+        elif disp.startswith('BLOCKED'):
+            status='BLOCKED · REVIEW'
+            action='Jangan entry; periksa alasan blokir dan kelengkapan data'
+        elif 'BEARISH' in disp or 'REVERSAL' in disp:
+            status='WATCH · REVERSAL'
+            action='Jangan kejar; tunggu perubahan struktur dan trigger reversal'
+        elif 'EXTENDED' in disp:
+            status='WAIT · EXTENDED'
+            action='Tunggu pullback atau setup baru; hindari mengejar harga'
+        else:
+            status='WATCH · SETUP REVIEW'
+            action='Periksa chart, kualitas setup dan trigger sebelum entry'
     else:
-        action='Tunggu harga masuk area entry dan terkonfirmasi'
+        status=status_map.get(raw_status.upper(),raw_status.upper())
+        market=str(r.get('MarketGate',morning.get('MarketGate','—'))).upper()
+        if market in {'RISK-OFF','RISK OFF'}:
+            action='Tunggu konfirmasi pasar'
+        elif raw_status.upper() in {'CONFIRM','CONFIRM CANDIDATE'}:
+            action='Cek candle dan volume di TradingView'
+        elif raw_status.upper() in {'CANCEL','AVOID'}:
+            action='Jangan entry; evaluasi ulang setup'
+        elif 'INSUFFICIENT' in raw_status.upper() or 'LIVE DATA' in raw_status.upper():
+            action='Jangan entry sebelum data valid'
+        else:
+            action='Tunggu harga masuk area entry dan terkonfirmasi'
+    market=str(r.get('MarketGate',morning.get('MarketGate','—'))).upper()
     setup=str(r.get('Setup','Setup belum tersedia'))
     entry=fmt(r.get('Entry',np.nan)); sl=fmt(r.get('SL',np.nan)); tp1=fmt(r.get('TP1',np.nan)); rr=fmt(r.get('RR',np.nan),2)
     ma20v=pd.to_numeric(pd.Series([r.get('MA20',np.nan)]),errors='coerce').iloc[0]
@@ -1795,6 +1885,7 @@ def _simple_card(r, rank=1, morning=None):
       <div class='simple-stock-head'><div><span class='simple-rank'>{rank}</span><span class='simple-ticker'>{ticker}</span></div><span class='simple-status'>{status}</span></div>
       <div class='simple-price'>{fmt(price)}</div>
       <div class='simple-sub'>{setup} · Tren {trend} · RSI {rsi}</div>
+      <div class='simple-sub'>Setup: {('Opportunity Watchlist' if has_daily_disposition else 'Status reguler')} · Intraday: {intraday_q}</div>
       <div class='simple-grid'><div><span>ENTRY</span><b>{entry}</b></div><div><span>STOP LOSS</span><b>{sl}</b></div><div><span>TARGET 1</span><b>{tp1}</b></div><div><span>R/R</span><b>{rr}</b></div></div>
       <div class='minimal-next'><b>Berikutnya:</b> {action}</div>
       <details class='minimal-detail'><summary>Detail teknikal & fundamental</summary><div>MA20 {fmt(r.get('MA20',np.nan))} · MA50 {fmt(r.get('MA50',np.nan))} · MA200 {fmt(r.get('MA200',np.nan))} · MACD {fmt(r.get('MACD',np.nan),2)} · Volume {fmt(r.get('VolumeRatio',np.nan),1)}x</div><div>{fundamental}</div><div>Pasar: {market} · Data: {data_label}</div></details>
@@ -1889,8 +1980,11 @@ def daily_table(full):
     d.loc[bad,"DailyDisposition"]="BLOCKED — RISK/SETUP"
     # Identify notable weaknesses without assuming a single indicator is decisive.
     bearish_expansion=(close.lt(ma20)&ma20.lt(ma50)&rsi_v.lt(48))
+    pa_bias=d.get("PriceActionBias",pd.Series("UNAVAILABLE",index=d.index)).astype(str).str.upper()
+    pa_bear=pa_bias.str.contains("BEARISH PRESSURE|FAILED BREAKOUT RISK",regex=True)
     if "Return20D" in d:
         bearish_expansion |= close.lt(ma20)&d["Return20D"].lt(-8)
+    bearish_expansion |= pa_bear
     d.loc[bearish_expansion & ~bad,"DailyDisposition"]="WATCH — BEARISH/REVERSAL ONLY"
     stretched=(d.get("OverextensionPct",pd.Series(0,index=d.index)).gt(5)) | (rsi_v.gt(72))
     d.loc[stretched & ~bad & ~bearish_expansion,"DailyDisposition"]="WAIT — EXTENDED"
@@ -1898,7 +1992,7 @@ def daily_table(full):
     # acceptable setup, non-stretched price and at least basic trend/momentum support.
     action=(data_ok & ~bad & setup.isin(["BREAKOUT","PULLBACK","REJECTION SUPPORT"]) &
             close.ge(ma20*.98) & close.ge(ma50*.95) & rsi_v.between(48,70) & vol.ge(1.0) & rr.ge(2.0) &
-            ~stretched & ~bearish_expansion)
+            ~stretched & ~bearish_expansion & ~pa_bear)
     # If a live execution layer explicitly fails, it may only tighten the decision.
     if "RiskGate" in d:
         action &= d["RiskGate"].astype(str).str.upper().eq("PASS")
@@ -1958,7 +2052,7 @@ def weekly_candidates(focus):
     for _,r in focus.head(30).iterrows():
         w=weekly_analysis(r.Ticker)
         if w:
-            x={"Ticker":r.Ticker,"WeeklySetup":w["Setup"],"WeeklyStatus":w["Status"],"WeeklyScore":w["OpportunityScore"],"WeeklyRSI":w["RSI"],"WeeklyMA20":w["MA20"],"WeeklyMA50":w["MA50"],"WeeklyMA200":w["MA200"],"WeeklyEntry":w["Entry"],"WeeklySL":w["SL"],"WeeklyTP1":w["TP1"],"WeeklyTP2":w["TP2"],"WeeklyRR":w["RR"],"DailySetup":r.Setup,"DailyRR":r.RR,"Close":r.Close}
+            x={"Ticker":r.Ticker,"WeeklySetup":w["Setup"],"WeeklyStatus":w["Status"],"WeeklyScore":w["OpportunityScore"],"WeeklyRSI":w["RSI"],"WeeklyMA20":w["MA20"],"WeeklyMA50":w["MA50"],"WeeklyMA200":w["MA200"],"WeeklyEntry":w["Entry"],"WeeklySL":w["SL"],"WeeklyTP1":w["TP1"],"WeeklyTP2":w["TP2"],"WeeklyRR":w["RR"],"WeeklyCandlePattern":w.get("CandlePattern","—"),"WeeklyPriceActionBias":w.get("PriceActionBias","—"),"WeeklyBreakoutQuality":w.get("BreakoutQuality","—"),"DailySetup":r.Setup,"DailyRR":r.RR,"Close":r.Close}
             rows.append(x)
     out=pd.DataFrame(rows)
     if out.empty:return out
@@ -1974,7 +2068,7 @@ def weekly_candidates(focus):
 header("📈 ANAK HASIAN Stock Scanner",f"{APP_VERSION} · Scanner universe 600 saham · Technical + Fundamental · TradingView")
 
 with st.sidebar:
-    st.markdown('<div class="control-card"><div class="control-title">ANAK HASIAN STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.11.3 · SIMPLE 600</div><div class="small-note" style="margin-top:4px">Daily & Swing · Top 6</div></div>',unsafe_allow_html=True)
+    st.markdown('<div class="control-card"><div class="control-title">ANAK HASIAN STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.12.0 · SIMPLE 600</div><div class="small-note" style="margin-top:4px">Daily & Swing · Top 6</div></div>',unsafe_allow_html=True)
     # Menu navigasi dan konfigurasi ditampilkan terbuka agar mudah diakses.
     scan_now=st.button("🔄 SCAN SAHAM",type="primary",use_container_width=True)
     st.caption("Memperbarui hasil screening tanpa mengubah snapshot EOD resmi.")
@@ -2248,12 +2342,12 @@ elif mode=="⚡ Trading Harian":
     if d.empty: st.info("Belum ada kandidat yang memiliki data minimum untuk dianalisis. Periksa feed dan universe.")
     else:
         metric_strip([("Watchlist",str(len(d))), ("Actionable candidate",str(d.DailyDisposition.astype(str).str.startswith("ACTIONABLE").sum())), ("Blocked/review",str(d.DailyDisposition.astype(str).str.startswith("BLOCKED").sum()))])
-        st.markdown('<div class="simple-section-title">⚡ Top 6 Opportunity Watchlist</div><div class="simple-note">Ranking peluang, bukan rekomendasi beli. ACTIONABLE hanya setelah konfirmasi dan validasi eksekusi.</div>',unsafe_allow_html=True)
+        st.markdown('<div class="simple-section-title">⚡ Top 6 Opportunity Watchlist</div><div class="simple-note">Ranking peluang, bukan rekomendasi beli. Label setup EOD dipisahkan dari kesiapan intraday; data live unavailable tidak menghapus status watchlist, dan tidak ada entry tanpa konfirmasi serta validasi eksekusi.</div>',unsafe_allow_html=True)
         daily_cards=[]
         for i,(_,r) in enumerate(d.head(6).iterrows(),1):
             cr=r.to_dict(); cr["Status"]=r.get("DailyDisposition",r.get("Status","WATCH")); daily_cards.append(_simple_card(cr,i))
         st.markdown('<div class="simple-grid-cards">'+''.join(daily_cards)+'</div>',unsafe_allow_html=True)
-        cols=["Ticker","CurrentPrice","Setup","Status","DailyDisposition","DailyScore","DailyDataGate","RSI","MA20","MA50","VolumeRatio","Entry","SL","TP1","RR","AvoidReason"]
+        cols=["Ticker","CurrentPrice","Setup","Status","DailyDisposition","DailyScore","DailyDataGate","IntradayDataQuality","IntradayDataAgeMin","LiveActionStatus","LiveActionReason","RSI","MA20","MA50","VolumeRatio","Entry","SL","TP1","RR","CandlePattern","PriceActionBias","Structure","BreakoutQuality","PAWarnings","AvoidReason"]
         show_table(d,cols,"📋 Opportunity Watchlist & Gate Audit")
         st.caption("Interpretasi: Watchlist = peluang untuk ditinjau. ACTIONABLE CANDIDATE tetap wajib validasi quote real-time, spread, trigger, dan order book. Ranking bukan sinyal otomatis.")
         fcols=[c for c in ["Ticker","ROE","PE","PB","RevenueGrowth","EarningsGrowth","FundamentalScore"] if c in d.columns]
