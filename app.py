@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.20.0 PRO · DUAL WATCHLIST · SIMPLE 600 · ANAK HASIAN"
+APP_VERSION = "V11.23.0 PRO · DUAL WATCHLIST · ANOMALY CLASSIFICATION FIX · SIMPLE 600 · ANAK HASIAN"
 ENGINE_VERSION = "V11.11.0-PRO-UNIVERSE-GOVERNANCE"
 RISK_GATE_VERSION = "2.7"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -251,7 +251,14 @@ def analyze_price_action(d):
     breakout=c>high20
     breakdown=c<low20
     false_break=(h>high20 and c<=high20)
-    red_expansion=bool(c<o and body_ratio>=.55 and close_loc<=.42)
+    # Material one-session drawdown is adverse even when volume provider is
+    # thin/incomplete. Separate price damage from volume-confirmed conviction.
+    prev_close=float(p.Close) if pd.notna(p.Close) and float(p.Close)>0 else np.nan
+    day_change_pct=((c/prev_close)-1)*100 if pd.notna(prev_close) else np.nan
+    material_red_day=bool(c<o and pd.notna(day_change_pct) and day_change_pct<=-4.0)
+    weak_red_close=bool(c<o and close_loc<=.45 and body_ratio>=.30)
+    red_expansion=bool((c<o and body_ratio>=.55 and close_loc<=.42) or
+                       (material_red_day and weak_red_close))
     green_expansion=bool(c>o and body_ratio>=.60 and close_loc>=.70)
     prior_trend="HIGHER STRUCTURE" if float(z.High.iloc[-1])>float(z.High.iloc[-6]) and float(z.Low.iloc[-1])>float(z.Low.iloc[-6]) else "LOWER/CHOPPY STRUCTURE"
     pat=[]
@@ -263,7 +270,7 @@ def analyze_price_action(d):
     if not pat: pat.append("BULLISH CLOSE" if c>o else ("BEARISH CLOSE" if c<o else "FLAT CLOSE"))
     if anomalous:
         bias="DATA ANOMALY REVIEW"
-    elif breakdown or supply or red_expansion:
+    elif breakdown or supply or red_expansion or material_red_day:
         # Material bearish candle with weak close is adverse price action even when
         # volume confirmation is absent; volume determines confidence, not direction.
         bias="BEARISH PRESSURE — IMPULSE" if red_expansion else "BEARISH PRESSURE"
@@ -282,8 +289,10 @@ def analyze_price_action(d):
     elif false_break: bq="FAILED INTRADAY BREAKOUT: CLOSE BACK BELOW LEVEL"
     else: bq="NO 20-BAR CLOSE BREAKOUT"
     warnings=[]
+    if material_red_day:
+        warnings.append(f"material red day: {day_change_pct:.2f}% vs previous close; flag for pressure review independent of volume")
     if red_expansion:
-        warnings.append("bearish impulse: material red body and close near low; volume confirmation evaluated separately")
+        warnings.append("bearish impulse: material red body/weak close; volume confirmation evaluated separately")
     if red_expansion and (pd.isna(vr) or vr<1.15):
         warnings.append("bearish impulse not volume-confirmed; direction remains adverse, conviction lower")
     if supply: warnings.append("supply pressure: bearish candle/volume or multi-bar weakness")
@@ -298,6 +307,8 @@ def analyze_price_action(d):
             "BodyRangePct":round(body_ratio*100,1),"VolumeRatioPA":round(vr,2) if pd.notna(vr) else np.nan,
             "PAWarnings":"; ".join(warnings) if warnings else "No listed warning",
             "Prior20High":high20,"Prior20Low":low20,"FailedBreakout":bool(false_break),
+            "DayChangePctPA":round(day_change_pct,2) if pd.notna(day_change_pct) else np.nan,
+            "MaterialRedDay":bool(material_red_day),"WeakRedClose":bool(weak_red_close),
             "BearishExpansion":bool(red_expansion),"BullishExpansion":bool(green_expansion),
             "SupplyPressure":supply,"AnomalousRange":anomalous,"RecentAnomalyCount":recent_anomaly_count,
             "RecentPressure":recent_pressure,
@@ -354,15 +365,20 @@ def analyze(df):
     # Price-action quality adjusts opportunity and blocks bullish-ready labels
     # when the completed candle shows strong selling or a failed breakout.
     pa_bias=pa.get("PriceActionBias", "UNCONFIRMED")
-    if (any(tag in str(pa_bias).upper() for tag in ("BEARISH PRESSURE", "BEARISH IMPULSE", "FAILED BREAKOUT RISK", "DATA ANOMALY")) or bool(pa.get("BearishExpansion", False)) or bool(pa.get("SupplyPressure", False)) or bool(pa.get("AnomalousRange", False))):
-        opportunity=max(0,opportunity-12)
+    pa_upper=str(pa_bias).upper()
+    # An anomaly is a data-quality review, not bearish evidence. It can
+    # suppress readiness while review is pending, but must not imply direction.
+    pa_hard_bear=any(tag in pa_upper for tag in ("BEARISH PRESSURE", "BEARISH IMPULSE", "FAILED BREAKOUT RISK")) or bool(pa.get("BearishExpansion", False)) or bool(pa.get("SupplyPressure", False))
+    pa_review=bool(pa.get("AnomalousRange", False)) or "DATA ANOMALY" in pa_upper
+    if pa_hard_bear or pa_review:
+        opportunity=max(0,opportunity-(12 if pa_hard_bear else 5))
         ready=False
         if status=="READY": status="WAIT"
     elif pa_bias=="BULLISH BREAKOUT CANDIDATE":
         opportunity+=5
     elif pa_bias=="BULLISH IMPULSE CANDIDATE":
         opportunity+=3
-    return {"Close":close,"MA20":ma20,"MA50":ma50,"MA200":ma200,"Return20D":ret20*100,"Return60D":ret60*100,"RSI":float(x.RSI),"MACD":float(x.MACD),"VolumeRatio":vr,"ATR14":atr14,"Support":support,"Resistance":resistance,"Entry":entry,"SL":sl,"TP1":tp1,"TP2":tp2,"RR":rr,"RiskPct":risk_pct,"StopDistancePct":risk_pct,"RiskATRMultiple":risk_atr,"OverextensionPct":overext,"EntryGapPct":entry_gap,"QualityScore":quality,"SetupScore":setup,"OpportunityScore":opportunity,"Status":status,"AvoidReason":avoid_reason,"Setup":setup_type,"Timing":timing,"Candle":candle,"PriceActionGuard":("VETO_BULLISH_READY" if (any(tag in str(pa_bias).upper() for tag in ("BEARISH PRESSURE", "BEARISH IMPULSE", "FAILED BREAKOUT RISK", "DATA ANOMALY")) or bool(pa.get("BearishExpansion", False)) or bool(pa.get("SupplyPressure", False)) or bool(pa.get("AnomalousRange", False))) else "NO_PA_VETO"),"DataDate":pd.Timestamp(d.index[-1]).strftime("%Y-%m-%d"),"DataPoints":int(len(d)),"DataSource":"Yahoo Finance EOD",**pa}
+    return {"Close":close,"MA20":ma20,"MA50":ma50,"MA200":ma200,"Return20D":ret20*100,"Return60D":ret60*100,"RSI":float(x.RSI),"MACD":float(x.MACD),"VolumeRatio":vr,"ATR14":atr14,"Support":support,"Resistance":resistance,"Entry":entry,"SL":sl,"TP1":tp1,"TP2":tp2,"RR":rr,"RiskPct":risk_pct,"StopDistancePct":risk_pct,"RiskATRMultiple":risk_atr,"OverextensionPct":overext,"EntryGapPct":entry_gap,"QualityScore":quality,"SetupScore":setup,"OpportunityScore":opportunity,"Status":status,"AvoidReason":avoid_reason,"Setup":setup_type,"Timing":timing,"Candle":candle,"PriceActionGuard":("VETO_BULLISH_READY" if pa_hard_bear else ("REVIEW_DATA_ANOMALY" if pa_review else "NO_PA_VETO")),"DataDate":pd.Timestamp(d.index[-1]).strftime("%Y-%m-%d"),"DataPoints":int(len(d)),"DataSource":"Yahoo Finance EOD",**pa}
 
 # =========================================================
 # MULTI-FACTOR ENGINE — Technical + Fundamental + Flow + Sector
@@ -2000,6 +2016,49 @@ def show_rules():
 # =========================================================
 # NEW: DAILY / WEEKLY / INDIVIDUAL STOCK
 # =========================================================
+def classify_daily_price_action(row):
+    """Conservative, explainable daily PA classification with mixed-evidence safeguards."""
+    def truth(key):
+        value=row.get(key, False)
+        if pd.isna(value):
+            return False
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes", "y", "pass")
+        return bool(value)
+
+    bias=str(row.get("PriceActionBias", "UNAVAILABLE")).upper()
+    structure=str(row.get("Structure", "UNAVAILABLE")).upper()
+    candle=str(row.get("CandlePattern", "")).upper()
+    warnings=str(row.get("PAWarnings", "")).upper()
+    vol=pd.to_numeric(row.get("VolumeRatio", np.nan), errors="coerce")
+    hard_bear=(any(tag in bias for tag in ("BEARISH PRESSURE", "BEARISH IMPULSE", "FAILED BREAKOUT RISK"))
+               or truth("BearishExpansion") or truth("SupplyPressure") or truth("FailedBreakout"))
+    anomaly=("DATA ANOMALY" in bias or truth("AnomalousRange"))
+
+    # Extreme relative-volume readings are a data-integrity review, not bullish/bearish proof.
+    # Threshold is a conservative quality flag, not a trade signal.
+    extreme_volume_anomaly=bool(pd.notna(vol) and (vol < 0.10 or vol > 10.0))
+
+    # Multi-factor adverse structure guard: avoid promoting repeated weakness as constructive
+    # merely because the broad PA bias string is neutral. This is a REVIEW classification,
+    # not an assertion that a short signal exists.
+    lower_structure=("LOWER/CHOPPY" in structure)
+    bearish_close=("BEARISH CLOSE" in candle or "BEARISH ENGULFING" in candle or
+                   "SHOOTING STAR" in candle or "UPPER-TAIL REJECTION" in candle)
+    repeated_weakness=("2-OF-3" in warnings or "RECENT BARS SHOW WEAKNESS" in warnings)
+    adverse_structure=lower_structure and bearish_close and repeated_weakness
+
+    if hard_bear or adverse_structure:
+        return "BEARISH"
+    if anomaly or extreme_volume_anomaly:
+        return "DATA_REVIEW"
+    if "UNCONFIRMED" in bias or "UNAVAILABLE" in bias or "INSUFFICIENT" in bias:
+        return "DATA_REVIEW"
+    if "POTENTIAL REVERSAL" in bias:
+        return "REVERSAL_REVIEW"
+    return "CONSTRUCTIVE_REVIEW"
+
+
 def daily_table(full):
     """Adaptive daily opportunity discovery, deliberately separate from execution approval.
 
@@ -2036,7 +2095,7 @@ def daily_table(full):
     pa_adjust += np.where(pa_bias.str.contains("BULLISH BREAKOUT CANDIDATE"),8,0)
     pa_adjust += np.where(pa_bias.str.contains("BULLISH IMPULSE CANDIDATE"),4,0)
     pa_adjust += np.where(pa_bias.str.contains("POTENTIAL REVERSAL"),1,0)
-    pa_adjust -= np.where(pa_bias.str.contains("BEARISH PRESSURE|BEARISH IMPULSE",regex=True),18,0)
+    pa_adjust -= np.where(pa_bias.str.contains("BEARISH PRESSURE|BEARISH IMPULSE",regex=True),22,0)
     pa_adjust -= np.where(pa_bias.str.contains("FAILED BREAKOUT"),15,0)
     pa_adjust -= np.where(bq.str.contains("BREAKOUT WEAK|FAILED|UNCONFIRMED"),5,0)
     pa_adjust += np.where(pa_struct.str.contains("HIGHER STRUCTURE"),3,0)
@@ -2051,46 +2110,36 @@ def daily_table(full):
     d["DailyDisposition"]="WATCH — SETUP REVIEW"
     d.loc[~data_ok,"DailyDisposition"]="BLOCKED — DATA REVIEW"
     d.loc[bad,"DailyDisposition"]="BLOCKED — RISK/SETUP"
-    # Identify notable weaknesses without assuming a single indicator is decisive.
+    # V11.23: directional price risk, data anomaly, and setup review are distinct.
+    # Weakness flags alone are not universal vetoes; explicit pressure / material
+    # bearish evidence remains a separate review pool.
+    pa_class=d.apply(classify_daily_price_action,axis=1)
+    pa_bear=pa_class.eq("BEARISH")
+    pa_review=pa_class.eq("DATA_REVIEW")
+    pa_reversal=pa_class.eq("REVERSAL_REVIEW")
     bearish_expansion=(close.lt(ma20)&ma20.lt(ma50)&rsi_v.lt(48))
-    pa_bias=d.get("PriceActionBias",pd.Series("UNAVAILABLE",index=d.index)).astype(str).str.upper()
-    pa_bear=pa_bias.str.contains("BEARISH PRESSURE|BEARISH IMPULSE|FAILED BREAKOUT RISK|DATA ANOMALY",regex=True)
-    # CONSISTENCY FIX: propagate the upstream hard guard into disposition and pool.
-    # Earlier builds computed PriceActionGuard but did not consume it here, allowing
-    # guarded names (e.g. bearish impulse) to remain CONSTRUCTIVE / WAIT.
-    if "PriceActionGuard" in d:
-        pa_bear |= d["PriceActionGuard"].astype(str).str.upper().str.contains("VETO|BLOCK|BEARISH", regex=True)
-    # Propagate direct evidence columns too, including bearish expansion.
-    if "BearishExpansion" in d:
-        pa_bear |= d["BearishExpansion"].fillna(False).astype(bool)
-    # Treat observed supply/anomaly fields as explicit vetoes even if the label is inconsistent.
-    if "SupplyPressure" in d:
-        pa_bear |= d["SupplyPressure"].fillna(False).astype(bool)
-    if "RecentPressure" in d:
-        pa_bear |= d["RecentPressure"].fillna(False).astype(bool)
-    if "AnomalousRange" in d:
-        pa_bear |= d["AnomalousRange"].fillna(False).astype(bool)
-    pa_unconfirmed=pa_bias.str.contains("UNCONFIRMED|UNAVAILABLE",regex=True)
+    if "Return20D" in d:
+        bearish_expansion |= close.lt(ma20)&d["Return20D"].lt(-8)
+    pa_unconfirmed=pa_bias.str.contains("UNCONFIRMED|UNAVAILABLE|INSUFFICIENT",regex=True)
     d["DailyReviewReason"]="Setup requires chart review"
     d.loc[~data_ok,"DailyReviewReason"]="Required technical fields unavailable"
     d.loc[bad,"DailyReviewReason"]="Base risk/setup gate rejected"
-    d.loc[pa_bear,"DailyReviewReason"]="Bearish pressure / failed breakout warning"
+    d.loc[pa_bear,"DailyReviewReason"]="Directional bearish evidence; separate bearish/reversal review"
+    d.loc[pa_review & ~pa_bear,"DailyReviewReason"]="Data anomaly/unconfirmed price action; validate source/corporate action before directional classification"
+    d.loc[pa_reversal & ~pa_bear,"DailyReviewReason"]="Potential reversal; needs follow-through and confirmation"
     d.loc[pa_unconfirmed & data_ok,"DailyReviewReason"]="Price action unconfirmed; no setup conviction"
-    if "Return20D" in d:
-        bearish_expansion |= close.lt(ma20)&d["Return20D"].lt(-8)
     bearish_expansion |= pa_bear
     d.loc[bearish_expansion & ~bad,"DailyDisposition"]="WATCH — BEARISH/REVERSAL ONLY"
-    # Guard is authoritative: a bearish/invalidation finding must not rank as constructive.
     d.loc[pa_bear & ~bad,"DailyDisposition"]="WATCH — BEARISH/REVERSAL ONLY"
+    d.loc[pa_review & ~pa_bear & ~bad,"DailyDisposition"]="WATCH — DATA ANOMALY REVIEW"
+    d.loc[pa_reversal & ~pa_bear & ~pa_review & ~bad,"DailyDisposition"]="WATCH — REVERSAL CONFIRMATION"
     stretched=(d.get("OverextensionPct",pd.Series(0,index=d.index)).gt(5)) | (rsi_v.gt(72))
-    d.loc[stretched & ~bad & ~bearish_expansion,"DailyDisposition"]="WAIT — EXTENDED"
-    # Actionable is intentionally conservative and requires the existing risk gate,
-    # acceptable setup, non-stretched price and at least basic trend/momentum support.
+    d.loc[stretched & ~bad & ~bearish_expansion & ~pa_review & ~pa_reversal,"DailyDisposition"]="WAIT — EXTENDED"
+    # Actionable requires a positive completed-candle setup and all data/risk/live gates.
     pa_positive=pa_bias.str.contains("BULLISH BREAKOUT CANDIDATE|BULLISH IMPULSE CANDIDATE",regex=True)
     action=(data_ok & ~bad & setup.isin(["BREAKOUT","PULLBACK","REJECTION SUPPORT"]) &
             close.ge(ma20*.98) & close.ge(ma50*.95) & rsi_v.between(48,70) & vol.ge(1.0) & rr.ge(2.0) &
-            ~stretched & ~bearish_expansion & ~pa_bear & pa_positive)
-    # If a live execution layer explicitly fails, it may only tighten the decision.
+            ~stretched & ~bearish_expansion & ~pa_bear & ~pa_review & pa_positive)
     if "RiskGate" in d:
         action &= d["RiskGate"].astype(str).str.upper().eq("PASS")
     if "LiveActionStatus" in d:
@@ -2104,30 +2153,29 @@ def daily_table(full):
         action &= False
     d.loc[action,"DailyDisposition"]="ACTIONABLE CANDIDATE — LIVE CONFIRMED"
     d["TradingMode"]="HARIAN"
-    # Watchlist discovery ranking is not an execution ranking. Display constructive
-    # setups first, then neutral review, then bearish/reversal and blocked names.
     disp=d["DailyDisposition"].astype(str).str.upper()
-    # Normalize dispositions; include the current "BEARISH PRESSURE · REVIEW" wording.
     is_action=disp.str.startswith("ACTIONABLE")
     is_bear=disp.str.contains(r"BEARISH|FAILED BREAKOUT|INVALIDATION|REVERSAL ONLY",regex=True)
     is_block=disp.str.startswith("BLOCKED")
+    is_review=disp.str.contains(r"DATA ANOMALY|DATA REVIEW|REVERSAL CONFIRMATION",regex=True)
     is_extended=disp.str.startswith("WAIT — EXTENDED")
     is_constructive=disp.str.startswith("WATCH — SETUP")
     d["DailyRankTier"]=np.select(
-        [is_block,is_action,is_bear,is_constructive,is_extended],
-        [4,0,3,1,2], default=2).astype(int)
+        [is_block,is_action,is_constructive,is_extended,is_review,is_bear],
+        [4,0,1,2,3,3], default=2).astype(int)
     d["DailyRankReason"]=np.select(
-        [is_block,is_action,is_bear,is_constructive,is_extended],
+        [is_block,is_action,is_constructive,is_extended,is_review,is_bear],
         ["Data/risiko gagal; tidak eligible untuk entry",
          "Lolos gate sinyal; tetap validasi order sebelum eksekusi",
-         "Tekanan jual/invalidation; pantauan terpisah, bukan momentum long",
          "Setup layak ditinjau; trigger dan data live belum tentu valid",
-         "Harga berpotensi terlalu jauh dari area entry; jangan chase"],
+         "Harga berpotensi terlalu jauh dari area entry; jangan chase",
+         "Perlu validasi data/konfirmasi; bukan otomatis bearish atau peluang beli",
+         "Tekanan jual/invalidation; pantauan terpisah, bukan momentum long"],
         default="Review manual; alasan teknikal belum meyakinkan")
     d["DailyPool"]=np.select(
-        [is_block,is_bear,is_action,is_constructive],
-        ["BLOCKED / DATA-RISK","BEARISH / INVALIDATION",
-         "EXECUTION-QUALIFIED","CONSTRUCTIVE / WAIT"], default="NEUTRAL REVIEW")
+        [is_block,is_action,is_constructive,is_extended,is_review,is_bear],
+        ["BLOCKED / DATA-RISK","EXECUTION-QUALIFIED","CONSTRUCTIVE / WAIT",
+         "CONSTRUCTIVE / WAIT","DATA REVIEW / ANOMALY","BEARISH / INVALIDATION"], default="NEUTRAL REVIEW")
     d["DailyExecutionEligible"]=disp.str.startswith("ACTIONABLE")
     d["_data_rank"]=data_ok.astype(int)
     d["_risk_rank"]=(~bad).astype(int)
@@ -2248,7 +2296,7 @@ def weekly_candidates(focus):
 header("📈 ANAK HASIAN Stock Scanner",f"{APP_VERSION} · Scanner universe 600 saham · Technical + Fundamental · TradingView")
 
 with st.sidebar:
-    st.markdown('<div class="control-card"><div class="control-title">ANAK HASIAN STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.20.0 PRO · DUAL WATCHLIST · SIMPLE 600</div><div class="small-note" style="margin-top:4px">Daily & Swing · Top 6</div></div>',unsafe_allow_html=True)
+    st.markdown('<div class="control-card"><div class="control-title">ANAK HASIAN STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.23.0 PRO · DUAL WATCHLIST · ANOMALY CLASSIFICATION FIX · SIMPLE 600</div><div class="small-note" style="margin-top:4px">Daily & Swing · Top 6</div></div>',unsafe_allow_html=True)
     # Menu navigasi dan konfigurasi ditampilkan terbuka agar mudah diakses.
     scan_now=st.button("🔄 SCAN SAHAM",type="primary",use_container_width=True)
     st.caption("Memperbarui hasil screening tanpa mengubah snapshot EOD resmi.")
