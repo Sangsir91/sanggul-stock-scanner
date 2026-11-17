@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.24.0 PRO · BLUE CHIP TREND WATCHLIST · DUAL WATCHLIST · SIMPLE 600 · ANAK HASIAN"
+APP_VERSION = "V11.24.1 PRO · BLUE CHIP 10 CARDS · DUAL WATCHLIST · SIMPLE 600 · ANAK HASIAN"
 ENGINE_VERSION = "V11.11.0-PRO-UNIVERSE-GOVERNANCE"
 RISK_GATE_VERSION = "2.7"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -2336,7 +2336,7 @@ def blue_chip_trend_watchlist(full):
 header("📈 ANAK HASIAN Stock Scanner",f"{APP_VERSION} · Scanner universe 600 saham · Technical + Fundamental · TradingView")
 
 with st.sidebar:
-    st.markdown('<div class="control-card"><div class="control-title">ANAK HASIAN STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.24.0 PRO · BLUE CHIP TREND WATCHLIST · DUAL WATCHLIST · SIMPLE 600</div><div class="small-note" style="margin-top:4px">Daily & Swing · Top 6</div></div>',unsafe_allow_html=True)
+    st.markdown('<div class="control-card"><div class="control-title">ANAK HASIAN STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.24.1 PRO · BLUE CHIP 10 CARDS · DUAL WATCHLIST · SIMPLE 600</div><div class="small-note" style="margin-top:4px">Daily & Swing · Top 6</div></div>',unsafe_allow_html=True)
     # Menu navigasi dan konfigurasi ditampilkan terbuka agar mudah diakses.
     scan_now=st.button("🔄 SCAN SAHAM",type="primary",use_container_width=True)
     st.caption("Memperbarui hasil screening tanpa mengubah snapshot EOD resmi.")
@@ -2673,10 +2673,25 @@ elif mode == "🏦 Blue Chip Trend":
             counts = bc["BlueChipStatus"].value_counts()
             metric_strip([("Dipantau", str(len(bc))), ("Strong Trend", str(int(counts.get("STRONG TREND", 0)))), ("Pullback", str(int(counts.get("TREND PULLBACK", 0)))), ("Review/Caution", str(int(len(bc)-counts.get("STRONG TREND",0)-counts.get("TREND PULLBACK",0))))])
             st.caption("Kelompok awal: BBRI, BBCA, BBNI, BMRI, TLKM, ASII, ICBP, INDF, AMRT, UNVR. Hanya ticker yang ditemukan dalam hasil scan yang tampil.")
-            for _, r in bc.iterrows():
-                status = str(r.get("BlueChipStatus", "REVIEW"))
-                color = "green" if status == "STRONG TREND" else ("orange" if "CAUTION" in status or "BREAKDOWN" in status or "REVIEW" in status else "blue")
-                st.markdown(f"**{r.get('Ticker','—')}** · :{color}[{status}]  \nHarga **{fmt(r.get('BCPrice',np.nan))}** · MA20 **{fmt(r.get('MA20',np.nan))}** · MA50 **{fmt(r.get('MA50',np.nan))}** · MA200 **{fmt(r.get('MA200',np.nan))}** · RSI **{fmt(r.get('RSI',np.nan),1)}**  \n{r.get('BlueChipReason','—')} · Return 20D: **{fmt(r.get('Return20D',np.nan),1)}%**")
+            st.markdown('<div class="simple-section-title">🏦 10 KARTU BLUE CHIP TREND</div><div class="simple-note">Maksimal 10 kartu dalam dua kolom agar mudah dibaca. Kartu hanya untuk pemantauan tren, bukan sinyal beli.</div>', unsafe_allow_html=True)
+            cards = bc.head(10).reset_index(drop=True)
+            for start in range(0, len(cards), 2):
+                card_cols = st.columns(2, gap="medium")
+                for offset, col in enumerate(card_cols):
+                    idx = start + offset
+                    if idx >= len(cards):
+                        continue
+                    r = cards.iloc[idx]
+                    status = str(r.get("BlueChipStatus", "REVIEW"))
+                    status_color = "#16d58a" if status == "STRONG TREND" else ("#ffb21a" if any(x in status for x in ["CAUTION", "BREAKDOWN", "REVIEW", "PULLBACK"]) else "#31c7ff")
+                    ticker = str(r.get("Ticker", "—"))
+                    reason = str(r.get("BlueChipReason", "—"))
+                    card_html = f"""<div style="background:linear-gradient(145deg,#0b2239,#0d2c49);border:1px solid #244b6b;border-radius:14px;padding:14px 16px;margin:4px 0 10px;min-height:190px;box-shadow:0 8px 22px rgba(0,0,0,.16)">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid #24445f;padding-bottom:9px;margin-bottom:10px"><div style="font-size:21px;font-weight:850;color:#f2f7ff">{ticker}<div style="font-size:10px;color:#9bb0c6;font-weight:500">BLUE CHIP · RANK #{idx+1}</div></div><span style="font-size:10px;font-weight:800;color:{status_color};border:1px solid {status_color};border-radius:20px;padding:5px 8px;text-align:center">{status}</span></div>
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px 8px"><div><div style="font-size:10px;color:#9bb0c6">HARGA</div><b style="font-size:15px;color:#fff">{fmt(r.get('BCPrice',np.nan))}</b></div><div><div style="font-size:10px;color:#9bb0c6">RETURN 20D</div><b style="font-size:15px;color:#fff">{fmt(r.get('Return20D',np.nan),1)}%</b></div><div><div style="font-size:10px;color:#9bb0c6">RSI</div><b style="font-size:15px;color:#fff">{fmt(r.get('RSI',np.nan),1)}</b></div><div><div style="font-size:10px;color:#9bb0c6">MA20</div><b style="font-size:13px;color:#dcecff">{fmt(r.get('MA20',np.nan))}</b></div><div><div style="font-size:10px;color:#9bb0c6">MA50</div><b style="font-size:13px;color:#dcecff">{fmt(r.get('MA50',np.nan))}</b></div><div><div style="font-size:10px;color:#9bb0c6">MA200</div><b style="font-size:13px;color:#dcecff">{fmt(r.get('MA200',np.nan))}</b></div></div>
+<div style="font-size:11px;color:#c3d7e9;border-top:1px solid #24445f;margin-top:10px;padding-top:8px;line-height:1.45">{reason}</div></div>"""
+                    with col:
+                        st.markdown(card_html, unsafe_allow_html=True)
             cols = [c for c in ["Ticker", "BlueChipStatus", "BlueChipReason", "BCPrice", "Return20D", "MA20", "MA50", "MA200", "RSI", "MACD", "VolumeRatio", "OverextensionPct", "DataDate", "DataSource", "BlueChipExecutionEligible"] if c in bc.columns]
             show_table(bc, cols, "Audit Blue Chip Trend Watchlist")
             selected = st.selectbox("Pilih saham untuk chart TradingView", bc.Ticker.astype(str).tolist(), key="blue_chip_tv")
