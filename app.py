@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-APP_VERSION = "V11.23.0 PRO · DUAL WATCHLIST · ANOMALY CLASSIFICATION FIX · SIMPLE 600 · ANAK HASIAN"
+APP_VERSION = "V11.24.0 PRO · BLUE CHIP TREND WATCHLIST · DUAL WATCHLIST · SIMPLE 600 · ANAK HASIAN"
 ENGINE_VERSION = "V11.11.0-PRO-UNIVERSE-GOVERNANCE"
 RISK_GATE_VERSION = "2.7"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -2290,13 +2290,53 @@ def weekly_candidates(focus):
     out["SwingRank"] = range(1,len(out)+1)
     return out
 
+
+def blue_chip_trend_watchlist(full):
+    """Classify selected IDX large-cap leaders using existing EOD scan fields.
+    This is a monitoring layer only; it never grants execution eligibility.
+    """
+    if full is None or full.empty or "Ticker" not in full.columns:
+        return pd.DataFrame()
+    # Initial monitored leaders; membership is explicit and does not alter the 600-stock universe.
+    leaders = ["BBRI", "BBCA", "BBNI", "BMRI", "TLKM", "ASII", "ICBP", "INDF", "AMRT", "UNVR"]
+    d = full[full["Ticker"].astype(str).str.upper().isin(leaders)].copy()
+    if d.empty:
+        return d
+    for col in ["Close", "CurrentPrice", "MA20", "MA50", "MA200", "RSI", "Return20D", "OverextensionPct", "VolumeRatio"]:
+        if col not in d.columns:
+            d[col] = np.nan
+        d[col] = pd.to_numeric(d[col], errors="coerce")
+    d["BCPrice"] = d["CurrentPrice"].where(d["CurrentPrice"].notna(), d["Close"])
+    def classify(r):
+        px, m20, m50, m200, rsi_v = (r.get(k, np.nan) for k in ["BCPrice", "MA20", "MA50", "MA200", "RSI"])
+        if not all(np.isfinite(v) and v > 0 for v in [px, m20, m50, m200]) or not np.isfinite(rsi_v):
+            return "DATA REVIEW", "Data indikator tidak lengkap; jangan simpulkan arah tren"
+        if px < m50 and m20 < m50:
+            return "TREND BREAKDOWN / REVIEW", "Harga di bawah MA50 dan MA20 di bawah MA50"
+        over = r.get("OverextensionPct", np.nan)
+        if (np.isfinite(over) and over >= 8) or rsi_v >= 75:
+            return "EXTENDED / CAUTION", "Harga/RSI terlalu panas; hindari mengejar harga"
+        if px > m20 >= m50 >= m200 and 50 <= rsi_v <= 72:
+            return "STRONG TREND", "Harga di atas MA20; susunan MA20–MA50–MA200 bullish"
+        if m50 >= m200 and px >= m50 and px <= m20 * 1.04 and rsi_v >= 42:
+            return "TREND PULLBACK", "Tren menengah masih terjaga; tunggu candle pantulan/konfirmasi"
+        if px >= m50 and m50 >= m200:
+            return "CONSTRUCTIVE / WAIT", "Struktur menengah relatif positif, tetapi konfirmasi belum lengkap"
+        return "MIXED / REVIEW", "Arah tren belum cukup konsisten"
+    labels = d.apply(classify, axis=1, result_type="expand")
+    d["BlueChipStatus"] = labels[0]
+    d["BlueChipReason"] = labels[1]
+    d["BlueChipRank"] = d["BlueChipStatus"].map({"STRONG TREND": 1, "TREND PULLBACK": 2, "CONSTRUCTIVE / WAIT": 3, "EXTENDED / CAUTION": 4, "MIXED / REVIEW": 5, "TREND BREAKDOWN / REVIEW": 6, "DATA REVIEW": 7}).fillna(8)
+    d["BlueChipExecutionEligible"] = False
+    return d.sort_values(["BlueChipRank", "Return20D"], ascending=[True, False], na_position="last")
+
 # =========================================================
 # HEADER + SIDEBAR
 # =========================================================
 header("📈 ANAK HASIAN Stock Scanner",f"{APP_VERSION} · Scanner universe 600 saham · Technical + Fundamental · TradingView")
 
 with st.sidebar:
-    st.markdown('<div class="control-card"><div class="control-title">ANAK HASIAN STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.23.0 PRO · DUAL WATCHLIST · ANOMALY CLASSIFICATION FIX · SIMPLE 600</div><div class="small-note" style="margin-top:4px">Daily & Swing · Top 6</div></div>',unsafe_allow_html=True)
+    st.markdown('<div class="control-card"><div class="control-title">ANAK HASIAN STOCK SCANNER</div><div style="font-size:18px;font-weight:850;color:#fff;margin-top:3px">V11.24.0 PRO · BLUE CHIP TREND WATCHLIST · DUAL WATCHLIST · SIMPLE 600</div><div class="small-note" style="margin-top:4px">Daily & Swing · Top 6</div></div>',unsafe_allow_html=True)
     # Menu navigasi dan konfigurasi ditampilkan terbuka agar mudah diakses.
     scan_now=st.button("🔄 SCAN SAHAM",type="primary",use_container_width=True)
     st.caption("Memperbarui hasil screening tanpa mengubah snapshot EOD resmi.")
@@ -2311,7 +2351,7 @@ with st.sidebar:
     st.divider()
     st.markdown("#### 🧭 Menu Utama")
     # One unified view replaces duplicate Dashboard/Top 3/10/50/150 pages.
-    menu_modes=["🏠 Ringkasan & Kandidat","⚡ Trading Harian","📅 Swing Mingguan","🔎 Saham Individu","🏭 Peluang Sektor","🌅 Morning Confirmation","🌆 EOD Full Scan","📜 Riwayat EOD","🧠 Data Multi-Factor"]
+    menu_modes=["🏠 Ringkasan & Kandidat","⚡ Trading Harian","📅 Swing Mingguan","🏦 Blue Chip Trend","🔎 Saham Individu","🏭 Peluang Sektor","🌅 Morning Confirmation","🌆 EOD Full Scan","📜 Riwayat EOD","🧠 Data Multi-Factor"]
     mode=st.radio("Pilih menu",menu_modes,index=0,key="main_view_mode",label_visibility="collapsed")
     st.caption("Tampilan ringkas. Daftar Top 3/10/50/150 digabungkan dalam Ringkasan & Kandidat.")
 
@@ -2619,6 +2659,29 @@ elif mode=="⚡ Trading Harian":
         if not constructive.empty:
             ticker=st.selectbox("Pilih saham untuk chart",constructive.Ticker.tolist(),key="daily_ticker")
             st.link_button("📈 TradingView Penuh ↗", tv_link(ticker,"1D"), use_container_width=False)
+
+elif mode == "🏦 Blue Chip Trend":
+    header("🏦 Blue Chip Trend Watchlist", "Pemantauan tren saham unggulan IDX · terpisah dari Opportunity dan Execution Watchlist.")
+    st.info("Watchlist ini memantau tren, bukan rekomendasi beli. Status tidak pernah otomatis meloloskan saham ke Execution Watchlist.")
+    if active is None or not isinstance(active, dict) or active.get("full") is None or active["full"].empty:
+        st.warning("Belum ada hasil scan. Jalankan Scan Saham terlebih dahulu agar indikator EOD tersedia.")
+    else:
+        bc = blue_chip_trend_watchlist(active["full"])
+        if bc.empty:
+            st.warning("Belum ada saham pantauan yang ditemukan di hasil scan. Periksa apakah ticker termasuk universe dan berhasil diunduh.")
+        else:
+            counts = bc["BlueChipStatus"].value_counts()
+            metric_strip([("Dipantau", str(len(bc))), ("Strong Trend", str(int(counts.get("STRONG TREND", 0)))), ("Pullback", str(int(counts.get("TREND PULLBACK", 0)))), ("Review/Caution", str(int(len(bc)-counts.get("STRONG TREND",0)-counts.get("TREND PULLBACK",0))))])
+            st.caption("Kelompok awal: BBRI, BBCA, BBNI, BMRI, TLKM, ASII, ICBP, INDF, AMRT, UNVR. Hanya ticker yang ditemukan dalam hasil scan yang tampil.")
+            for _, r in bc.iterrows():
+                status = str(r.get("BlueChipStatus", "REVIEW"))
+                color = "green" if status == "STRONG TREND" else ("orange" if "CAUTION" in status or "BREAKDOWN" in status or "REVIEW" in status else "blue")
+                st.markdown(f"**{r.get('Ticker','—')}** · :{color}[{status}]  \nHarga **{fmt(r.get('BCPrice',np.nan))}** · MA20 **{fmt(r.get('MA20',np.nan))}** · MA50 **{fmt(r.get('MA50',np.nan))}** · MA200 **{fmt(r.get('MA200',np.nan))}** · RSI **{fmt(r.get('RSI',np.nan),1)}**  \n{r.get('BlueChipReason','—')} · Return 20D: **{fmt(r.get('Return20D',np.nan),1)}%**")
+            cols = [c for c in ["Ticker", "BlueChipStatus", "BlueChipReason", "BCPrice", "Return20D", "MA20", "MA50", "MA200", "RSI", "MACD", "VolumeRatio", "OverextensionPct", "DataDate", "DataSource", "BlueChipExecutionEligible"] if c in bc.columns]
+            show_table(bc, cols, "Audit Blue Chip Trend Watchlist")
+            selected = st.selectbox("Pilih saham untuk chart TradingView", bc.Ticker.astype(str).tolist(), key="blue_chip_tv")
+            st.link_button("📈 Buka Chart TradingView ↗", tv_link(selected, "1D"))
+            st.caption("Klasifikasi bersifat rule-based dan perlu diverifikasi pada chart serta data sumber. Data tertunda/tidak lengkap tidak boleh digunakan untuk entry.")
 
 elif mode in ["📅 Swing Mingguan", "📅 Swing Trading Mingguan"]:
     header("📅 Swing Trading Mingguan","Horizon beberapa hari hingga beberapa minggu · urutan tier konstruktif, bearish-review, dan WAIT dijelaskan.")
